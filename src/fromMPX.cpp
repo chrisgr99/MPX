@@ -16,6 +16,20 @@ not an edge. Without this the note is replaced under a gate that stays up, nothi
 strikes again, and what you hear is the first note decaying while its successors pass silently
 through. */
 static const float RETRIG_MS = 1.f;
+/** THE LEVEL NEVER STEPS, at any note, in any mode, and neither does the pan. In glide and
+legato one voice sounds continuously while the note changes under it, so a level that jumps from
+one note's velocity to the next is a jump in a signal you are listening to. On a fresh voice it
+is harmless into an envelope that opens from zero and not harmless into a patch that goes
+straight to an amplifier. A millisecond and a third of ramp costs nothing musically.
+
+Pan travels for the same reason: a pattern alternating hard left and hard right is a normal
+thing to write, and a jump from one side to the other is a discontinuity in both channels. */
+static const float RISE_MS = 10.f;
+/** NEVER LONGER THAN A QUARTER OF THE NOTE. Ten milliseconds is the right rise for a note that
+lasts and a catastrophe for one that does not: a five-millisecond note would spend its whole
+life climbing and never reach the velocity it was played at, so a fast pattern would come out
+flat. Short notes take a short rise, which is also when it matters least. */
+static const int RISE_MIN = 8;
 
 enum Rollover {
 	R_OLDEST,
@@ -95,8 +109,15 @@ struct VoiceModule : Module {
 		sets it outright. */
 		Ramp pitch;
 		Ramp bend, pressure, timbre;
-		float level = 0.f;
-		float pan = 0.f;
+		/** A RAMP, NOT A NUMBER, because of legato. The crossfade between two voices lives on
+		this lane and nowhere else: DreamRack's does the same, so that an external amplifier
+		reproduces exactly what its internal one did. Every other note sets it outright. */
+		Ramp level;
+		/** Samples of crossfade left on a voice being handed over. Its gate stays up until the
+		fade is done, so the envelope holds while the level takes the sound away — two fades
+		multiplied together is not a crossfade, it is a dip. */
+		int fading = 0;
+		Ramp pan;
 		float duration = 0.f;
 		float bendRange = 2.f;
 		/** Held after the note ends: a voice in its release still reads the note it is
@@ -203,6 +224,9 @@ struct VoiceModule : Module {
 			Slot& s = slots[i];
 			if (s.gateLow > 0)
 				s.gateLow--;
+			// The voice being left ends when its fade does, not before.
+			if (s.fading > 0 && --s.fading == 0)
+				s.active = false;
 			// A lost note-off cannot leave a voice sounding: the duration came with the
 			// note-on, so this end can finish it on its own.
 			if (s.active && s.remaining > 0 && --s.remaining == 0)
@@ -215,7 +239,7 @@ struct VoiceModule : Module {
 
 			outputs[O_GATE].setVoltage((s.active && s.gateLow == 0) ? 10.f : 0.f, i);
 			outputs[O_PITCH].setVoltage(pitch, i);
-			outputs[O_LEVEL].setVoltage(s.level * 10.f, i);
+			outputs[O_LEVEL].setVoltage(s.level.tick() * 10.f, i);
 			// The control voltage runs to five volts at full deflection, scaled by the bend
 			// range the note was sent with, and clamped there as a wheel at its stop is.
 			const float full = std::max(1e-4f, s.bendRange / 12.f);
@@ -226,7 +250,7 @@ struct VoiceModule : Module {
 			outputs[O_BENDV].setVoltage(bend, i);
 			outputs[O_PRESSURE].setVoltage(pressure * 10.f, i);
 			outputs[O_TIMBRE].setVoltage(timbre * 10.f, i);
-			outputs[O_PAN].setVoltage(s.pan * 5.f, i);
+			outputs[O_PAN].setVoltage(s.pan.tick() * 5.f, i);
 			// One volt is one second, which is how the source's duration cable reads too.
 			outputs[O_DURATION].setVoltage(clamp(s.duration, 0.f, 10.f), i);
 		}
@@ -274,14 +298,41 @@ struct VoiceModule : Module {
 				}
 			}
 			take = (voices >= 2 && newest >= 0) ? (newest == 0 ? 1 : 0) : 0;
-			// The one being left goes quiet; no retrigger gap, because nothing is being stolen
-			// out from under itself.
+			const int fade = (int) (params[P_GLIDE].getValue() * args.sampleRate);
+
+			// THE CROSSFADE, AND IT IS ON THE LEVEL LANE. The voice being left keeps its gate
+			// up and its level travels to nothing over the time; the new one starts silent and
+			// travels up to its own level over the same time. Two resonances overlapping, one
+			// dying as the next establishes, which is what a slurred wind line actually is.
+			//
+			// Dropping the old voice's gate instead would let its envelope release — a fade,
+			// but the envelope's shape and the envelope's length, not this knob's, and it
+			// would multiply with the new note's attack rather than crossing with it.
 			for (int i = 0; i < voices; i++) {
-				if (i != take)
+				if (i == take || !slots[i].active)
+					continue;
+				if (fade > 0) {
+					slots[i].level.to(0.f, fade);
+					slots[i].fading = fade;
+				}
+				else {
+					// No time set: the notes butt, the old one ending exactly as the new one
+					// begins. The closest a pair can come to a slur without a crossfade.
 					slots[i].active = false;
+				}
 			}
 			Slot& s = slots[take];
 			adopt(s, e, args.sampleRate);
+			s.fading = 0;
+			if (fade > 0) {
+				// FROM SILENCE, over the same span the other one is taking to reach it. The
+				// two halves have to be the same length or what you hear is not a crossfade.
+				s.level.set(0.f);
+				s.level.to(e.level, fade);
+			}
+			// THE PITCH JUMPS. Each note keeps its own for its whole life, and the crossing is
+			// entirely in the amplitude — which is what makes legato a different thing from
+			// glide rather than a slower version of it.
 			s.pitch.set(e.pitch);
 			return;
 		}
@@ -293,8 +344,10 @@ struct VoiceModule : Module {
 			float quietest = 0.f;
 			for (int i = 0; i < voices; i++) {
 				if (rollover == R_QUIETEST) {
-					if (take < 0 || slots[i].level < quietest) {
-						quietest = slots[i].level;
+					// The value it is heading for, not the one it is passing through: a note
+					// part way through a fade is quiet at this instant and not a quiet note.
+					if (take < 0 || slots[i].level.target < quietest) {
+						quietest = slots[i].level.target;
 						take = i;
 					}
 				}
@@ -314,6 +367,7 @@ struct VoiceModule : Module {
 
 		Slot& s = slots[take];
 		adopt(s, e, args.sampleRate);
+		s.fading = 0;
 		s.pitch.set(e.pitch);
 	}
 
@@ -322,8 +376,11 @@ struct VoiceModule : Module {
 	void adopt(Slot& s, const Event& e, float sampleRate) {
 		s.active = true;
 		s.handle = e.handle;
-		s.level = e.level;
-		s.pan = e.pan;
+		const int rise = std::max(RISE_MIN, std::min(
+			(int) (RISE_MS * 0.001f * sampleRate),
+			(int) (e.duration * sampleRate / 4.f)));
+		s.level.to(e.level, rise);
+		s.pan.to(e.pan, rise);
 		s.duration = e.duration;
 		s.bendRange = e.bendRange;
 		s.started = ordinal++;
@@ -370,15 +427,22 @@ struct VoiceModule : Module {
 // Written here rather than in a file that ships, so the default cannot fall out of step with
 // the module. What a person moves is saved over the top of it — see Layout.hpp.
 
-static const float CTRL_X = 18.f;
-static const float JACK_X = 55.f;
-static const float JACK_LABEL_X = 47.5f;
-static const float JACK_TOP = 38.f;
-static const float JACK_PITCH = 10.4f;
+// YOUR ARRANGEMENT, TIDIED. The positions are the ones you set in the editor; what changed is
+// that the control column now agrees on one x rather than four within a millimetre of each
+// other, the jack column steps by exactly its pitch, and every value is on a half millimetre.
+
+static const float CTRL_X = 13.f;        /**< The note jack and both knobs, on one axis. */
+static const float LAMP_X = 5.f;         /**< The rollover track's left edge, names to its right. */
+static const float JACK_X = 49.f;        /**< The lanes, one column. */
+static const float JACK_LABEL_DX = -7.f; /**< Their names, ending just short of them. */
+static const float JACK_TOP = 25.f;
+static const float JACK_PITCH = 11.3f;
+/** The counts ringed round POLYPHONY, outside the knob rather than on it. */
+static const float POLY_RING = 10.2f;
 
 static Layout fromMPXLayout() {
 	Layout L;
-	L.hp = 14.f;
+	L.hp = 12.f;
 	L.title = "fromMPX";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -394,34 +458,34 @@ static Layout fromMPXLayout() {
 		Item i;
 		i.key = key; i.kind = Item::PORT_OUT; i.id = id; i.x = JACK_X; i.y = y; i.ring = color;
 		L.items.push_back(i);
-		label((std::string(key) + ".label").c_str(), JACK_LABEL_X, y, name, Panel::RIGHT,
-			false, 0.f, key);
+		label((std::string(key) + ".label").c_str(), JACK_X + JACK_LABEL_DX, y, name,
+			Panel::RIGHT, false, 0.f, key);
 	};
 
-	// The cable comes in at the top of the control column, above everything it feeds.
+	// The cable in at the top of the control column, above everything it feeds.
 	Item note;
 	note.key = "in.voice"; note.kind = Item::PORT_IN; note.id = VoiceModule::I_NOTE;
-	note.x = CTRL_X; note.y = 38.f; note.ring = NOTE_CABLE;
+	note.x = CTRL_X; note.y = 24.5f; note.ring = NOTE_CABLE;
 	L.items.push_back(note);
-	label("in.voice.label", CTRL_X, 45.5f, "voice", Panel::CENTRE, false, 0.f, "in.voice");
+	label("in.voice.label", CTRL_X, 32.f, "mpxIn", Panel::CENTRE, false, 0.f, "in.voice");
 	Item lamp;
 	lamp.key = "lamp.linked"; lamp.kind = Item::LIGHT; lamp.id = VoiceModule::L_LINKED;
-	lamp.x = CTRL_X + 8.5f; lamp.y = 34.f; lamp.owner = "in.voice";
+	lamp.x = CTRL_X; lamp.y = 13.f; lamp.owner = "in.voice";
 	L.items.push_back(lamp);
 
-	// How many notes this instrument can hold at once, with the count printed round the knob
-	// so the setting can be read without a tooltip.
+	// How many notes this instrument can hold at once, with the count printed round the knob so
+	// the setting can be read without a tooltip.
 	Item poly;
 	poly.key = "p.poly"; poly.kind = Item::PARAM; poly.id = VoiceModule::P_POLY;
-	poly.style = "knob.huge"; poly.x = CTRL_X; poly.y = 62.f;
+	poly.style = "knob.large"; poly.x = CTRL_X; poly.y = 49.f;
 	L.items.push_back(poly);
-	label("p.poly.label", CTRL_X, 77.5f, "VOICES", Panel::CENTRE, true, 0.f, "p.poly");
+	label("p.poly.label", CTRL_X, 62.f, "POLYPHONY", Panel::CENTRE, true, 0.f, "p.poly");
 	for (int i = 1; i <= 8; i++) {
 		// Eight of the sixteen are marked; marking all sixteen would be a ring of numbers too
 		// small to read and too close together to tell apart.
-		const float a = (-0.75f + (i - 1) / 7.f * 1.5f) * (float) M_PI;
+		const float a = (-0.78f + (i - 1) / 7.f * 1.56f) * (float) M_PI;
 		label(("p.poly.n" + std::to_string(i)).c_str(),
-			CTRL_X + std::sin(a) * 13.f, 62.f - std::cos(a) * 13.f,
+			CTRL_X + std::sin(a) * POLY_RING, 49.f - std::cos(a) * POLY_RING,
 			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.poly");
 	}
 
@@ -429,30 +493,33 @@ static Layout fromMPXLayout() {
 	// detents says nothing about what the five are.
 	Item roll;
 	roll.key = "p.rollover"; roll.kind = Item::PARAM; roll.id = VoiceModule::P_ROLLOVER;
-	roll.style = "lamps"; roll.x = CTRL_X + 3.f; roll.y = 84.f;
-	roll.w = 6.f; roll.h = 32.f; roll.pitch = 7.2f;
-	roll.names = {"OLDEST", "QUIETEST", "IGNORE", "GLIDE", "LEGATO"};
-	roll.labelSide = Panel::LEFT;
+	roll.style = "lamps"; roll.x = LAMP_X; roll.y = 66.f;
+	roll.w = 6.f; roll.h = 34.f; roll.pitch = 7.8f;
+	roll.names = {"OLDEST", "QUIETEST", "IGNORE\nNEWEST", "GLIDE", "LEGATO"};
+	roll.labelSide = Panel::RIGHT;
 	L.items.push_back(roll);
 
 	Item glide;
 	glide.key = "p.glide"; glide.kind = Item::PARAM; glide.id = VoiceModule::P_GLIDE;
-	glide.x = CTRL_X - 5.f; glide.y = 121.f;
+	glide.style = "knob"; glide.x = CTRL_X; glide.y = 113.f;
 	L.items.push_back(glide);
-	label("p.glide.label", CTRL_X + 2.f, 121.f, "GLIDE", Panel::LEFT, true, 0.f, "p.glide");
+	// Two lines, because the words do not fit across a panel this width on one and a name that
+	// runs off the edge is worse than a name in two pieces.
+	label("p.glide.label", CTRL_X, 120.5f, "GLIDE/LEGATO", Panel::CENTRE, true, 0.f, "p.glide");
+	label("p.glide.label2", CTRL_X, 125.5f, "TIME", Panel::CENTRE, true, 0.f, "p.glide");
 
-	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how hard
-	// it was struck, then everything that moves while it sounds.
+	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how far
+	// it has moved, how hard it was struck, then what changes while it sounds.
 	float y = JACK_TOP;
-	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);        y += JACK_PITCH;
-	outJack("out.pitch", y, VoiceModule::O_PITCH, "1V/oct", SIG_PITCH);   y += JACK_PITCH;
-	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);       y += JACK_PITCH;
-	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);          y += JACK_PITCH;
+	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);           y += JACK_PITCH;
+	outJack("out.pitch", y, VoiceModule::O_PITCH, "1V/oct", SIG_PITCH);      y += JACK_PITCH;
+	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);             y += JACK_PITCH;
 	outJack("out.bendv", y, VoiceModule::O_BENDV, "bend 1V/oct", SIG_PITCH); y += JACK_PITCH;
-	outJack("out.press", y, VoiceModule::O_PRESSURE, "pressure", SIG_CV); y += JACK_PITCH;
-	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timbre", SIG_CV);      y += JACK_PITCH;
-	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);             y += JACK_PITCH;
-	outJack("out.dur", y, VoiceModule::O_DURATION, "duration", SIG_CV);
+	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);          y += JACK_PITCH;
+	outJack("out.dur", y, VoiceModule::O_DURATION, "duration", SIG_CV);      y += JACK_PITCH;
+	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);                y += JACK_PITCH;
+	outJack("out.press", y, VoiceModule::O_PRESSURE, "pressure", SIG_CV);    y += JACK_PITCH;
+	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timbre", SIG_CV);
 	L.bindOffsets();
 	return L;
 }

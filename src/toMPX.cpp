@@ -77,8 +77,17 @@ struct NoteModule : Module {
 		// Semitones, but not whole ones. A quarter-tone bend, a scale that is not twelve-tone
 		// and a range set by ear are all ordinary things to want, and a knob that stopped only
 		// on integers would refuse all three.
-		configParam(P_BEND_RANGE, 0.1f, 24.f, 2.f, "Bend range", " semitones");
-		configSwitch(P_ENDS, 0.f, 1.f, 0.f, "Note ends", {"At the gate's fall", "At its duration"});
+		// Zero is a real setting and not a mistake: it means any movement at all reaches full
+		// deflection, which is the most sensitive the control output can be. The volts-per-octave
+		// bend output is unscaled either way, so nothing is lost there.
+		configParam(P_BEND_RANGE, 0.f, 12.f, 2.f, "Bend range", " semitones");
+		// DURATION FIRST, because a note carrying its own length is what this whole domain is
+		// about; the gate cutting one short is the exception. The second position is named for
+		// what it does rather than for which signal it watches: the gate can only ever end a
+		// note EARLY, since duration is a maximum in both positions.
+		configSwitch(P_ENDS, 0.f, 1.f, 0.f, "Note ends",
+			{"At its duration, whatever the gate does",
+			 "At the gate's fall or its duration, whichever comes first"});
 
 		configInput(I_GATE, "Gate");
 		configInput(I_PITCH, "1V/oct");
@@ -119,7 +128,7 @@ struct NoteModule : Module {
 		updatePhase = (updatePhase + 1) & (UPDATE_EVERY - 1);
 
 		const float bendRange = params[P_BEND_RANGE].getValue();
-		const bool holds = params[P_ENDS].getValue() > 0.5f;
+		const bool holds = params[P_ENDS].getValue() < 0.5f;
 		bool anyOn = false;
 
 		for (int c = 0; c < 16; c++) {
@@ -273,12 +282,27 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
 // The one thing DreamRack does not have to show is four cables out. It has one, because a page
 // is one instrument; here four instruments is four cables, so OUT is a column of its own.
 
-static const float COL[3] = {14.f, 40.6f, 67.f};   // millimetres
+// YOUR ARRANGEMENT, TIDIED. Three columns — the jacks, the knobs that stand in for them when
+// nothing is patched, and bend on its own — with the rows stepping by one pitch rather than by
+// whatever each drag happened to land on. Where a knob and a jack are the same setting they now
+// share a row exactly, which is the whole reason they are side by side.
 
+static const float JACK_X = 9.5f;
+static const float KNOB_X = 23.f;
+static const float BEND_X = 36.5f;
+static const float OUT_X = 48.f;
+static const float ROW_TOP = 17.5f;
+static const float ROW_PITCH = 19.5f;
+/** The bend range ring, outside the knob rather than on it. */
+static const float BEND_RING = 10.f;
+
+static float row(int n) {
+	return ROW_TOP + n * ROW_PITCH;
+}
 
 static Layout toMPXLayout() {
 	Layout L;
-	L.hp = 16.f;
+	L.hp = 12.f;
 	L.title = "toMPX";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -290,74 +314,85 @@ static Layout toMPXLayout() {
 		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
-	auto inJack = [&](const char* key, float x, float y, int id, const char* name,
-			NVGcolor color) {
+	auto jack = [&](const char* key, Item::Kind kind, float x, float y, int id,
+			const char* name, NVGcolor color) {
 		Item i;
-		i.key = key; i.kind = Item::PORT_IN; i.id = id; i.x = x; i.y = y; i.ring = color;
+		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y; i.ring = color;
 		L.items.push_back(i);
 		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
 			Panel::CENTRE, false, 0.f, key);
 	};
-	auto knob = [&](const char* key, float x, float y, int id, const char* style) {
+	auto knob = [&](const char* key, float x, float y, int id, const char* name) {
 		Item i;
-		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = style;
+		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y;
+		i.style = "knob.large";
 		L.items.push_back(i);
+		label((std::string(key) + ".label").c_str(), x, y + 8.5f, name,
+			Panel::CENTRE, true, 0.f, key);
 	};
 
-	// What arrives, at the top. The gate is the note: everything else is read at its edge.
-	label("h.in", 9.f, 36.f, "IN", Panel::LEFT, true);
-	inJack("in.gate", COL[0], 46.f, NoteModule::I_GATE, "gate", SIG_GATE);
-	inJack("in.pitch", COL[1], 46.f, NoteModule::I_PITCH, "v/oct", SIG_PITCH);
+	// What arrives. The gate is the note: everything else is read at its rising edge.
+	jack("in.pitch", Item::PORT_IN, JACK_X, row(0), NoteModule::I_PITCH, "1V/oct", SIG_PITCH);
+	jack("in.gate", Item::PORT_IN, JACK_X, row(1), NoteModule::I_GATE, "gate", SIG_GATE);
+
+	// THE JACK AND ITS KNOB ON ONE ROW. Each pair is one setting: the knob is what the note
+	// carries, and a cable in the jack beside it takes over.
+	jack("in.level", Item::PORT_IN, JACK_X, row(2), NoteModule::I_LEVEL, "level", SIG_CV);
+	knob("p.level", KNOB_X, row(2), NoteModule::P_LEVEL, "LEVEL");
+	jack("in.dur", Item::PORT_IN, JACK_X, row(3), NoteModule::I_DURATION, "duration", SIG_CV);
+	knob("p.dur", KNOB_X, row(3), NoteModule::P_DURATION, "DURATION");
+	jack("in.pan", Item::PORT_IN, JACK_X, row(4), NoteModule::I_PAN, "pan", SIG_CV);
+	knob("p.pan", KNOB_X, row(4), NoteModule::P_PAN, "PAN");
+
+	// These two only ever arrive on a cable: there is nothing sensible for a still control to
+	// say, and an unpatched one sends nothing at all rather than sending zero.
+	jack("in.press", Item::PORT_IN, JACK_X, row(5), NoteModule::I_PRESSURE, "pressure", SIG_CV);
+	jack("in.timb", Item::PORT_IN, KNOB_X, row(5), NoteModule::I_TIMBRE, "timbre", SIG_CV);
+
+	// Bend has no jack of its own: it is the pitch input's movement measured from what the note
+	// started on, so all it needs is how far full deflection reaches.
+	knob("p.bend", BEND_X, 28.f, NoteModule::P_BEND_RANGE, "BEND RANGE");
+	for (int i = 0; i <= 6; i++) {
+		const float a = (-0.78f + i / 6.f * 1.56f) * (float) M_PI;
+		label(("p.bend.n" + std::to_string(i)).c_str(),
+			BEND_X + std::sin(a) * BEND_RING, 28.f - std::cos(a) * BEND_RING,
+			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.bend");
+	}
 
 	// What ends a note, as two named lamps rather than a switch whose two positions are only
-	// distinguishable by which way it is leaning.
-	label("h.ends", 9.f, 51.f, "NOTE ENDS AT", Panel::LEFT);
+	// distinguishable by which way it is leaning — and headed, because two words on their own
+	// say what they are but not what they are about.
+	label("h.ends", BEND_X, 51.f, "NOTE ENDS AT", Panel::CENTRE, true);
 	Item ends;
 	ends.key = "p.ends"; ends.kind = Item::PARAM; ends.id = NoteModule::P_ENDS;
-	ends.style = "lamps"; ends.x = 9.f; ends.y = 55.f;
-	ends.w = 2.f; ends.h = 6.f; ends.pitch = 17.f; ends.horizontal = true;
-	ends.names = {"GATE", "HOLD"};
+	ends.style = "lamps"; ends.x = BEND_X - 3.f; ends.y = 56.f;
+	ends.w = 6.f; ends.h = 18.f; ends.pitch = 11.f;
+	// Read under the heading, each of these is a whole sentence: the note ends at its duration,
+	// or at whichever of the gate and the duration comes first. Naming both signals in the
+	// second is what says the gate can only ever end a note EARLY.
+	ends.names = {"DURATION", "GATE OR\nDURATION"};
 	ends.labelSide = Panel::RIGHT;
 	L.items.push_back(ends);
 
-	// THE KNOB ABOVE, ITS CABLE BELOW. Each of these three is one setting: the knob is what the
-	// note carries, and a cable in the jack under it takes over. Stacked because that is the
-	// relationship; side by side would have made them six things.
-	label("h.held", 9.f, 62.f, "HELD AT THE GATE", Panel::LEFT, true);
-	knob("p.level", COL[0], 74.f, NoteModule::P_LEVEL, "knob.large");
-	label("p.level.label", COL[0], 82.5f, "LEVEL", Panel::CENTRE, true, 0.f, "p.level");
-	inJack("in.level", COL[0], 92.f, NoteModule::I_LEVEL, "level", SIG_CV);
-
-	knob("p.dur", COL[1], 74.f, NoteModule::P_DURATION, "knob.large");
-	label("p.dur.label", COL[1], 82.5f, "DURATION", Panel::CENTRE, true, 0.f, "p.dur");
-	inJack("in.dur", COL[1], 92.f, NoteModule::I_DURATION, "duration", SIG_CV);
-
-	knob("p.pan", COL[2], 74.f, NoteModule::P_PAN, "knob.large");
-	label("p.pan.label", COL[2], 82.5f, "PAN", Panel::CENTRE, true, 0.f, "p.pan");
-	inJack("in.pan", COL[2], 92.f, NoteModule::I_PAN, "pan", SIG_CV);
-
-	// The two that keep moving have no knob, because there is nothing sensible for a still
-	// control to say: an unpatched one sends nothing at all rather than sending zero.
-	label("h.moving", 9.f, 106.f, "WHILE IT SOUNDS", Panel::LEFT, true);
-	inJack("in.press", COL[0], 116.f, NoteModule::I_PRESSURE, "pressure", SIG_CV);
-	inJack("in.timb", COL[1], 116.f, NoteModule::I_TIMBRE, "timbre", SIG_CV);
-	knob("p.bend", COL[1], 74.f, NoteModule::P_BEND_RANGE, "knob");
-	label("p.bend.label", COL[1], 62.f, "BEND RANGE", Panel::CENTRE, false, 0.f, "p.bend");
-
-	// ONE CABLE OUT. A polyphonic cable in Rack carries one instrument's voices, so a module
-	// looking at one has one instrument to hand on. Four instruments is four of these, which
-	// costs little: they are adapters, and they leave the patch entirely once a source speaks
-	// MPX for itself.
-	label("h.out", COL[2], 106.f, "OUT", Panel::CENTRE, true);
+	// One cable out. A polyphonic cable in Rack carries one instrument's voices, so a module
+	// looking at one has one instrument to hand on.
+	label("h.out", OUT_X, 105.f, "mpxOut", Panel::CENTRE, true);
 	Item out;
 	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
-	out.x = COL[2]; out.y = 116.f; out.ring = NOTE_CABLE;
+	out.x = OUT_X; out.y = row(5); out.ring = NOTE_CABLE;
 	L.items.push_back(out);
-	label("out.voice.label", COL[2], 123.5f, "voice", Panel::CENTRE, false, 0.f, "out.voice");
+	label("out.voice.label", OUT_X, row(5) + 7.5f, "note", Panel::CENTRE, false, 0.f,
+		"out.voice");
+	L.find("out.voice.label")->hidden = true;
 	Item lamp;
 	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
-	lamp.x = COL[2] + 9.f; lamp.y = 111.f; lamp.owner = "out.voice";
+	lamp.x = OUT_X - 8.f; lamp.y = row(5); lamp.owner = "out.voice";
 	L.items.push_back(lamp);
+
+	// The NOTE heading you took out. Kept in the layout so the editor can bring it back.
+	label("h.note", 6.f, 49.5f, "NOTE", Panel::LEFT, true);
+	L.find("h.note")->hidden = true;
+
 	L.bindOffsets();
 	return L;
 }

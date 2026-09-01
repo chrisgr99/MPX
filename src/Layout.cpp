@@ -16,6 +16,12 @@ Item* Layout::find(const std::string& key) {
 }
 
 void Layout::bindOffsets() {
+	// Whatever the code has just said each label is called, before any saved file is read.
+	for (Item& item : items) {
+		if (item.kind == Item::LABEL)
+			item.defaultText = item.text;
+	}
+
 	for (Item& item : items) {
 		if (item.owner.empty())
 			continue;

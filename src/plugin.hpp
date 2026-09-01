@@ -69,6 +69,10 @@ struct Lamps : ParamWidget {
 	float pitch = 18.f;
 	/** Where the names sit relative to the lamps. */
 	Panel::Align labelSide = Panel::LEFT;
+	/** A horizontal pair with its names on the outside: the first to the left of its lamp, the
+	rest to the right. Two lamps with both names on the right will not fit across a narrow
+	panel, and this is how DreamRack draws the same switch. */
+	bool labelsOutward = false;
 
 	void draw(const DrawArgs& args) override;
 	void onButton(const ButtonEvent& e) override;

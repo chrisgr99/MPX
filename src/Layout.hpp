@@ -60,6 +60,7 @@ struct Item {
 	bool horizontal = false;
 	float pitch = 8.f;
 	Panel::Align labelSide = Panel::LEFT;
+	bool labelsOutward = false;
 	float w = 6.f, h = 30.f;
 
 	/** PORT: the signal-family ring drawn behind it. Fully transparent means none. */
@@ -72,6 +73,11 @@ struct Item {
 
 	/** LABEL. */
 	std::string text;
+	/** What the module called this label, kept so a saved file can tell a name the user typed
+	from one they never touched. Only a name they typed is written out; otherwise every wording
+	improved in the code would be invisible to anyone who had ever saved a layout — which is how
+	a bend ring went on printing 0 to 24 after the knob had been changed to 0 to 12. */
+	std::string defaultText;
 	Panel::Align align = Panel::CENTRE;
 	bool heading = false;
 	float size = 0.f;

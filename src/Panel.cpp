@@ -126,7 +126,8 @@ void Panel::draw(const DrawArgs& args) {
 
 // ---- the lamp list ---------------------------------------------------------------------------
 
-static const float LAMP_R = 4.2f;
+/** In pixels. Large enough to read as a lamp at rack distance rather than as a dot. */
+static const float LAMP_R = 6.5f;
 
 math::Vec Lamps::lampPos(int i) {
 	return horizontal ? math::Vec(LAMP_R + i * pitch, box.size.y / 2.f)
@@ -196,13 +197,20 @@ void Lamps::draw(const DrawArgs& args) {
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFontSize(args.vg, 8.f);
 		nvgFillColor(args.vg, on ? PANEL_INK : PANEL_DIM);
-		if (labelSide == Panel::RIGHT) {
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, c.x + LAMP_R + 5.f, c.y, names[i].c_str(), NULL);
+		// A NAME MAY BE TWO LINES, split on a newline and set either side of the lamp's own
+		// line. Two short lines beside a lamp read better than one long one that pushes the
+		// panel wider than it needs to be.
+		const bool onLeft = labelsOutward ? (i == 0) : (labelSide == Panel::LEFT);
+		const float tx = onLeft ? c.x - LAMP_R - 5.f : c.x + LAMP_R + 5.f;
+		nvgTextAlign(args.vg, (onLeft ? NVG_ALIGN_RIGHT : NVG_ALIGN_LEFT) | NVG_ALIGN_MIDDLE);
+		const std::string& name = names[i];
+		const size_t brk = name.find('\n');
+		if (brk == std::string::npos) {
+			nvgText(args.vg, tx, c.y, name.c_str(), NULL);
 		}
 		else {
-			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, c.x - LAMP_R - 5.f, c.y, names[i].c_str(), NULL);
+			nvgText(args.vg, tx, c.y - 4.5f, name.substr(0, brk).c_str(), NULL);
+			nvgText(args.vg, tx, c.y + 4.5f, name.substr(brk + 1).c_str(), NULL);
 		}
 	}
 }
