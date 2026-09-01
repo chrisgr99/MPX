@@ -36,13 +36,14 @@ PLUGIN_DIR = $(RACK_USER_DIR)/plugins-mac-arm64/$(SLUG)
 # signed ad-hoc, which is what Apple Silicon requires of any library it is asked to load.
 dev: $(TARGET)
 	@rm -f "$(RACK_USER_DIR)/plugins-mac-arm64/"$(SLUG)-*.vcvplugin
+	@codesign --force --sign - $(TARGET) 2>/dev/null || true
 	@mkdir -p "$(PLUGIN_DIR)"
 	@rm -f "$(PLUGIN_DIR)/plugin.dylib"
 	@cp $(TARGET) "$(PLUGIN_DIR)/plugin.dylib"
 	@cp plugin.json "$(PLUGIN_DIR)/"
 	@cp LICENSE "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@xattr -c "$(PLUGIN_DIR)/plugin.dylib" 2>/dev/null || true
-	@codesign --force --sign - "$(PLUGIN_DIR)/plugin.dylib" 2>/dev/null || true
+	@codesign -v "$(PLUGIN_DIR)/plugin.dylib" && echo "signature valid"
 	@echo "installed to $(PLUGIN_DIR)"
 
 .PHONY: dev

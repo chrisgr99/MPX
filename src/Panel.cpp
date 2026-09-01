@@ -18,10 +18,10 @@ const NVGcolor SIG_CV = nvgRGB(0xff, 0x73, 0x00);
 const NVGcolor SIG_GATE = nvgRGB(0x5a, 0xa0, 0xe6);
 const NVGcolor SIG_PITCH = nvgRGB(0x39, 0xa8, 0x5a);
 
-// Voice cables are drawn in this, and so are the jacks at each end, so the domain shows in a
-// patch without anybody having to remember what was plugged in where. Violet: no signal family
+// MPX ports are drawn in this, and so is any cable landing on one, so the domain shows in a
+// patch without anybody having to remember what was plugged in where. Magenta: no signal family
 // uses it, and it is not a colour Rack offers from its own palette either.
-const NVGcolor NOTE_CABLE = nvgRGB(0xa8, 0x7c, 0xff);
+const NVGcolor NOTE_CABLE = nvgRGB(0xff, 0x3c, 0xc8);
 
 
 static std::shared_ptr<window::Font> bodyFont() {

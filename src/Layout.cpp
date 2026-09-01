@@ -820,6 +820,24 @@ void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* la
 			}));
 	}
 
+	// A LAYOUT SAVED BEFORE THE WORDING RULE carries a text for every label, including ones
+	// nobody typed, and those override whatever the module now calls them. Nothing in the file
+	// can tell the two apart, so this is the way back.
+	bool renamed = false;
+	for (const Item& item : layout->items) {
+		if (item.kind == Item::LABEL && item.text != item.defaultText)
+			renamed = true;
+	}
+	if (renamed) {
+		menu->addChild(createMenuItem("Restore the built-in wording", "",
+			[panel, layout, slug]() {
+				for (Item& item : layout->items)
+					item.text = item.defaultText;
+				layoutRefreshPanel(panel, *layout);
+				layoutSaveUser(slug, *layout);
+			}));
+	}
+
 	if (layoutHasUser(slug)) {
 		menu->addChild(createMenuItem("Forget my layout", "", [slug]() {
 			// Takes effect when the module is next created, because rebuilding a module's

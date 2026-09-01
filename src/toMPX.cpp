@@ -314,13 +314,17 @@ static Layout toMPXLayout() {
 		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
+	// `name` may be empty, and then the jack gets none. THE KNOB BESIDE IT ALREADY SAYS WHAT IT
+	// IS: a jack labelled "level" next to a knob labelled LEVEL is the same word twice, and the
+	// second one only tells you that the panel was generated rather than laid out.
 	auto jack = [&](const char* key, Item::Kind kind, float x, float y, int id,
 			const char* name, NVGcolor color) {
 		Item i;
 		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y; i.ring = color;
 		L.items.push_back(i);
-		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
-			Panel::CENTRE, false, 0.f, key);
+		if (name && name[0])
+			label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
+				Panel::CENTRE, false, 0.f, key);
 	};
 	auto knob = [&](const char* key, float x, float y, int id, const char* name) {
 		Item i;
@@ -337,11 +341,11 @@ static Layout toMPXLayout() {
 
 	// THE JACK AND ITS KNOB ON ONE ROW. Each pair is one setting: the knob is what the note
 	// carries, and a cable in the jack beside it takes over.
-	jack("in.level", Item::PORT_IN, JACK_X, row(2), NoteModule::I_LEVEL, "level", SIG_CV);
+	jack("in.level", Item::PORT_IN, JACK_X, row(2), NoteModule::I_LEVEL, "", SIG_CV);
 	knob("p.level", KNOB_X, row(2), NoteModule::P_LEVEL, "LEVEL");
-	jack("in.dur", Item::PORT_IN, JACK_X, row(3), NoteModule::I_DURATION, "duration", SIG_CV);
+	jack("in.dur", Item::PORT_IN, JACK_X, row(3), NoteModule::I_DURATION, "", SIG_CV);
 	knob("p.dur", KNOB_X, row(3), NoteModule::P_DURATION, "DURATION");
-	jack("in.pan", Item::PORT_IN, JACK_X, row(4), NoteModule::I_PAN, "pan", SIG_CV);
+	jack("in.pan", Item::PORT_IN, JACK_X, row(4), NoteModule::I_PAN, "", SIG_CV);
 	knob("p.pan", KNOB_X, row(4), NoteModule::P_PAN, "PAN");
 
 	// These two only ever arrive on a cable: there is nothing sensible for a still control to
@@ -362,7 +366,7 @@ static Layout toMPXLayout() {
 	// What ends a note, as two named lamps rather than a switch whose two positions are only
 	// distinguishable by which way it is leaning — and headed, because two words on their own
 	// say what they are but not what they are about.
-	label("h.ends", BEND_X, 51.f, "NOTE ENDS AT", Panel::CENTRE, true);
+	label("h.ends", BEND_X, 51.f, "NOTES END AT", Panel::CENTRE, true);
 	Item ends;
 	ends.key = "p.ends"; ends.kind = Item::PARAM; ends.id = NoteModule::P_ENDS;
 	ends.style = "lamps"; ends.x = BEND_X - 3.f; ends.y = 56.f;
@@ -381,17 +385,10 @@ static Layout toMPXLayout() {
 	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
 	out.x = OUT_X; out.y = row(5); out.ring = NOTE_CABLE;
 	L.items.push_back(out);
-	label("out.voice.label", OUT_X, row(5) + 7.5f, "note", Panel::CENTRE, false, 0.f,
-		"out.voice");
-	L.find("out.voice.label")->hidden = true;
 	Item lamp;
 	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
 	lamp.x = OUT_X - 8.f; lamp.y = row(5); lamp.owner = "out.voice";
 	L.items.push_back(lamp);
-
-	// The NOTE heading you took out. Kept in the layout so the editor can bring it back.
-	label("h.note", 6.f, 49.5f, "NOTE", Panel::LEFT, true);
-	L.find("h.note")->hidden = true;
 
 	L.bindOffsets();
 	return L;
