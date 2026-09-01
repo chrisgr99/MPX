@@ -37,13 +37,11 @@ struct Panel : widget::Widget {
 		bool heading = false;
 		Align align = CENTRE;
 		float size = 0.f;   /**< Overrides the default size for this label. */
-		/** Deleted. Drawn only while the panel is being edited, and faintly, so the slot can
-		be seen and the deletion taken back. */
+		/** Deleted, and so not drawn at all. Bringing one back is a menu item rather than
+		something you can point at, because a panel with ghosts on it cannot be judged. */
 		bool hidden = false;
 	};
 	std::vector<Label> labels;
-	/** Set by the editor. A deleted label is nothing at all to everybody else. */
-	bool showHidden = false;
 
 	/** A coloured ring behind a jack, saying what family of signal it carries. Drawn by the
 	panel rather than by a widget of its own, because it sits underneath the port and the panel

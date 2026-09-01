@@ -429,9 +429,6 @@ struct PanelEditor : widget::OpaqueWidget {
 	clicks first in the ordinary way. */
 	void setEditing(bool on) {
 		visible = on;
-		// A deleted label reappears faintly while the panel is being edited, so the empty slot
-		// can be seen and the deletion taken back. Outside the mode it is simply gone.
-		panel->showHidden = on;
 		if (on) {
 			APP->event->setSelectedWidget(this);
 		}
@@ -439,10 +436,7 @@ struct PanelEditor : widget::OpaqueWidget {
 			// SAVED ON THE WAY OUT, if anything moved. Work that survives only until the
 			// module is deleted is work you lose without being told, and this has already
 			// happened once. "Forget my layout" is the way back, so nothing here is a trap.
-			if (dirty) {
-				layoutSaveUser(slug, *layout);
-				dirty = false;
-			}
+			saveNow();
 			selection.clear();
 			if (APP->event->getSelectedWidget() == this)
 				APP->event->setSelectedWidget(NULL);
@@ -458,6 +452,19 @@ struct PanelEditor : widget::OpaqueWidget {
 	/** Deletes, or brings back, whichever labels are selected. Labels only: a jack or a knob
 	still exists in the module whether it is drawn or not, so taking one off the panel would
 	leave a control that cannot be reached and a patch that cannot be made. */
+	/** Writes the layout if anything has changed since the last time.
+
+	CALLED AT THE END OF EVERY GESTURE, not only when the mode is left. Saving on the way out
+	assumed the mode is always left, and quitting Rack with it still on does not leave it — the
+	scene is torn down and nothing is asked. A file of a few hundred bytes once per drag is
+	nothing; losing an afternoon's arranging is not. */
+	void saveNow() {
+		if (!dirty)
+			return;
+		layoutSaveUser(slug, *layout);
+		dirty = false;
+	}
+
 	void toggleDeleteSelected() {
 		bool any = false;
 		for (int i : selection) {
@@ -470,6 +477,7 @@ struct PanelEditor : widget::OpaqueWidget {
 		if (any) {
 			layoutRefreshPanel(panel, *layout);
 			dirty = true;
+			saveNow();
 		}
 	}
 
@@ -604,6 +612,7 @@ struct PanelEditor : widget::OpaqueWidget {
 		}
 		grabbed = -1;
 		guideX = guideY = -1.f;
+		saveNow();
 		widget::OpaqueWidget::onDragEnd(e);
 	}
 
@@ -706,6 +715,7 @@ struct LabelField : ui::TextField {
 			editor->layout->items[index].text = text;
 			layoutRefreshPanel(editor->panel, *editor->layout);
 			editor->dirty = true;
+			editor->saveNow();
 			close();
 			e.consume(this);
 			return;
@@ -733,6 +743,7 @@ void PanelEditor::editText(int index) {
 			self->layout->items[index].hidden = !self->layout->items[index].hidden;
 			layoutRefreshPanel(self->panel, *self->layout);
 			self->dirty = true;
+			self->saveNow();
 		}));
 }
 
@@ -782,6 +793,25 @@ void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* la
 			if (editor)
 				editor->dirty = false;
 		}));
+	}
+
+	// Deleted labels cannot be pointed at, so this is the only way back to one. Shown only
+	// when there is something to bring back, and it says how many so the item is not a
+	// question about whether anything happened.
+	int deleted = 0;
+	for (const Item& item : layout->items) {
+		if (item.kind == Item::LABEL && item.hidden)
+			deleted++;
+	}
+	if (deleted > 0) {
+		menu->addChild(createMenuItem(
+			string::f("Bring back %d deleted label%s", deleted, deleted == 1 ? "" : "s"), "",
+			[panel, layout, slug]() {
+				for (Item& item : layout->items)
+					item.hidden = false;
+				layoutRefreshPanel(panel, *layout);
+				layoutSaveUser(slug, *layout);
+			}));
 	}
 
 	if (layoutHasUser(slug)) {

@@ -23,7 +23,6 @@ struct NoteModule : Module {
 		P_PAN,
 		P_BEND_RANGE,
 		P_ENDS,
-		P_NOTES,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -37,18 +36,13 @@ struct NoteModule : Module {
 		NUM_INPUTS
 	};
 	enum OutputId {
-		O_VOICE1,
-		NUM_OUTPUTS = O_VOICE1 + 4
+		O_VOICE,
+		NUM_OUTPUTS
 	};
 	enum LightId {
-		L_VOICE1,
-		NUM_LIGHTS = L_VOICE1 + 4
+		L_ACTIVE,
+		NUM_LIGHTS
 	};
-
-	/** Four voice cables out. The number is what a panel holds, not a limit in the transport:
-	each cable is polyphonic in its own right, so four cables is four instruments rather than
-	four notes. */
-	static const int VOICES = 4;
 
 	/** One of these per channel of the gate input, so a polyphonic source makes polyphonic
 	notes on ONE note cable. This is the whole reason the transport carries events: sixteen
@@ -57,9 +51,6 @@ struct NoteModule : Module {
 		bool on = false;
 		bool gateHigh = false;
 		int64_t handle = 0;
-		/** Which cable this note went out on, remembered rather than recomputed, so turning
-		the knob while a note sounds cannot send its end to a different cable. */
-		int voice = 0;
 		float heldPitch = 0.f;
 		int age = 0;
 		int len = 0;
@@ -70,8 +61,8 @@ struct NoteModule : Module {
 	};
 	Channel channels[16];
 
-	int slots[VOICES];
-	uint32_t generations[VOICES];
+	int slot = -1;
+	uint32_t generation = 0;
 	int updatePhase = 0;
 
 
@@ -88,12 +79,6 @@ struct NoteModule : Module {
 		// on integers would refuse all three.
 		configParam(P_BEND_RANGE, 0.1f, 24.f, 2.f, "Bend range", " semitones");
 		configSwitch(P_ENDS, 0.f, 1.f, 0.f, "Note ends", {"At the gate's fall", "At its duration"});
-		// HOW THE CHANNELS DIVIDE. Sixteen channels across four cables: at four notes each,
-		// channels one to four are the first voice, five to eight the second, and so on. At
-		// one note each it is four monophonic instruments; at eight, two polyphonic ones with
-		// the last two cables silent.
-		configParam(P_NOTES, 1.f, 16.f, 4.f, "Notes per voice");
-		paramQuantities[P_NOTES]->snapEnabled = true;
 
 		configInput(I_GATE, "Gate");
 		configInput(I_PITCH, "1V/oct");
@@ -102,16 +87,13 @@ struct NoteModule : Module {
 		configInput(I_PAN, "Pan");
 		configInput(I_PRESSURE, "Pressure");
 		configInput(I_TIMBRE, "Timbre");
-		for (int v = 0; v < VOICES; v++)
-			configOutput(O_VOICE1 + v, string::f("Voice %d", v + 1));
+		configOutput(O_VOICE, "Voice");
 
-		for (int v = 0; v < VOICES; v++)
-			slots[v] = busClaim(&generations[v]);
+		slot = busClaim(&generation);
 	}
 
 	~NoteModule() {
-		for (int v = 0; v < VOICES; v++)
-			busRelease(slots[v]);
+		busRelease(slot);
 	}
 
 	void onReset() override {
@@ -124,10 +106,8 @@ struct NoteModule : Module {
 		// saves it, undoes it, removes it with either module — and the events travel through
 		// the bus. Patching it into an oscillator therefore does nothing rather than something
 		// surprising.
-		for (int v = 0; v < VOICES; v++) {
-			outputs[O_VOICE1 + v].setChannels(1);
-			outputs[O_VOICE1 + v].setVoltage(0.f);
-		}
+		outputs[O_VOICE].setChannels(1);
+		outputs[O_VOICE].setVoltage(0.f);
 
 
 		// The gate decides how many notes this source can sound at once. A monophonic gate
@@ -140,8 +120,7 @@ struct NoteModule : Module {
 
 		const float bendRange = params[P_BEND_RANGE].getValue();
 		const bool holds = params[P_ENDS].getValue() > 0.5f;
-		const int perVoice = clamp((int) std::round(params[P_NOTES].getValue()), 1, 16);
-		bool anyOn[VOICES] = {};
+		bool anyOn = false;
 
 		for (int c = 0; c < 16; c++) {
 			Channel& ch = channels[c];
@@ -176,15 +155,6 @@ struct NoteModule : Module {
 
 				Event e;
 				e.kind = Event::ON;
-				// The channel's place in the division decides which cable it goes out on. A
-				// channel past the fourth voice has no cable and is dropped, which is what
-				// makes a high notes-per-voice setting silence the later outputs rather than
-				// fold them back onto the first.
-				ch.voice = c / perVoice;
-				if (ch.voice >= VOICES) {
-					ch.on = false;
-					continue;
-				}
 				e.handle = ch.handle = mintHandle();
 				e.pitch = ch.heldPitch = pitchNow;
 				// Each of these three takes its cable where there is one and its knob where
@@ -202,7 +172,7 @@ struct NoteModule : Module {
 					? clamp(inputs[I_PAN].getPolyVoltage(c) / 5.f, -1.f, 1.f)
 					: params[P_PAN].getValue();
 				e.bendRange = bendRange;
-				busPush(slots[ch.voice], e);
+				busPush(slot, e);
 
 				ch.on = true;
 				ch.age = 0;
@@ -258,32 +228,26 @@ struct NoteModule : Module {
 				ch.everSent = true;
 			}
 
-			if (ch.on && ch.voice < VOICES)
-				anyOn[ch.voice] = true;
+			anyOn |= ch.on;
 		}
 
-		for (int v = 0; v < VOICES; v++)
-			lights[L_VOICE1 + v].setBrightnessSmooth(anyOn[v] ? 1.f : 0.f, args.sampleTime);
+		lights[L_ACTIVE].setBrightnessSmooth(anyOn ? 1.f : 0.f, args.sampleTime);
 	}
 
 	void sendOff(const Channel& ch) {
-		if (ch.voice < 0 || ch.voice >= VOICES)
-			return;
 		Event e;
 		e.kind = Event::OFF;
 		e.handle = ch.handle;
-		busPush(slots[ch.voice], e);
+		busPush(slot, e);
 	}
 
 	void sendUpdate(const Channel& ch, Lane lane, float value) {
-		if (ch.voice < 0 || ch.voice >= VOICES)
-			return;
 		Event e;
 		e.kind = Event::UPDATE;
 		e.lane = (uint8_t) lane;
 		e.handle = ch.handle;
 		e.value = value;
-		busPush(slots[ch.voice], e);
+		busPush(slot, e);
 	}
 };
 
@@ -292,12 +256,11 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
 	NoteModule* note = dynamic_cast<NoteModule*>(module);
 	if (!note)
 		return -1;
-	const int v = outputId - NoteModule::O_VOICE1;
-	if (v < 0 || v >= NoteModule::VOICES)
+	if (outputId != NoteModule::O_VOICE)
 		return -1;
 	if (generation)
-		*generation = note->generations[v];
-	return note->slots[v];
+		*generation = note->generation;
+	return note->slot;
 }
 
 
@@ -310,14 +273,12 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
 // The one thing DreamRack does not have to show is four cables out. It has one, because a page
 // is one instrument; here four instruments is four cables, so OUT is a column of its own.
 
-static const float COL[3] = {15.f, 38.f, 61.f};   // millimetres
-/** The output column, kept apart from the three control columns because what leaves the module
-is not one more setting. */
-static const float OUT_X = 88.f;
+static const float COL[3] = {14.f, 40.6f, 67.f};   // millimetres
+
 
 static Layout toMPXLayout() {
 	Layout L;
-	L.hp = 20.f;
+	L.hp = 16.f;
 	L.title = "toMPX";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -380,31 +341,23 @@ static Layout toMPXLayout() {
 	label("h.moving", 9.f, 106.f, "WHILE IT SOUNDS", Panel::LEFT, true);
 	inJack("in.press", COL[0], 116.f, NoteModule::I_PRESSURE, "pressure", SIG_CV);
 	inJack("in.timb", COL[1], 116.f, NoteModule::I_TIMBRE, "timbre", SIG_CV);
-	knob("p.bend", COL[2], 116.f, NoteModule::P_BEND_RANGE, "knob");
-	label("p.bend.label", COL[2], 123.5f, "BEND RANGE", Panel::CENTRE, false, 0.f, "p.bend");
+	knob("p.bend", COL[1], 74.f, NoteModule::P_BEND_RANGE, "knob");
+	label("p.bend.label", COL[1], 62.f, "BEND RANGE", Panel::CENTRE, false, 0.f, "p.bend");
 
-	// The cables, down the right in their own column: four instruments, four cables. The NOTES
-	// knob belongs with them, because what it sets is how the sixteen channels arriving divide
-	// among these four.
-	label("h.out", OUT_X, 36.f, "OUT", Panel::CENTRE, true);
-	for (int v = 0; v < NoteModule::VOICES; v++) {
-		const float y = 48.f + v * 15.f;
-		const std::string key = "out.voice" + std::to_string(v + 1);
-		Item i;
-		i.key = key; i.kind = Item::PORT_OUT; i.id = NoteModule::O_VOICE1 + v;
-		i.x = OUT_X; i.y = y; i.ring = NOTE_CABLE;
-		L.items.push_back(i);
-		label((key + ".label").c_str(), OUT_X - 7.f, y, std::to_string(v + 1).c_str(),
-			Panel::RIGHT, false, 0.f, key.c_str());
-		Item lamp;
-		lamp.key = "lamp.voice" + std::to_string(v + 1); lamp.kind = Item::LIGHT;
-		lamp.id = NoteModule::L_VOICE1 + v; lamp.x = OUT_X + 7.f; lamp.y = y - 3.f;
-		lamp.owner = key;
-		L.items.push_back(lamp);
-	}
-	knob("p.notes", OUT_X, 116.f, NoteModule::P_NOTES, "knob");
-	label("p.notes.label", OUT_X, 123.f, "NOTES PER", Panel::CENTRE, false, 0.f, "p.notes");
-	label("p.notes.label2", OUT_X, 127.f, "VOICE", Panel::CENTRE, false, 0.f, "p.notes");
+	// ONE CABLE OUT. A polyphonic cable in Rack carries one instrument's voices, so a module
+	// looking at one has one instrument to hand on. Four instruments is four of these, which
+	// costs little: they are adapters, and they leave the patch entirely once a source speaks
+	// MPX for itself.
+	label("h.out", COL[2], 106.f, "OUT", Panel::CENTRE, true);
+	Item out;
+	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
+	out.x = COL[2]; out.y = 116.f; out.ring = NOTE_CABLE;
+	L.items.push_back(out);
+	label("out.voice.label", COL[2], 123.5f, "voice", Panel::CENTRE, false, 0.f, "out.voice");
+	Item lamp;
+	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
+	lamp.x = COL[2] + 9.f; lamp.y = 111.f; lamp.owner = "out.voice";
+	L.items.push_back(lamp);
 	L.bindOffsets();
 	return L;
 }
@@ -432,13 +385,11 @@ struct NoteWidget : ModuleWidget {
 		ModuleWidget::step();
 		if (!module)
 			return;
-		for (int v = 0; v < NoteModule::VOICES; v++) {
-			PortWidget* port = getOutput(NoteModule::O_VOICE1 + v);
-			if (!port)
-				continue;
-			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(port))
-				cw->color = NOTE_CABLE;
-		}
+		PortWidget* port = getOutput(NoteModule::O_VOICE);
+		if (!port)
+			return;
+		for (CableWidget* cw : APP->scene->rack->getCablesOnPort(port))
+			cw->color = NOTE_CABLE;
 	}
 };
 

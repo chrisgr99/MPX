@@ -10,11 +10,11 @@ The idea comes from MIDI Polyphonic Expression, which gives every sounding note 
 
 ## The modules
 
-**toMPX** gathers ordinary control voltages into voice cables. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, and four voice cables come out, each carrying one instrument's notes. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life. Bend, pressure and timbre are followed while the note sounds. The notes-per-voice knob decides how the sixteen channels divide among the four cables: at four notes each, channels one to four are the first voice, five to eight the second, and so on.
+**toMPX** gathers ordinary control voltages into one voice cable. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, and the cable carries every note they describe. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life. Bend, pressure and timbre are followed while the note sounds. A polyphonic gate makes several notes at once, all on the one cable.
 
 **fromMPX** takes one voice cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend as a control signal and as volts per octave, pressure, timbre, pan and duration. It allocates the notes among its voices, one channel per voice, so a polyphonic oscillator, envelope and amplifier patched to it play the notes with no adapter in between.
 
-The intended arrangement is one fromMPX among each group of modules that implements an instrument, with a voice cable running to it from wherever the notes come from. Four instruments is four cables.
+The intended arrangement is one fromMPX among each group of modules that implements an instrument, with a voice cable running to it from wherever the notes come from. Four instruments is four cables, and four toMPX modules to make them — a polyphonic cable in Rack carries one instrument's voices, so a module looking at one has one instrument to hand on. They are adapters, and they leave the patch entirely once a source speaks MPX for itself.
 
 ## How the cable works
 

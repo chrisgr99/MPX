@@ -100,15 +100,15 @@ void Panel::draw(const DrawArgs& args) {
 	}
 
 	for (const Label& label : labels) {
-		if (label.hidden && !showHidden)
+		// A deleted label is gone, in the editor as well as out of it. A ghost of it was
+		// meant to make the deletion reversible and instead made the panel impossible to
+		// judge, which is the one thing the editor is for.
+		if (label.hidden)
 			continue;
 		nvgFontFaceId(args.vg, label.heading && face && face->handle >= 0
 			? face->handle : font->handle);
 		nvgFontSize(args.vg, label.size > 0.f ? label.size : (label.heading ? 10.f : 8.f));
-		NVGcolor ink = label.heading ? PANEL_INK : PANEL_DIM;
-		if (label.hidden)
-			ink.a = 0.3f;
-		nvgFillColor(args.vg, ink);
+		nvgFillColor(args.vg, label.heading ? PANEL_INK : PANEL_DIM);
 		nvgTextAlign(args.vg, alignFlag(label.align) | NVG_ALIGN_MIDDLE);
 		nvgText(args.vg, label.x, label.y, label.text.c_str(), NULL);
 	}
