@@ -100,10 +100,15 @@ void Panel::draw(const DrawArgs& args) {
 	}
 
 	for (const Label& label : labels) {
+		if (label.hidden && !showHidden)
+			continue;
 		nvgFontFaceId(args.vg, label.heading && face && face->handle >= 0
 			? face->handle : font->handle);
 		nvgFontSize(args.vg, label.size > 0.f ? label.size : (label.heading ? 10.f : 8.f));
-		nvgFillColor(args.vg, label.heading ? PANEL_INK : PANEL_DIM);
+		NVGcolor ink = label.heading ? PANEL_INK : PANEL_DIM;
+		if (label.hidden)
+			ink.a = 0.3f;
+		nvgFillColor(args.vg, ink);
 		nvgTextAlign(args.vg, alignFlag(label.align) | NVG_ALIGN_MIDDLE);
 		nvgText(args.vg, label.x, label.y, label.text.c_str(), NULL);
 	}

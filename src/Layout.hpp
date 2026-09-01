@@ -65,6 +65,11 @@ struct Item {
 	/** PORT: the signal-family ring drawn behind it. Fully transparent means none. */
 	NVGcolor ring = nvgRGBA(0, 0, 0, 0);
 
+	/** LABEL: deleted. Kept in the layout rather than removed from it, because the layout the
+	code defines is what a saved file is laid over — an item that vanished from the list would
+	come straight back the next time the module was built. */
+	bool hidden = false;
+
 	/** LABEL. */
 	std::string text;
 	Panel::Align align = Panel::CENTRE;

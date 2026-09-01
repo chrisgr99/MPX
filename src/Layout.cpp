@@ -88,9 +88,14 @@ void layoutApplyUser(const std::string& slug, Layout& layout) {
 				if (json_is_number(dyJ))
 					item->dy = json_number_value(dyJ);
 			}
-			json_t* textJ = json_object_get(valueJ, "text");
-			if (item->kind == Item::LABEL && json_is_string(textJ))
-				item->text = json_string_value(textJ);
+			if (item->kind == Item::LABEL) {
+				json_t* textJ = json_object_get(valueJ, "text");
+				if (json_is_string(textJ))
+					item->text = json_string_value(textJ);
+				json_t* hiddenJ = json_object_get(valueJ, "hidden");
+				if (json_is_boolean(hiddenJ))
+					item->hidden = json_boolean_value(hiddenJ);
+			}
 		}
 	}
 	json_decref(rootJ);
@@ -115,8 +120,11 @@ void layoutSaveUser(const std::string& slug, const Layout& layout) {
 		}
 		// Only labels carry text, and only their text is worth saving: everything else about
 		// an item is what the module says it is.
-		if (item.kind == Item::LABEL)
+		if (item.kind == Item::LABEL) {
 			json_object_set_new(itemJ, "text", json_string(item.text.c_str()));
+			if (item.hidden)
+				json_object_set_new(itemJ, "hidden", json_true());
+		}
 		json_object_set_new(itemsJ, item.key.c_str(), itemJ);
 	}
 	json_t* rootJ = json_object();
@@ -152,6 +160,7 @@ void layoutRefreshPanel(Panel* panel, Layout& layout) {
 			l.align = item.align;
 			l.heading = item.heading;
 			l.size = item.size;
+			l.hidden = item.hidden;
 			panel->labels.push_back(l);
 		}
 		else if ((item.kind == Item::PORT_IN || item.kind == Item::PORT_OUT) && item.ring.a > 0.f) {
@@ -420,8 +429,24 @@ struct PanelEditor : widget::OpaqueWidget {
 	clicks first in the ordinary way. */
 	void setEditing(bool on) {
 		visible = on;
-		if (!on)
+		// A deleted label reappears faintly while the panel is being edited, so the empty slot
+		// can be seen and the deletion taken back. Outside the mode it is simply gone.
+		panel->showHidden = on;
+		if (on) {
+			APP->event->setSelectedWidget(this);
+		}
+		else {
+			// SAVED ON THE WAY OUT, if anything moved. Work that survives only until the
+			// module is deleted is work you lose without being told, and this has already
+			// happened once. "Forget my layout" is the way back, so nothing here is a trap.
+			if (dirty) {
+				layoutSaveUser(slug, *layout);
+				dirty = false;
+			}
 			selection.clear();
+			if (APP->event->getSelectedWidget() == this)
+				APP->event->setSelectedWidget(NULL);
+		}
 		for (Item& item : layout->items) {
 			if ((item.kind == Item::PORT_IN || item.kind == Item::PORT_OUT) && item.widget)
 				item.widget->visible = !on;
@@ -430,15 +455,68 @@ struct PanelEditor : widget::OpaqueWidget {
 
 	/** Escape leaves the mode, which is what Escape means everywhere else. Whatever has been
 	moved stays moved: this is leaving the mode, not undoing the work. Save it or not. */
-	void onHoverKey(const HoverKeyEvent& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			e.consume(this);
+	/** Deletes, or brings back, whichever labels are selected. Labels only: a jack or a knob
+	still exists in the module whether it is drawn or not, so taking one off the panel would
+	leave a control that cannot be reached and a patch that cannot be made. */
+	void toggleDeleteSelected() {
+		bool any = false;
+		for (int i : selection) {
+			Item& item = layout->items[i];
+			if (item.kind != Item::LABEL)
+				continue;
+			item.hidden = !item.hidden;
+			any = true;
+		}
+		if (any) {
+			layoutRefreshPanel(panel, *layout);
+			dirty = true;
+		}
+	}
+
+	/** True if the key was ours. Shared by both routes below rather than written twice. */
+	bool handleKey(int action, int key) {
+		if (action != GLFW_PRESS)
+			return false;
+		if (key == GLFW_KEY_ESCAPE) {
 			// One Escape puts down what is held, the next leaves the mode. Leaving with a
 			// selection still made would lose it silently, and a selection is work.
 			if (!selection.empty())
 				selection.clear();
 			else
 				setEditing(false);
+			return true;
+		}
+		if (key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) {
+			toggleDeleteSelected();
+			return true;
+		}
+		return false;
+	}
+
+	/** THE ROUTE THAT ACTUALLY WINS. Rack deletes the module under the pointer on Delete, and
+	whether a hovered child gets the key first depends on dispatch order I should not be
+	relying on. Keys for the SELECTED widget are offered before hover keys and never reach the
+	module, so the editor asks to be the selected widget while the mode is on. */
+	void onSelectKey(const SelectKeyEvent& e) override {
+		if (handleKey(e.action, e.key)) {
+			e.consume(this);
+			return;
+		}
+		widget::OpaqueWidget::onSelectKey(e);
+	}
+
+	void step() override {
+		// Taken back after a menu or a text field has had it, so the keys keep working for the
+		// whole session rather than until the first rename. Only when nothing else wants it.
+		if (visible && !APP->event->getSelectedWidget())
+			APP->event->setSelectedWidget(this);
+		widget::OpaqueWidget::step();
+	}
+
+	void onHoverKey(const HoverKeyEvent& e) override {
+		// Kept as a second way in, for the case where something else holds the selection.
+		if (handleKey(e.action, e.key)) {
+			e.consume(this);
 			return;
 		}
 		widget::OpaqueWidget::onHoverKey(e);
@@ -489,9 +567,10 @@ struct PanelEditor : widget::OpaqueWidget {
 				e.consume(this);
 				return;
 			}
-			// Anything else falls through to the module's own menu, so the mode can be turned
-			// off from where it was turned on.
-			widget::OpaqueWidget::onButton(e);
+			// NOT CONSUMED, on purpose. An opaque widget swallows right-clicks like any other,
+			// which left the module's own menu unreachable while the mode was on — and the
+			// mode is turned off from that menu. Passing it up means "Stop editing", "Save
+			// layout" and everything else stay where they were.
 			return;
 		}
 		widget::OpaqueWidget::onButton(e);
@@ -597,15 +676,37 @@ and Rack already knows how to put a menu where the pointer is and take it away a
 struct LabelField : ui::TextField {
 	PanelEditor* editor = NULL;
 	int index = -1;
+	bool focused = false;
+
+	/** ASKED FOR ON THE FIRST FRAME. A menu puts a widget on the screen; it does not hand it
+	the keyboard, so a field added to one sits there looking ready and receives nothing. This
+	is what was making label editing appear not to work at all. */
+	void step() override {
+		if (!focused) {
+			APP->event->setSelectedWidget(this);
+			focused = true;
+		}
+		ui::TextField::step();
+	}
+
+	void close() {
+		ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+		if (overlay)
+			overlay->requestDelete();
+	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
+		// Escape leaves the text as it was, which is what Escape means everywhere else here.
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			close();
+			e.consume(this);
+			return;
+		}
 		if (e.action == GLFW_PRESS && (e.key == GLFW_KEY_ENTER || e.key == GLFW_KEY_KP_ENTER)) {
 			editor->layout->items[index].text = text;
 			layoutRefreshPanel(editor->panel, *editor->layout);
 			editor->dirty = true;
-			ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-			if (overlay)
-				overlay->requestDelete();
+			close();
 			e.consume(this);
 			return;
 		}
@@ -615,14 +716,24 @@ struct LabelField : ui::TextField {
 
 void PanelEditor::editText(int index) {
 	ui::Menu* menu = createMenu();
-	menu->addChild(createMenuLabel("Label text"));
+	menu->addChild(createMenuLabel("Label text \u2014 Enter to keep, Escape to leave"));
 	LabelField* field = new LabelField;
 	field->editor = this;
 	field->index = index;
 	field->text = layout->items[index].text;
 	field->selectAll();
-	field->box.size.x = 180.f;
+	field->box.size.x = 200.f;
 	menu->addChild(field);
+
+	menu->addChild(new ui::MenuSeparator);
+	const bool hidden = layout->items[index].hidden;
+	PanelEditor* self = this;
+	menu->addChild(createMenuItem(hidden ? "Bring this label back" : "Delete this label", "",
+		[self, index]() {
+			self->layout->items[index].hidden = !self->layout->items[index].hidden;
+			layoutRefreshPanel(self->panel, *self->layout);
+			self->dirty = true;
+		}));
 }
 
 
