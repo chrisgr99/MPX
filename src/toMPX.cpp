@@ -96,7 +96,7 @@ struct NoteModule : Module {
 		configInput(I_PAN, "Pan");
 		configInput(I_PRESSURE, "Pressure");
 		configInput(I_TIMBRE, "Timbre");
-		configOutput(O_VOICE, "Voice");
+		configOutput(O_VOICE, "MPX note out");
 
 		slot = busClaim(&generation);
 	}
@@ -362,6 +362,9 @@ static Layout toMPXLayout() {
 			BEND_X + std::sin(a) * BEND_RING, 28.f - std::cos(a) * BEND_RING,
 			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.bend");
 	}
+	// LOWER THAN THE OTHER KNOB LABELS, because this is the only knob with numbers ringed
+	// round it and the name has to clear them.
+	L.find("p.bend.label")->y = 28.f + 11.f;
 
 	// What ends a note, as two named lamps rather than a switch whose two positions are only
 	// distinguishable by which way it is leaning — and headed, because two words on their own
@@ -380,7 +383,7 @@ static Layout toMPXLayout() {
 
 	// One cable out. A polyphonic cable in Rack carries one instrument's voices, so a module
 	// looking at one has one instrument to hand on.
-	label("h.out", OUT_X, 105.f, "mpxOut", Panel::CENTRE, true);
+	label("h.out", OUT_X, 105.f, "mpxOut", Panel::CENTRE, true, 12.f);
 	Item out;
 	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
 	out.x = OUT_X; out.y = row(5); out.ring = NOTE_CABLE;
@@ -411,8 +414,14 @@ struct NoteWidget : ModuleWidget {
 		layoutAppendMenu(menu, this, panel, &layout, "toMPX");
 	}
 
-	/** Voice cables are drawn violet, so the domain shows in a patch without anybody having to
-	remember what was plugged in where. */
+	/** MAGENTA MEANS THE LINK WORKS, not merely that the cable left an MPX jack.
+
+	Rack cannot refuse a connection — every output reaches every input — so a cable from here to
+	an oscillator is something anybody can make. It does no harm, since this output puts zero
+	volts on the wire, but colouring it like a working note cable would say it was one.
+
+	So the colour is left alone unless the far end can actually receive notes. A magenta cable
+	is a link; one in Rack's own colours came out of an MPX jack and goes nowhere that listens. */
 	void step() override {
 		ModuleWidget::step();
 		if (!module)
@@ -420,8 +429,11 @@ struct NoteWidget : ModuleWidget {
 		PortWidget* port = getOutput(NoteModule::O_VOICE);
 		if (!port)
 			return;
-		for (CableWidget* cw : APP->scene->rack->getCablesOnPort(port))
-			cw->color = NOTE_CABLE;
+		for (CableWidget* cw : APP->scene->rack->getCompleteCablesOnPort(port)) {
+			engine::Cable* cable = cw->getCable();
+			if (cable && isMPXInput(cable->inputModule, cable->inputId))
+				cw->color = NOTE_CABLE;
+		}
 	}
 };
 

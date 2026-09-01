@@ -30,6 +30,8 @@ struct Item {
 		PORT_OUT,
 		LIGHT,
 		LABEL,
+		/** A bracket, using w for how far its arms reach and h for how far it spans. */
+		BRACKET,
 	};
 
 	/** The name this item is saved under. Stable for the life of the module: rename one and
@@ -107,7 +109,8 @@ void layoutResetUser(const std::string& slug);
 std::string layoutUserPath(const std::string& slug);
 bool layoutHasUser(const std::string& slug);
 
-/** Creates every param, port and light, and fills the panel's labels and rings. */
+/** Creates every param, port and light, fills the panel's labels, and adds the widget that
+paints the jacks over the top of them. */
 void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout);
 /** Regenerates only what the panel draws. Called after anything moves. */
 void layoutRefreshPanel(Panel* panel, Layout& layout);

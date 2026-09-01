@@ -85,17 +85,16 @@ void Panel::draw(const DrawArgs& args) {
 		nvgStroke(args.vg);
 	}
 
-	// The rings, under the ports. A dark disc first so the ring reads as a ring around a hole
-	// rather than as a spot of colour the port happens to sit on.
-	for (const Ring& ring : rings) {
+	for (const Bracket& b : brackets) {
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, ring.x, ring.y, mm2px(math::Vec(4.6f, 0)).x);
-		nvgFillColor(args.vg, nvgRGB(0x12, 0x15, 0x1a));
-		nvgFill(args.vg);
-		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, ring.x, ring.y, mm2px(math::Vec(4.1f, 0)).x);
-		nvgStrokeColor(args.vg, ring.color);
-		nvgStrokeWidth(args.vg, mm2px(math::Vec(0.9f, 0)).x);
+		nvgMoveTo(args.vg, b.x + b.arm, b.y);
+		nvgLineTo(args.vg, b.x, b.y);
+		nvgLineTo(args.vg, b.x, b.y + b.h);
+		nvgLineTo(args.vg, b.x + b.arm, b.y + b.h);
+		nvgStrokeColor(args.vg, PANEL_DIM);
+		nvgStrokeWidth(args.vg, 1.2f);
+		nvgLineCap(args.vg, NVG_BUTT);
+		nvgLineJoin(args.vg, NVG_MITER);
 		nvgStroke(args.vg);
 	}
 
@@ -120,6 +119,62 @@ void Panel::draw(const DrawArgs& args) {
 	nvgStrokeWidth(args.vg, 1.5f);
 	nvgStroke(args.vg);
 
+	Widget::draw(args);
+}
+
+
+void drawJack(NVGcontext* vg, math::Vec c, float r, NVGcolor color, bool isOutput) {
+	const float rh = r * 0.53f;
+
+	nvgBeginPath(vg);
+	nvgCircle(vg, c.x, c.y, r);
+	nvgFillColor(vg, color);
+	nvgFill(vg);
+	nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 200));
+	nvgStrokeWidth(vg, r * 0.1f);
+	nvgStroke(vg);
+
+	nvgBeginPath(vg);
+	nvgCircle(vg, c.x, c.y, rh);
+	nvgFillColor(vg, nvgRGB(0x2f, 0x2f, 0x33));
+	nvgFill(vg);
+
+	// DIRECTION, BY SHAPE: an output's dashes hug the outer edge of the coloured band, an
+	// input's hug the hole. A third of the band wide, with the count taken from the
+	// circumference so the rhythm reads evenly at any size.
+	const float band = r - rh;
+	if (band <= 0.f)
+		return;
+	const float w = band / 3.f;
+	// Flush against whichever edge it marks, with no colour showing between. The dashes stay
+	// legible because the gaps BETWEEN them are the jack's colour, not because of any margin.
+	const float ringR = isOutput ? (r * 0.95f - w / 2.f) : (rh + w / 2.f);
+	if (ringR <= 0.f)
+		return;
+	const float circ = 2.f * (float) M_PI * ringR;
+	const int n = std::max(6, (int) std::round(circ / (w * 1.6f)));
+	const float step = 2.f * (float) M_PI / n;
+
+	nvgStrokeColor(vg, nvgRGB(0, 0, 0));
+	nvgStrokeWidth(vg, w);
+	nvgLineCap(vg, NVG_BUTT);
+	for (int i = 0; i < n; i++) {
+		nvgBeginPath(vg);
+		nvgArc(vg, c.x, c.y, ringR, i * step, i * step + step / 2.f, NVG_CW);
+		nvgStroke(vg);
+	}
+}
+
+
+void JackPaint::draw(const DrawArgs& args) {
+	for (const Mark& mark : marks) {
+		if (!mark.port || !mark.port->isVisible())
+			continue;
+		const float r = std::fmin(mark.port->box.size.x, mark.port->box.size.y) / 2.f;
+		if (r <= 1.f)
+			continue;
+		drawJack(args.vg, mark.port->box.getCenter(), r, mark.color, mark.isOutput);
+	}
 	Widget::draw(args);
 }
 

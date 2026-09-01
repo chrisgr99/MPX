@@ -156,9 +156,17 @@ void layoutResetUser(const std::string& slug) {
 
 void layoutRefreshPanel(Panel* panel, Layout& layout) {
 	panel->labels.clear();
-	panel->rings.clear();
+	panel->brackets.clear();
 	for (const Item& item : layout.items) {
-		if (item.kind == Item::LABEL) {
+		if (item.kind == Item::BRACKET) {
+			Panel::Bracket b;
+			b.x = mm2px(math::Vec(item.x, 0)).x;
+			b.y = mm2px(math::Vec(0, item.y)).y;
+			b.h = mm2px(math::Vec(0, item.h)).y;
+			b.arm = mm2px(math::Vec(item.w, 0)).x;
+			panel->brackets.push_back(b);
+		}
+		else if (item.kind == Item::LABEL) {
 			Panel::Label l;
 			l.x = mm2px(math::Vec(item.x, 0)).x;
 			l.y = mm2px(math::Vec(0, item.y)).y;
@@ -168,13 +176,6 @@ void layoutRefreshPanel(Panel* panel, Layout& layout) {
 			l.size = item.size;
 			l.hidden = item.hidden;
 			panel->labels.push_back(l);
-		}
-		else if ((item.kind == Item::PORT_IN || item.kind == Item::PORT_OUT) && item.ring.a > 0.f) {
-			Panel::Ring r;
-			r.x = mm2px(math::Vec(item.x, 0)).x;
-			r.y = mm2px(math::Vec(0, item.y)).y;
-			r.color = item.ring;
-			panel->rings.push_back(r);
 		}
 	}
 }
@@ -229,9 +230,27 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 				item.widget = l;
 			} break;
 			case Item::LABEL:
+			case Item::BRACKET:
 				break;
 		}
 	}
+	// LAST, so it paints over the ports rather than under them. A jack's colour belongs on the
+	// jack: a halo behind one is a different mark that happens to be near it.
+	JackPaint* paint = new JackPaint;
+	paint->box.size = mw->box.size;
+	for (Item& item : layout.items) {
+		if ((item.kind != Item::PORT_IN && item.kind != Item::PORT_OUT) || !item.widget)
+			continue;
+		if (item.ring.a <= 0.f)
+			continue;
+		JackPaint::Mark mark;
+		mark.port = item.widget;
+		mark.color = item.ring;
+		mark.isOutput = (item.kind == Item::PORT_OUT);
+		paint->marks.push_back(mark);
+	}
+	mw->addChild(paint);
+
 	layoutRefreshPanel(panel, layout);
 }
 
@@ -267,6 +286,10 @@ static math::Rect itemRect(const Item& item) {
 		case Item::LIGHT:
 			w = h = 5.f;
 			break;
+		case Item::BRACKET:
+			// Placed by its top-left corner, like the lamp list, because it is an extent
+			// rather than a point.
+			return math::Rect(math::Vec(item.x - 1.f, item.y), math::Vec(item.w + 2.f, item.h));
 		case Item::LABEL: {
 			const float size = item.size > 0.f ? item.size : (item.heading ? 10.f : 8.f);
 			// Estimated rather than measured: a text width needs a font and a context, and a

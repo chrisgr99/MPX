@@ -145,7 +145,7 @@ struct VoiceModule : Module {
 			 "Glide — one voice", "Legato — two voices"});
 		configParam(P_GLIDE, 0.f, 2.f, 0.06f, "Glide time", " s");
 
-		configInput(I_NOTE, "Note");
+		configInput(I_NOTE, "MPX note in");
 		configOutput(O_GATE, "Gate");
 		configOutput(O_PITCH, "1V/oct");
 		configOutput(O_LEVEL, "Level");
@@ -419,6 +419,11 @@ struct VoiceModule : Module {
 };
 
 
+bool isMPXInput(engine::Module* module, int inputId) {
+	return dynamic_cast<VoiceModule*>(module) != NULL && inputId == VoiceModule::I_NOTE;
+}
+
+
 // ---- panel -------------------------------------------------------------------------------
 // LAID OUT LIKE DREAMRACK'S VOICE IN, which is the same module: what it does controls down the
 // left, what comes out of it in one column down the right with each name right-aligned against
@@ -467,7 +472,7 @@ static Layout fromMPXLayout() {
 	note.key = "in.voice"; note.kind = Item::PORT_IN; note.id = VoiceModule::I_NOTE;
 	note.x = CTRL_X; note.y = 24.5f; note.ring = NOTE_CABLE;
 	L.items.push_back(note);
-	label("in.voice.label", CTRL_X, 32.f, "mpxIn", Panel::CENTRE, false, 0.f, "in.voice");
+	label("in.voice.label", CTRL_X, 32.f, "mpxIn", Panel::CENTRE, true, 12.f, "in.voice");
 	Item lamp;
 	lamp.key = "lamp.linked"; lamp.kind = Item::LIGHT; lamp.id = VoiceModule::L_LINKED;
 	lamp.x = CTRL_X; lamp.y = 13.f; lamp.owner = "in.voice";
@@ -499,14 +504,23 @@ static Layout fromMPXLayout() {
 	roll.labelSide = Panel::RIGHT;
 	L.items.push_back(roll);
 
+	// GLIDE AND LEGATO ARE THE TWO THAT USE A TIME, and the bracket says so — reaching from
+	// them down to the knob, which can then be called what it is rather than being made to
+	// list its owners.
+	Item brace;
+	brace.key = "brace.time"; brace.kind = Item::BRACKET;
+	// Measured, not guessed. The IGNORE NEWEST lamp is at 83.8mm but its second line sits at
+	// 85.3, and that word is what the top of the bracket was crowding; halfway between it and
+	// the GLIDE lamp at 91.6 is 88.5. The bottom passes a little below the knob's centre at
+	// 113, so the bracket reads as reaching the knob rather than stopping short of it.
+	brace.x = 2.5f; brace.y = 88.5f; brace.w = 2.5f; brace.h = 27.f;
+	L.items.push_back(brace);
+
 	Item glide;
 	glide.key = "p.glide"; glide.kind = Item::PARAM; glide.id = VoiceModule::P_GLIDE;
 	glide.style = "knob"; glide.x = CTRL_X; glide.y = 113.f;
 	L.items.push_back(glide);
-	// Two lines, because the words do not fit across a panel this width on one and a name that
-	// runs off the edge is worse than a name in two pieces.
-	label("p.glide.label", CTRL_X, 120.5f, "GLIDE/LEGATO", Panel::CENTRE, true, 0.f, "p.glide");
-	label("p.glide.label2", CTRL_X, 125.5f, "TIME", Panel::CENTRE, true, 0.f, "p.glide");
+	label("p.glide.label", CTRL_X, 121.f, "TIME", Panel::CENTRE, true, 0.f, "p.glide");
 
 	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how far
 	// it has moved, how hard it was struck, then what changes while it sounds.

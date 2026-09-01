@@ -13,6 +13,11 @@ namespace px {
 the cable. Returns -1 for any other module, and for any port that is not a voice output. */
 int noteBusOf(engine::Module* module, int outputId, uint32_t* generation);
 
+/** Whether this input is an MPX one — the other half of the question above, asked from the
+sending end so a cable can be coloured for whether the link actually works rather than for which
+jack it happens to leave. */
+bool isMPXInput(engine::Module* module, int inputId);
+
 /** The signal families, coloured the same way DreamRack colours them: the colour says what
 kind of signal a jack carries, and it is the same code on every panel. */
 extern const NVGcolor SIG_AUDIO;
@@ -43,14 +48,14 @@ struct Panel : widget::Widget {
 	};
 	std::vector<Label> labels;
 
-	/** A coloured ring behind a jack, saying what family of signal it carries. Drawn by the
-	panel rather than by a widget of its own, because it sits underneath the port and the panel
-	is what is underneath everything. */
-	struct Ring {
-		float x = 0.f, y = 0.f;
-		NVGcolor color;
+	/** A square bracket enclosing several things, saying they belong together — and, where it
+	reaches down to a control, that the control is theirs. Cheaper than repeating a name on
+	every one of them, and it is how DreamRack marks the two modes that share a time. */
+	struct Bracket {
+		float x = 0.f, y = 0.f, h = 0.f, arm = 0.f;
 	};
-	std::vector<Ring> rings;
+	std::vector<Bracket> brackets;
+
 
 	/** Rules across the panel, separating one group from the next. */
 	std::vector<float> rules;
@@ -80,6 +85,26 @@ struct Lamps : ParamWidget {
 	int lampAt(math::Vec pos);
 	math::Vec lampPos(int i);
 };
+
+/** Painted OVER the ports rather than behind them, because a jack's colour belongs on the jack.
+Added last so it draws on top of everything the module has put down. */
+struct JackPaint : widget::Widget {
+	/** Pairs of port widget and the colour it should carry. Rebuilt when the layout changes. */
+	struct Mark {
+		widget::Widget* port = NULL;
+		NVGcolor color;
+		bool isOutput = false;
+	};
+	std::vector<Mark> marks;
+
+	void draw(const DrawArgs& args) override;
+};
+
+/** Paints a jack in its signal family's colour, the same way Clarity paints every jack in the
+rack: COLOUR SAYS WHAT KIND OF SIGNAL and SHAPE SAYS WHICH WAY IT GOES — the dashes hug the
+outer edge on an output and the hole on an input. Never one cue carrying both, because a jack
+has to answer two questions at once and neither answer should depend on reading the other. */
+void drawJack(NVGcontext* vg, math::Vec c, float r, NVGcolor color, bool isOutput);
 
 /** The panel's own colours, shared so a module drawing something of its own matches. */
 extern const NVGcolor PANEL_BG;
