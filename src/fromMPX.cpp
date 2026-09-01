@@ -383,17 +383,19 @@ static Layout fromMPXLayout() {
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
-			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f) {
+			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,
+			const char* owner = "") {
 		Item i;
 		i.key = key; i.kind = Item::LABEL; i.x = x; i.y = y; i.text = text;
-		i.align = align; i.heading = heading; i.size = size;
+		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
 	auto outJack = [&](const char* key, float y, int id, const char* name, NVGcolor color) {
 		Item i;
 		i.key = key; i.kind = Item::PORT_OUT; i.id = id; i.x = JACK_X; i.y = y; i.ring = color;
 		L.items.push_back(i);
-		label((std::string(key) + ".label").c_str(), JACK_LABEL_X, y, name, Panel::RIGHT);
+		label((std::string(key) + ".label").c_str(), JACK_LABEL_X, y, name, Panel::RIGHT,
+			false, 0.f, key);
 	};
 
 	// The cable comes in at the top of the control column, above everything it feeds.
@@ -401,10 +403,10 @@ static Layout fromMPXLayout() {
 	note.key = "in.voice"; note.kind = Item::PORT_IN; note.id = VoiceModule::I_NOTE;
 	note.x = CTRL_X; note.y = 38.f; note.ring = NOTE_CABLE;
 	L.items.push_back(note);
-	label("in.voice.label", CTRL_X, 45.5f, "voice");
+	label("in.voice.label", CTRL_X, 45.5f, "voice", Panel::CENTRE, false, 0.f, "in.voice");
 	Item lamp;
 	lamp.key = "lamp.linked"; lamp.kind = Item::LIGHT; lamp.id = VoiceModule::L_LINKED;
-	lamp.x = CTRL_X + 8.5f; lamp.y = 34.f;
+	lamp.x = CTRL_X + 8.5f; lamp.y = 34.f; lamp.owner = "in.voice";
 	L.items.push_back(lamp);
 
 	// How many notes this instrument can hold at once, with the count printed round the knob
@@ -413,14 +415,14 @@ static Layout fromMPXLayout() {
 	poly.key = "p.poly"; poly.kind = Item::PARAM; poly.id = VoiceModule::P_POLY;
 	poly.style = "knob.huge"; poly.x = CTRL_X; poly.y = 62.f;
 	L.items.push_back(poly);
-	label("p.poly.label", CTRL_X, 77.5f, "VOICES", Panel::CENTRE, true);
+	label("p.poly.label", CTRL_X, 77.5f, "VOICES", Panel::CENTRE, true, 0.f, "p.poly");
 	for (int i = 1; i <= 8; i++) {
 		// Eight of the sixteen are marked; marking all sixteen would be a ring of numbers too
 		// small to read and too close together to tell apart.
 		const float a = (-0.75f + (i - 1) / 7.f * 1.5f) * (float) M_PI;
 		label(("p.poly.n" + std::to_string(i)).c_str(),
 			CTRL_X + std::sin(a) * 13.f, 62.f - std::cos(a) * 13.f,
-			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f);
+			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.poly");
 	}
 
 	// What gives when a note arrives and nothing is free. Five names, because a knob with five
@@ -437,20 +439,21 @@ static Layout fromMPXLayout() {
 	glide.key = "p.glide"; glide.kind = Item::PARAM; glide.id = VoiceModule::P_GLIDE;
 	glide.x = CTRL_X - 5.f; glide.y = 121.f;
 	L.items.push_back(glide);
-	label("p.glide.label", CTRL_X + 2.f, 121.f, "GLIDE", Panel::LEFT, true);
+	label("p.glide.label", CTRL_X + 2.f, 121.f, "GLIDE", Panel::LEFT, true, 0.f, "p.glide");
 
 	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how hard
 	// it was struck, then everything that moves while it sounds.
 	float y = JACK_TOP;
 	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);        y += JACK_PITCH;
-	outJack("out.pitch", y, VoiceModule::O_PITCH, "v/oct", SIG_PITCH);    y += JACK_PITCH;
+	outJack("out.pitch", y, VoiceModule::O_PITCH, "1V/oct", SIG_PITCH);   y += JACK_PITCH;
 	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);       y += JACK_PITCH;
 	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);          y += JACK_PITCH;
-	outJack("out.bendv", y, VoiceModule::O_BENDV, "bend v", SIG_PITCH);   y += JACK_PITCH;
-	outJack("out.press", y, VoiceModule::O_PRESSURE, "press", SIG_CV);    y += JACK_PITCH;
-	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timb", SIG_CV);        y += JACK_PITCH;
+	outJack("out.bendv", y, VoiceModule::O_BENDV, "bend 1V/oct", SIG_PITCH); y += JACK_PITCH;
+	outJack("out.press", y, VoiceModule::O_PRESSURE, "pressure", SIG_CV); y += JACK_PITCH;
+	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timbre", SIG_CV);      y += JACK_PITCH;
 	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);             y += JACK_PITCH;
-	outJack("out.dur", y, VoiceModule::O_DURATION, "dur", SIG_CV);
+	outJack("out.dur", y, VoiceModule::O_DURATION, "duration", SIG_CV);
+	L.bindOffsets();
 	return L;
 }
 

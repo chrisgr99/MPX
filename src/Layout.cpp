@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <set>
 
 namespace px {
 
@@ -12,6 +13,32 @@ Item* Layout::find(const std::string& key) {
 			return &item;
 	}
 	return NULL;
+}
+
+void Layout::bindOffsets() {
+	for (Item& item : items) {
+		if (item.owner.empty())
+			continue;
+		Item* owner = find(item.owner);
+		if (!owner)
+			continue;
+		item.dx = item.x - owner->x;
+		item.dy = item.y - owner->y;
+	}
+}
+
+void Layout::resolve() {
+	// One level deep on purpose. A label belongs to a control; nothing belongs to a label, and
+	// allowing a chain would mean deciding what to do about a loop.
+	for (Item& item : items) {
+		if (item.owner.empty())
+			continue;
+		Item* owner = find(item.owner);
+		if (!owner)
+			continue;
+		item.x = owner->x + item.dx;
+		item.y = owner->y + item.dy;
+	}
 }
 
 
@@ -45,26 +72,47 @@ void layoutApplyUser(const std::string& slug, Layout& layout) {
 			// saved file outliving a control it named is ordinary, not broken.
 			if (!item)
 				continue;
-			json_t* xJ = json_object_get(valueJ, "x");
-			json_t* yJ = json_object_get(valueJ, "y");
-			if (json_is_number(xJ))
-				item->x = json_number_value(xJ);
-			if (json_is_number(yJ))
-				item->y = json_number_value(yJ);
+			if (item->owner.empty()) {
+				json_t* xJ = json_object_get(valueJ, "x");
+				json_t* yJ = json_object_get(valueJ, "y");
+				if (json_is_number(xJ))
+					item->x = json_number_value(xJ);
+				if (json_is_number(yJ))
+					item->y = json_number_value(yJ);
+			}
+			else {
+				json_t* dxJ = json_object_get(valueJ, "dx");
+				json_t* dyJ = json_object_get(valueJ, "dy");
+				if (json_is_number(dxJ))
+					item->dx = json_number_value(dxJ);
+				if (json_is_number(dyJ))
+					item->dy = json_number_value(dyJ);
+			}
 			json_t* textJ = json_object_get(valueJ, "text");
 			if (item->kind == Item::LABEL && json_is_string(textJ))
 				item->text = json_string_value(textJ);
 		}
 	}
 	json_decref(rootJ);
+	// Owners may have moved, so everything that follows one is put back beside it.
+	layout.resolve();
 }
 
 void layoutSaveUser(const std::string& slug, const Layout& layout) {
 	json_t* itemsJ = json_object();
 	for (const Item& item : layout.items) {
 		json_t* itemJ = json_object();
-		json_object_set_new(itemJ, "x", json_real(item.x));
-		json_object_set_new(itemJ, "y", json_real(item.y));
+		if (item.owner.empty()) {
+			json_object_set_new(itemJ, "x", json_real(item.x));
+			json_object_set_new(itemJ, "y", json_real(item.y));
+		}
+		else {
+			// The offset, not the position: an item that follows a control has no position of
+			// its own worth saving, and saving one would fix it in place the next time the
+			// control moved in the code.
+			json_object_set_new(itemJ, "dx", json_real(item.dx));
+			json_object_set_new(itemJ, "dy", json_real(item.dy));
+		}
 		// Only labels carry text, and only their text is worth saving: everything else about
 		// an item is what the module says it is.
 		if (item.kind == Item::LABEL)
@@ -226,9 +274,14 @@ struct PanelEditor : widget::OpaqueWidget {
 	Panel* panel = NULL;
 	Layout* layout = NULL;
 	std::string slug;
+	/** The item the pointer took hold of. Everything selected moves with it. */
 	int grabbed = -1;
 	/** Where in the item the pointer took hold, so it does not jump to the centre. */
 	math::Vec grabOffset;
+	std::set<int> selection;
+	/** While a marquee is being dragged, in millimetres. */
+	bool marquee = false;
+	math::Vec marqueeFrom, marqueeTo;
 	bool dirty = false;
 	/** Set while a drag lines this item up with another, in millimetres. */
 	float guideX = -1.f, guideY = -1.f;
@@ -246,15 +299,51 @@ struct PanelEditor : widget::OpaqueWidget {
 		return math::Vec(px.x / RACK_GRID_WIDTH * 5.08f, px.y / RACK_GRID_WIDTH * 5.08f);
 	}
 
-	void moveTo(int index, math::Vec posMM) {
-		Item& item = layout->items[index];
+	/** Puts a widget where its item says it is. Lamp lists are placed by their corner because
+	they are a list rather than a point; everything else is placed by its centre. */
+	static void placeWidget(Item& item) {
+		if (!item.widget)
+			return;
+		const math::Vec pos = mm2px(math::Vec(item.x, item.y));
+		if (item.style == "lamps")
+			item.widget->box.pos = pos;
+		else
+			item.widget->box.pos = pos.minus(item.widget->box.size.div(2.f));
+	}
+
+	bool selected(int index) {
+		return selection.count(index) > 0;
+	}
+
+	/** Whether this item's owner is also in the selection. Such an item is left alone while
+	the group moves: it will follow its owner, and moving it as well would move it twice. */
+	bool ownerSelected(const Item& item) {
+		if (item.owner.empty())
+			return false;
+		for (int i : selection) {
+			if (layout->items[i].key == item.owner)
+				return true;
+		}
+		return false;
+	}
+
+	/** Moves everything selected, with the grabbed item leading. Only the grabbed item snaps;
+	the rest keep their distance from it exactly. Two things dragged together should not drift
+	apart because one of them found a grid line first. */
+	void moveSelection(math::Vec posMM) {
+		if (grabbed < 0)
+			return;
+		Item& lead = layout->items[grabbed];
 		float x = posMM.x, y = posMM.y;
 		guideX = guideY = -1.f;
-		if (!(APP->window->getMods() & GLFW_MOD_SHIFT)) {
+		// ALT places freely. Shift is spoken for: it adds to the selection, and a modifier
+		// that meant two things during one gesture would be a coin toss.
+		if (!(APP->window->getMods() & GLFW_MOD_ALT)) {
 			// Lining up with something else beats lining up with the grid: a row of jacks
-			// should agree with each other rather than each agree with a ruler.
+			// should agree with each other rather than each agree with a ruler. Only things
+			// staying put are worth lining up with.
 			for (int i = 0; i < (int) layout->items.size(); i++) {
-				if (i == index)
+				if (selected(i))
 					continue;
 				if (std::fabs(layout->items[i].x - x) < GUIDE_MM) {
 					x = layout->items[i].x;
@@ -270,26 +359,126 @@ struct PanelEditor : widget::OpaqueWidget {
 			if (guideY < 0.f)
 				y = std::round(y / GRID_MM) * GRID_MM;
 		}
-		item.x = x;
-		item.y = y;
-		if (item.widget) {
-			const math::Vec pos = mm2px(math::Vec(x, y));
-			if (item.style == "lamps")
-				item.widget->box.pos = pos;
-			else
-				item.widget->box.pos = pos.minus(item.widget->box.size.div(2.f));
+		const float ddx = x - lead.x;
+		const float ddy = y - lead.y;
+		if (ddx == 0.f && ddy == 0.f)
+			return;
+
+		for (int i : selection) {
+			Item& item = layout->items[i];
+			if (ownerSelected(item))
+				continue;
+			item.x += ddx;
+			item.y += ddy;
+			if (!item.owner.empty()) {
+				Item* owner = layout->find(item.owner);
+				if (owner) {
+					item.dx = item.x - owner->x;
+					item.dy = item.y - owner->y;
+				}
+			}
 		}
+		// Everything that follows a moved control is put back beside it, then every widget is
+		// placed from wherever its item now says it is.
+		layout->resolve();
+		for (Item& item : layout->items)
+			placeWidget(item);
 		layoutRefreshPanel(panel, *layout);
 		dirty = true;
+	}
+
+	void selectInMarquee(bool add) {
+		if (!add)
+			selection.clear();
+		const math::Vec lo(std::fmin(marqueeFrom.x, marqueeTo.x),
+			std::fmin(marqueeFrom.y, marqueeTo.y));
+		const math::Vec hi(std::fmax(marqueeFrom.x, marqueeTo.x),
+			std::fmax(marqueeFrom.y, marqueeTo.y));
+		for (int i = 0; i < (int) layout->items.size(); i++) {
+			// Touched rather than enclosed. A marquee that only takes what it swallows whole
+			// means drawing a careful box round a label whose width you cannot see.
+			const math::Rect r = itemRect(layout->items[i]);
+			if (r.pos.x + r.size.x >= lo.x && r.pos.x <= hi.x
+				&& r.pos.y + r.size.y >= lo.y && r.pos.y <= hi.y)
+				selection.insert(i);
+		}
+	}
+
+	/** JACKS ARE HIDDEN WHILE EDITING, and this is not tidiness.
+
+	Clarity's overlay sits at the scene level with first refusal on every click, looks for a
+	port under the pointer and takes its cable. It never asks whether anything above that port
+	wanted the click, so an editor drawn over the module is not offered it — dragging a jack to
+	move it pulled a cable out instead.
+
+	A hidden widget is not found by that search, so hiding the ports settles it for any plugin
+	that does the same thing, rather than for that one. Nothing is lost from the picture: the
+	panel already draws a dark hole and a coloured ring behind every jack, which is what a jack
+	looks like.
+
+	Knobs need none of this. Nothing intercepts them scene-wide, so the editor is offered their
+	clicks first in the ordinary way. */
+	void setEditing(bool on) {
+		visible = on;
+		if (!on)
+			selection.clear();
+		for (Item& item : layout->items) {
+			if ((item.kind == Item::PORT_IN || item.kind == Item::PORT_OUT) && item.widget)
+				item.widget->visible = !on;
+		}
+	}
+
+	/** Escape leaves the mode, which is what Escape means everywhere else. Whatever has been
+	moved stays moved: this is leaving the mode, not undoing the work. Save it or not. */
+	void onHoverKey(const HoverKeyEvent& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			e.consume(this);
+			// One Escape puts down what is held, the next leaves the mode. Leaving with a
+			// selection still made would lose it silently, and a selection is work.
+			if (!selection.empty())
+				selection.clear();
+			else
+				setEditing(false);
+			return;
+		}
+		widget::OpaqueWidget::onHoverKey(e);
 	}
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			const math::Vec mm = toMM(e.pos);
+			const bool add = (e.mods & GLFW_MOD_SHIFT) != 0;
 			grabbed = itemAt(mm);
-			if (grabbed >= 0)
-				grabOffset = math::Vec(layout->items[grabbed].x - mm.x,
-					layout->items[grabbed].y - mm.y);
+			marquee = false;
+			if (grabbed >= 0) {
+				if (add) {
+					// Shift on something already chosen takes it out again, which is the only
+					// way to correct a marquee that caught one thing too many.
+					if (selected(grabbed)) {
+						selection.erase(grabbed);
+						grabbed = -1;
+					}
+					else {
+						selection.insert(grabbed);
+					}
+				}
+				else if (!selected(grabbed)) {
+					// Pressing something outside the selection starts a new one. Pressing
+					// something already in it keeps the group, so a group can be dragged
+					// without shift being held the whole time.
+					selection.clear();
+					selection.insert(grabbed);
+				}
+				if (grabbed >= 0)
+					grabOffset = math::Vec(layout->items[grabbed].x - mm.x,
+						layout->items[grabbed].y - mm.y);
+			}
+			else {
+				if (!add)
+					selection.clear();
+				marquee = true;
+				marqueeFrom = marqueeTo = mm;
+			}
 			e.consume(this);
 			return;
 		}
@@ -322,12 +511,18 @@ struct PanelEditor : widget::OpaqueWidget {
 	}
 
 	void onDragMove(const DragMoveEvent& e) override {
-		if (grabbed >= 0)
-			moveTo(grabbed, toMM(localMouse()).plus(grabOffset));
+		if (marquee)
+			marqueeTo = toMM(localMouse());
+		else if (grabbed >= 0)
+			moveSelection(toMM(localMouse()).plus(grabOffset));
 		widget::OpaqueWidget::onDragMove(e);
 	}
 
 	void onDragEnd(const DragEndEvent& e) override {
+		if (marquee) {
+			selectInMarquee((APP->window->getMods() & GLFW_MOD_SHIFT) != 0);
+			marquee = false;
+		}
 		grabbed = -1;
 		guideX = guideY = -1.f;
 		widget::OpaqueWidget::onDragEnd(e);
@@ -345,9 +540,14 @@ struct PanelEditor : widget::OpaqueWidget {
 			const math::Vec s = mm2px(r.size);
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, p.x, p.y, s.x, s.y);
-			nvgStrokeColor(args.vg, i == grabbed
+			const bool sel = selected(i);
+			if (sel) {
+				nvgFillColor(args.vg, nvgRGBA(0x3d, 0xd6, 0x8c, 0x26));
+				nvgFill(args.vg);
+			}
+			nvgStrokeColor(args.vg, sel
 				? nvgRGBA(0x3d, 0xd6, 0x8c, 0xff) : nvgRGBA(0x3d, 0xd6, 0x8c, 0x50));
-			nvgStrokeWidth(args.vg, 1.f);
+			nvgStrokeWidth(args.vg, sel ? 1.6f : 1.f);
 			nvgStroke(args.vg);
 		}
 
@@ -366,6 +566,19 @@ struct PanelEditor : widget::OpaqueWidget {
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, 0, y);
 			nvgLineTo(args.vg, box.size.x, y);
+			nvgStroke(args.vg);
+		}
+
+		if (marquee) {
+			const math::Vec a = mm2px(marqueeFrom);
+			const math::Vec b = mm2px(marqueeTo);
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, std::fmin(a.x, b.x), std::fmin(a.y, b.y),
+				std::fabs(b.x - a.x), std::fabs(b.y - a.y));
+			nvgFillColor(args.vg, nvgRGBA(0x3d, 0xd6, 0x8c, 0x1a));
+			nvgFill(args.vg);
+			nvgStrokeColor(args.vg, nvgRGBA(0x3d, 0xd6, 0x8c, 0xc0));
+			nvgStrokeWidth(args.vg, 1.f);
 			nvgStroke(args.vg);
 		}
 
@@ -444,8 +657,11 @@ void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* la
 				editor->slug = slug;
 				editor->box.size = mw->box.size;
 				mw->addChild(editor);
+				// Created hidden, then turned on below: a new widget is visible by default,
+				// and the first choice of "Edit panel" would otherwise have turned it off.
+				editor->visible = false;
 			}
-			editor->visible = !editor->visible;
+			editor->setEditing(!editor->visible);
 		}));
 
 	if (editing) {

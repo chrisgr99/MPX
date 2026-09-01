@@ -322,10 +322,11 @@ static Layout toMPXLayout() {
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
-			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f) {
+			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,
+			const char* owner = "") {
 		Item i;
 		i.key = key; i.kind = Item::LABEL; i.x = x; i.y = y; i.text = text;
-		i.align = align; i.heading = heading; i.size = size;
+		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
 	auto inJack = [&](const char* key, float x, float y, int id, const char* name,
@@ -333,7 +334,8 @@ static Layout toMPXLayout() {
 		Item i;
 		i.key = key; i.kind = Item::PORT_IN; i.id = id; i.x = x; i.y = y; i.ring = color;
 		L.items.push_back(i);
-		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name);
+		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
+			Panel::CENTRE, false, 0.f, key);
 	};
 	auto knob = [&](const char* key, float x, float y, int id, const char* style) {
 		Item i;
@@ -362,24 +364,24 @@ static Layout toMPXLayout() {
 	// relationship; side by side would have made them six things.
 	label("h.held", 9.f, 62.f, "HELD AT THE GATE", Panel::LEFT, true);
 	knob("p.level", COL[0], 74.f, NoteModule::P_LEVEL, "knob.large");
-	label("p.level.label", COL[0], 82.5f, "LEVEL", Panel::CENTRE, true);
+	label("p.level.label", COL[0], 82.5f, "LEVEL", Panel::CENTRE, true, 0.f, "p.level");
 	inJack("in.level", COL[0], 92.f, NoteModule::I_LEVEL, "level", SIG_CV);
 
 	knob("p.dur", COL[1], 74.f, NoteModule::P_DURATION, "knob.large");
-	label("p.dur.label", COL[1], 82.5f, "DUR", Panel::CENTRE, true);
-	inJack("in.dur", COL[1], 92.f, NoteModule::I_DURATION, "dur", SIG_CV);
+	label("p.dur.label", COL[1], 82.5f, "DURATION", Panel::CENTRE, true, 0.f, "p.dur");
+	inJack("in.dur", COL[1], 92.f, NoteModule::I_DURATION, "duration", SIG_CV);
 
 	knob("p.pan", COL[2], 74.f, NoteModule::P_PAN, "knob.large");
-	label("p.pan.label", COL[2], 82.5f, "PAN", Panel::CENTRE, true);
+	label("p.pan.label", COL[2], 82.5f, "PAN", Panel::CENTRE, true, 0.f, "p.pan");
 	inJack("in.pan", COL[2], 92.f, NoteModule::I_PAN, "pan", SIG_CV);
 
 	// The two that keep moving have no knob, because there is nothing sensible for a still
 	// control to say: an unpatched one sends nothing at all rather than sending zero.
 	label("h.moving", 9.f, 106.f, "WHILE IT SOUNDS", Panel::LEFT, true);
-	inJack("in.press", COL[0], 116.f, NoteModule::I_PRESSURE, "press", SIG_CV);
-	inJack("in.timb", COL[1], 116.f, NoteModule::I_TIMBRE, "timb", SIG_CV);
+	inJack("in.press", COL[0], 116.f, NoteModule::I_PRESSURE, "pressure", SIG_CV);
+	inJack("in.timb", COL[1], 116.f, NoteModule::I_TIMBRE, "timbre", SIG_CV);
 	knob("p.bend", COL[2], 116.f, NoteModule::P_BEND_RANGE, "knob");
-	label("p.bend.label", COL[2], 123.5f, "BEND");
+	label("p.bend.label", COL[2], 123.5f, "BEND RANGE", Panel::CENTRE, false, 0.f, "p.bend");
 
 	// The cables, down the right in their own column: four instruments, four cables. The NOTES
 	// knob belongs with them, because what it sets is how the sixteen channels arriving divide
@@ -393,14 +395,17 @@ static Layout toMPXLayout() {
 		i.x = OUT_X; i.y = y; i.ring = NOTE_CABLE;
 		L.items.push_back(i);
 		label((key + ".label").c_str(), OUT_X - 7.f, y, std::to_string(v + 1).c_str(),
-			Panel::RIGHT);
+			Panel::RIGHT, false, 0.f, key.c_str());
 		Item lamp;
 		lamp.key = "lamp.voice" + std::to_string(v + 1); lamp.kind = Item::LIGHT;
 		lamp.id = NoteModule::L_VOICE1 + v; lamp.x = OUT_X + 7.f; lamp.y = y - 3.f;
+		lamp.owner = key;
 		L.items.push_back(lamp);
 	}
 	knob("p.notes", OUT_X, 116.f, NoteModule::P_NOTES, "knob");
-	label("p.notes.label", OUT_X, 123.5f, "NOTES");
+	label("p.notes.label", OUT_X, 123.f, "NOTES PER", Panel::CENTRE, false, 0.f, "p.notes");
+	label("p.notes.label2", OUT_X, 127.f, "VOICE", Panel::CENTRE, false, 0.f, "p.notes");
+	L.bindOffsets();
 	return L;
 }
 

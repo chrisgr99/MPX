@@ -38,6 +38,16 @@ struct Item {
 	Kind kind = LABEL;
 	/** The param, port or light id. */
 	int id = -1;
+	/** THE CONTROL THIS BELONGS TO, by key, or empty if it stands on its own. A label belongs
+	to the jack it names and a lamp to the jack it sits beside, so moving the jack takes them
+	with it — a name left behind by the thing it names is not a label any more.
+
+	What is remembered is the OFFSET, not the position. Drag the label and it settles wherever
+	you put it relative to its control; drag the control after that and the label keeps the
+	relationship you chose rather than the one it shipped with. */
+	std::string owner;
+	float dx = 0.f, dy = 0.f;
+
 	/** Millimetres, and the CENTRE of the thing rather than its corner — which is what every
 	position in a Rack panel means, and what a person means when they say where a knob is. */
 	float x = 0.f, y = 0.f;
@@ -72,6 +82,11 @@ struct Layout {
 	std::vector<Item> items;
 
 	Item* find(const std::string& key);
+	/** Fills in dx and dy from where owned items currently sit. Called once, on the layout the
+	code defines, so the built-in offsets come from the built-in positions. */
+	void bindOffsets();
+	/** Puts every owned item back at its owner's position plus its offset. */
+	void resolve();
 };
 
 /** Lays the user's saved positions over the built-in ones. */
