@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "NoteBus.hpp"
+#include "Layout.hpp"
 
 namespace px {
 
@@ -362,66 +363,118 @@ struct VoiceModule : Module {
 
 
 // ---- panel -------------------------------------------------------------------------------
+// LAID OUT LIKE DREAMRACK'S VOICE IN, which is the same module: what it does controls down the
+// left, what comes out of it in one column down the right with each name right-aligned against
+// its own jack. A column of nine jacks reads as a list; nine jacks in a grid reads as a puzzle.
+//
+// Written here rather than in a file that ships, so the default cannot fall out of step with
+// the module. What a person moves is saved over the top of it — see Layout.hpp.
 
-static const float VCOL_A = 13.f, VCOL_B = 40.6f, VCOL_C = 68.f;   // millimetres
+static const float CTRL_X = 18.f;
+static const float JACK_X = 55.f;
+static const float JACK_LABEL_X = 47.5f;
+static const float JACK_TOP = 38.f;
+static const float JACK_PITCH = 10.4f;
+
+static Layout fromMPXLayout() {
+	Layout L;
+	L.hp = 14.f;
+	L.title = "fromMPX";
+	L.titleAbove = "DREAMER DEVELOPMENT";
+
+	auto label = [&](const char* key, float x, float y, const char* text,
+			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f) {
+		Item i;
+		i.key = key; i.kind = Item::LABEL; i.x = x; i.y = y; i.text = text;
+		i.align = align; i.heading = heading; i.size = size;
+		L.items.push_back(i);
+	};
+	auto outJack = [&](const char* key, float y, int id, const char* name, NVGcolor color) {
+		Item i;
+		i.key = key; i.kind = Item::PORT_OUT; i.id = id; i.x = JACK_X; i.y = y; i.ring = color;
+		L.items.push_back(i);
+		label((std::string(key) + ".label").c_str(), JACK_LABEL_X, y, name, Panel::RIGHT);
+	};
+
+	// The cable comes in at the top of the control column, above everything it feeds.
+	Item note;
+	note.key = "in.voice"; note.kind = Item::PORT_IN; note.id = VoiceModule::I_NOTE;
+	note.x = CTRL_X; note.y = 38.f; note.ring = NOTE_CABLE;
+	L.items.push_back(note);
+	label("in.voice.label", CTRL_X, 45.5f, "voice");
+	Item lamp;
+	lamp.key = "lamp.linked"; lamp.kind = Item::LIGHT; lamp.id = VoiceModule::L_LINKED;
+	lamp.x = CTRL_X + 8.5f; lamp.y = 34.f;
+	L.items.push_back(lamp);
+
+	// How many notes this instrument can hold at once, with the count printed round the knob
+	// so the setting can be read without a tooltip.
+	Item poly;
+	poly.key = "p.poly"; poly.kind = Item::PARAM; poly.id = VoiceModule::P_POLY;
+	poly.style = "knob.huge"; poly.x = CTRL_X; poly.y = 62.f;
+	L.items.push_back(poly);
+	label("p.poly.label", CTRL_X, 77.5f, "VOICES", Panel::CENTRE, true);
+	for (int i = 1; i <= 8; i++) {
+		// Eight of the sixteen are marked; marking all sixteen would be a ring of numbers too
+		// small to read and too close together to tell apart.
+		const float a = (-0.75f + (i - 1) / 7.f * 1.5f) * (float) M_PI;
+		label(("p.poly.n" + std::to_string(i)).c_str(),
+			CTRL_X + std::sin(a) * 13.f, 62.f - std::cos(a) * 13.f,
+			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f);
+	}
+
+	// What gives when a note arrives and nothing is free. Five names, because a knob with five
+	// detents says nothing about what the five are.
+	Item roll;
+	roll.key = "p.rollover"; roll.kind = Item::PARAM; roll.id = VoiceModule::P_ROLLOVER;
+	roll.style = "lamps"; roll.x = CTRL_X + 3.f; roll.y = 84.f;
+	roll.w = 6.f; roll.h = 32.f; roll.pitch = 7.2f;
+	roll.names = {"OLDEST", "QUIETEST", "IGNORE", "GLIDE", "LEGATO"};
+	roll.labelSide = Panel::LEFT;
+	L.items.push_back(roll);
+
+	Item glide;
+	glide.key = "p.glide"; glide.kind = Item::PARAM; glide.id = VoiceModule::P_GLIDE;
+	glide.x = CTRL_X - 5.f; glide.y = 121.f;
+	L.items.push_back(glide);
+	label("p.glide.label", CTRL_X + 2.f, 121.f, "GLIDE", Panel::LEFT, true);
+
+	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how hard
+	// it was struck, then everything that moves while it sounds.
+	float y = JACK_TOP;
+	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);        y += JACK_PITCH;
+	outJack("out.pitch", y, VoiceModule::O_PITCH, "v/oct", SIG_PITCH);    y += JACK_PITCH;
+	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);       y += JACK_PITCH;
+	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);          y += JACK_PITCH;
+	outJack("out.bendv", y, VoiceModule::O_BENDV, "bend v", SIG_PITCH);   y += JACK_PITCH;
+	outJack("out.press", y, VoiceModule::O_PRESSURE, "press", SIG_CV);    y += JACK_PITCH;
+	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timb", SIG_CV);        y += JACK_PITCH;
+	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);             y += JACK_PITCH;
+	outJack("out.dur", y, VoiceModule::O_DURATION, "dur", SIG_CV);
+	return L;
+}
 
 struct VoiceWidget : ModuleWidget {
+	Panel* panel = NULL;
+	Layout layout;
+
 	VoiceWidget(VoiceModule* module) {
 		setModule(module);
-		box.size = Vec(16 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
-
-		Panel* panel = new Panel;
-		panel->box.size = box.size;
-		panel->titleAbove = "DREAMER DEVELOPMENT";
-		panel->title = "fromMPX";
-		panel->rules = {mm2px(Vec(0, 48.f)).y};
-		const float centre = box.size.x / mm2px(Vec(1, 0)).x / 2.f;
-		auto label = [&](float x, float y, const char* text, bool heading = false) {
-			Panel::Label l;
-			l.x = mm2px(Vec(x, 0)).x;
-			l.y = mm2px(Vec(0, y)).y;
-			l.text = text;
-			l.heading = heading;
-			panel->labels.push_back(l);
-		};
-		label(VCOL_A, 18.f, "NOTE");
-		label(VCOL_B, 18.f, "VOICES");
-		label(VCOL_C, 18.f, "NO VOICE FREE");
-		label(VCOL_C, 40.f, "GLIDE");
-		label(centre, 53.5f, "ONE CHANNEL PER VOICE", true);
-		label(VCOL_A, 61.f, "GATE");
-		label(VCOL_B, 61.f, "1V/OCT");
-		label(VCOL_C, 61.f, "LEVEL");
-		label(VCOL_A, 84.f, "BEND");
-		label(VCOL_B, 84.f, "BEND 1V/OCT");
-		label(VCOL_C, 84.f, "PRESSURE");
-		label(VCOL_A, 107.f, "TIMBRE");
-		label(VCOL_B, 107.f, "PAN");
-		label(VCOL_C, 107.f, "DURATION");
+		layout = fromMPXLayout();
+		layoutApplyUser("fromMPX", layout);
+		panel = new Panel;
 		addChild(panel);
+		layoutBuild(this, panel, layout);
+	}
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(VCOL_A, 26.f)), module, VoiceModule::I_NOTE));
-		addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(VCOL_A + 9.f, 20.f)),
-			module, VoiceModule::L_LINKED));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(VCOL_B, 26.f)), module, VoiceModule::P_POLY));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(VCOL_C, 26.f)), module, VoiceModule::P_ROLLOVER));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(VCOL_C, 44.f)), module, VoiceModule::P_GLIDE));
-
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_A, 69.f)), module, VoiceModule::O_GATE));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_B, 69.f)), module, VoiceModule::O_PITCH));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_C, 69.f)), module, VoiceModule::O_LEVEL));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_A, 92.f)), module, VoiceModule::O_BEND));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_B, 92.f)), module, VoiceModule::O_BENDV));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_C, 92.f)), module, VoiceModule::O_PRESSURE));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_A, 115.f)), module, VoiceModule::O_TIMBRE));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_B, 115.f)), module, VoiceModule::O_PAN));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(VCOL_C, 115.f)), module, VoiceModule::O_DURATION));
+	void appendContextMenu(ui::Menu* menu) override {
+		layoutAppendMenu(menu, this, panel, &layout, "fromMPX");
 	}
 
 	/** WHERE THE CABLE BECOMES A LINK. Rack owns the cable; this reads it. A cable whose other
-	end is a toMPX registers that source with this module, and pulling the cable unregisters
-	it on the next frame, because the scan is the only thing that establishes it. Patching
-	happens at human speed, so once a frame is far faster than it needs to be. */
+	end is a toMPX registers that source with this module, and pulling the cable unregisters it
+	on the next frame, because the scan is the only thing that establishes it. Patching happens
+	at human speed, so once a frame is far faster than it needs to be. */
 	void step() override {
 		ModuleWidget::step();
 		VoiceModule* voice = dynamic_cast<VoiceModule*>(module);

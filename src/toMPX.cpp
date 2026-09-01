@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "NoteBus.hpp"
+#include "Layout.hpp"
 
 namespace px {
 
@@ -301,66 +302,123 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
 
 
 // ---- panel -------------------------------------------------------------------------------
+// LAID OUT LIKE DREAMRACK'S SEQUENCE OUT: a knob with the jack that overrides it directly
+// beneath, so the pair reads as one setting with two ways of arriving. What is read at the
+// gate's edge is grouped together, what is followed while the note sounds is grouped together,
+// and the cables this all becomes are down the right under OUT.
+//
+// The one thing DreamRack does not have to show is four cables out. It has one, because a page
+// is one instrument; here four instruments is four cables, so OUT is a column of its own.
 
-static const float COL[4] = {12.7f, 38.1f, 63.5f, 88.9f};   // millimetres
+static const float COL[3] = {15.f, 38.f, 61.f};   // millimetres
+/** The output column, kept apart from the three control columns because what leaves the module
+is not one more setting. */
+static const float OUT_X = 88.f;
+
+static Layout toMPXLayout() {
+	Layout L;
+	L.hp = 20.f;
+	L.title = "toMPX";
+	L.titleAbove = "DREAMER DEVELOPMENT";
+
+	auto label = [&](const char* key, float x, float y, const char* text,
+			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f) {
+		Item i;
+		i.key = key; i.kind = Item::LABEL; i.x = x; i.y = y; i.text = text;
+		i.align = align; i.heading = heading; i.size = size;
+		L.items.push_back(i);
+	};
+	auto inJack = [&](const char* key, float x, float y, int id, const char* name,
+			NVGcolor color) {
+		Item i;
+		i.key = key; i.kind = Item::PORT_IN; i.id = id; i.x = x; i.y = y; i.ring = color;
+		L.items.push_back(i);
+		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name);
+	};
+	auto knob = [&](const char* key, float x, float y, int id, const char* style) {
+		Item i;
+		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = style;
+		L.items.push_back(i);
+	};
+
+	// What arrives, at the top. The gate is the note: everything else is read at its edge.
+	label("h.in", 9.f, 36.f, "IN", Panel::LEFT, true);
+	inJack("in.gate", COL[0], 46.f, NoteModule::I_GATE, "gate", SIG_GATE);
+	inJack("in.pitch", COL[1], 46.f, NoteModule::I_PITCH, "v/oct", SIG_PITCH);
+
+	// What ends a note, as two named lamps rather than a switch whose two positions are only
+	// distinguishable by which way it is leaning.
+	label("h.ends", 9.f, 51.f, "NOTE ENDS AT", Panel::LEFT);
+	Item ends;
+	ends.key = "p.ends"; ends.kind = Item::PARAM; ends.id = NoteModule::P_ENDS;
+	ends.style = "lamps"; ends.x = 9.f; ends.y = 55.f;
+	ends.w = 2.f; ends.h = 6.f; ends.pitch = 17.f; ends.horizontal = true;
+	ends.names = {"GATE", "HOLD"};
+	ends.labelSide = Panel::RIGHT;
+	L.items.push_back(ends);
+
+	// THE KNOB ABOVE, ITS CABLE BELOW. Each of these three is one setting: the knob is what the
+	// note carries, and a cable in the jack under it takes over. Stacked because that is the
+	// relationship; side by side would have made them six things.
+	label("h.held", 9.f, 62.f, "HELD AT THE GATE", Panel::LEFT, true);
+	knob("p.level", COL[0], 74.f, NoteModule::P_LEVEL, "knob.large");
+	label("p.level.label", COL[0], 82.5f, "LEVEL", Panel::CENTRE, true);
+	inJack("in.level", COL[0], 92.f, NoteModule::I_LEVEL, "level", SIG_CV);
+
+	knob("p.dur", COL[1], 74.f, NoteModule::P_DURATION, "knob.large");
+	label("p.dur.label", COL[1], 82.5f, "DUR", Panel::CENTRE, true);
+	inJack("in.dur", COL[1], 92.f, NoteModule::I_DURATION, "dur", SIG_CV);
+
+	knob("p.pan", COL[2], 74.f, NoteModule::P_PAN, "knob.large");
+	label("p.pan.label", COL[2], 82.5f, "PAN", Panel::CENTRE, true);
+	inJack("in.pan", COL[2], 92.f, NoteModule::I_PAN, "pan", SIG_CV);
+
+	// The two that keep moving have no knob, because there is nothing sensible for a still
+	// control to say: an unpatched one sends nothing at all rather than sending zero.
+	label("h.moving", 9.f, 106.f, "WHILE IT SOUNDS", Panel::LEFT, true);
+	inJack("in.press", COL[0], 116.f, NoteModule::I_PRESSURE, "press", SIG_CV);
+	inJack("in.timb", COL[1], 116.f, NoteModule::I_TIMBRE, "timb", SIG_CV);
+	knob("p.bend", COL[2], 116.f, NoteModule::P_BEND_RANGE, "knob");
+	label("p.bend.label", COL[2], 123.5f, "BEND");
+
+	// The cables, down the right in their own column: four instruments, four cables. The NOTES
+	// knob belongs with them, because what it sets is how the sixteen channels arriving divide
+	// among these four.
+	label("h.out", OUT_X, 36.f, "OUT", Panel::CENTRE, true);
+	for (int v = 0; v < NoteModule::VOICES; v++) {
+		const float y = 48.f + v * 15.f;
+		const std::string key = "out.voice" + std::to_string(v + 1);
+		Item i;
+		i.key = key; i.kind = Item::PORT_OUT; i.id = NoteModule::O_VOICE1 + v;
+		i.x = OUT_X; i.y = y; i.ring = NOTE_CABLE;
+		L.items.push_back(i);
+		label((key + ".label").c_str(), OUT_X - 7.f, y, std::to_string(v + 1).c_str(),
+			Panel::RIGHT);
+		Item lamp;
+		lamp.key = "lamp.voice" + std::to_string(v + 1); lamp.kind = Item::LIGHT;
+		lamp.id = NoteModule::L_VOICE1 + v; lamp.x = OUT_X + 7.f; lamp.y = y - 3.f;
+		L.items.push_back(lamp);
+	}
+	knob("p.notes", OUT_X, 116.f, NoteModule::P_NOTES, "knob");
+	label("p.notes.label", OUT_X, 123.5f, "NOTES");
+	return L;
+}
 
 struct NoteWidget : ModuleWidget {
+	Panel* panel = NULL;
+	Layout layout;
+
 	NoteWidget(NoteModule* module) {
 		setModule(module);
-		box.size = Vec(20 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT);
-
-		Panel* panel = new Panel;
-		panel->box.size = box.size;
-		panel->titleAbove = "DREAMER DEVELOPMENT";
-		panel->title = "toMPX";
-		panel->rules = {mm2px(Vec(0, 38.f)).y, mm2px(Vec(0, 89.f)).y, mm2px(Vec(0, 112.f)).y};
-		const float centre = box.size.x / mm2px(Vec(1.f, 0)).x / 2.f;
-		auto label = [&](float x, float y, const char* text, bool heading = false) {
-			Panel::Label l;
-			l.x = mm2px(Vec(x, 0)).x;
-			l.y = mm2px(Vec(0, y)).y;
-			l.text = text;
-			l.heading = heading;
-			panel->labels.push_back(l);
-		};
-		label(COL[0], 18.f, "GATE");
-		label(COL[1], 18.f, "1V/OCT");
-		label(COL[2], 18.f, "PRESSURE");
-		label(COL[3], 18.f, "TIMBRE");
-		label(centre, 43.f, "HELD AT THE GATE\u2019S EDGE", true);
-		label(COL[0], 51.f, "LEVEL");
-		label(COL[1], 51.f, "DURATION");
-		label(COL[2], 51.f, "PAN");
-		label(COL[3], 51.f, "BEND RANGE");
-		label(COL[0], 94.f, "NOTES PER VOICE");
-		label(COL[1], 94.f, "NOTE ENDS");
-		label(centre, 116.f, "VOICES", true);
+		layout = toMPXLayout();
+		layoutApplyUser("toMPX", layout);
+		panel = new Panel;
 		addChild(panel);
+		layoutBuild(this, panel, layout);
+	}
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[0], 26.f)), module, NoteModule::I_GATE));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[1], 26.f)), module, NoteModule::I_PITCH));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[2], 26.f)), module, NoteModule::I_PRESSURE));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[3], 26.f)), module, NoteModule::I_TIMBRE));
-
-		// The cable above, its knob below: the pairing is the point, since one overrides the
-		// other. Bend range has no cable, so it is the knob alone.
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[0], 59.f)), module, NoteModule::I_LEVEL));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[1], 59.f)), module, NoteModule::I_DURATION));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(COL[2], 59.f)), module, NoteModule::I_PAN));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(COL[0], 76.f)), module, NoteModule::P_LEVEL));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(COL[1], 76.f)), module, NoteModule::P_DURATION));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(COL[2], 76.f)), module, NoteModule::P_PAN));
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(COL[3], 76.f)), module, NoteModule::P_BEND_RANGE));
-
-		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(COL[0], 102.f)), module, NoteModule::P_NOTES));
-		addParam(createParamCentered<CKSS>(mm2px(Vec(COL[1], 102.f)), module, NoteModule::P_ENDS));
-
-		for (int v = 0; v < NoteModule::VOICES; v++) {
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(COL[v], 123.f)), module,
-				NoteModule::O_VOICE1 + v));
-			addChild(createLightCentered<SmallLight<GreenLight>>(mm2px(Vec(COL[v] + 8.f, 118.5f)),
-				module, NoteModule::L_VOICE1 + v));
-		}
+	void appendContextMenu(ui::Menu* menu) override {
+		layoutAppendMenu(menu, this, panel, &layout, "toMPX");
 	}
 
 	/** Voice cables are drawn violet, so the domain shows in a patch without anybody having to
