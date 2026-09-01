@@ -1,0 +1,38 @@
+{
+  "slug": "DreamerMPX",
+  "name": "MPX",
+  "brand": "Dreamer Development",
+  "description": "Modular Polyphonic Expression: one cable carries a whole instrument, and every note on it keeps its own pitch, level, duration, pan, bend, pressure and timbre.",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
+  "author": "Dreamer Development",
+  "authorEmail": "",
+  "authorUrl": "https://github.com/chrisgr99",
+  "pluginUrl": "https://github.com/chrisgr99/MPX",
+  "manualUrl": "https://github.com/chrisgr99/MPX#readme",
+  "sourceUrl": "https://github.com/chrisgr99/MPX",
+  "donateUrl": "",
+  "changelogUrl": "https://github.com/chrisgr99/MPX/releases",
+  "modules": [
+    {
+      "slug": "toMPX",
+      "name": "toMPX",
+      "description": "Gathers ordinary control voltages into voice cables. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, and four voice cables come out, each carrying one instrument's notes. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life; bend, pressure and timbre are followed while it sounds. The notes-per-voice knob decides how the sixteen channels divide among the four cables.",
+      "tags": [
+        "Polyphonic",
+        "Utility"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/manual.md"
+    },
+    {
+      "slug": "fromMPX",
+      "name": "fromMPX",
+      "description": "Takes one voice cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend as a control signal and as volts per octave, pressure, timbre, pan and duration. It allocates the notes among its voices, with a choice of what gives when none is free: take the oldest, take the quietest, ignore the note, glide, or legato.",
+      "tags": [
+        "Polyphonic",
+        "Utility"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/manual.md"
+    }
+  ]
+}

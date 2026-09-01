@@ -1,0 +1,11 @@
+build/
+dist/
+*.o
+*.d
+*.dylib
+*.so
+*.dll
+*.vcvplugin
+docs/*.html
+.DS_Store
+dep/
