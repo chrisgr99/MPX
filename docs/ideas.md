@@ -74,15 +74,27 @@ Both emit MPX notes carrying velocity and duration and **no pitch**.
 
 **Ratchets are notes.** A ratchet is several closely spaced notes rather than one note with a property, which needs no protocol change and steps the melody generator once per hit. Because those notes are short, the duration rule below frees them to be passing tones — which is what makes a ratchet sound like a flourish rather than three chord tones hammered.
 
-### The chart
+### The chart, and where harmony travels
 
 **mpxChart** — holds a chart, imports it, displays it, takes the clock and reset, and owns the beat.
 
-It should publish, over a connection of its own: the current chord, the next, beats to the change, the phrase state, **the cycle length and the position within it**. The last two are what let any driver lock its period to the form without being told how long the form is.
+**Harmony rides the MPX cable itself**, rather than on a connection of its own. This replaces an earlier position in this conversation, which was that harmony should have a second bus of its own kind. Three things settled it.
 
-Making that a second bus of the same kind as the note bus costs almost nothing: a real Rack cable establishes the link, a table inside the plugin carries the data, and the machinery already runs.
+**A driver needs the beat and has no notes.** A field module must know the cycle length and the position within it to set its lap period, but it produces control voltages and consumes nothing. With a separate chart connection it needed a link to something it otherwise had nothing to do with. With harmony on the MPX cable it takes the cable, ignores the notes and reads the beat.
 
-That also removes the question of who owns the beat rather than answering it.
+**It saves no connection to separate them.** In a two-instrument patch the chart has to reach both rhythm modules either way. The fan-out is the same; what changes is that there is one cable type instead of two.
+
+**And chaining becomes the shape of the system**: chart into rhythm into melody into instrument, one cable throughout.
+
+So a cable carries a harmony and any number of notes played against it. "One cable is one instrument" stops being exactly true and becomes one **stream**. Two charts feeding one chain is a conflict, which is a user error and a detectable one.
+
+#### The rule this revises
+
+The design document states the test as: does the value belong to a note? Anything belonging to the performance instead — tempo, a macro, a pedal — stays off the cable, because it is the same for every voice and would make the cable mean two things.
+
+Harmony fails that test as written, and the test is drawn in the wrong place. The better line is **whether it belongs to the note domain**. Harmony does: it is discrete, structural, and every note-domain module needs it. Tempo does not: it is continuous, and Rack already has cables that carry it properly.
+
+So: notes and the harmony they are played against travel together; transport travels as ordinary cables.
 
 ### The melody module
 
@@ -93,6 +105,42 @@ Two of them on one chart gives a line and a bass that agree.
 **Clipping a note's duration at the chord change** is nearly free and worth doing: a note ringing through a change is the commonest way generated lines sound wrong.
 
 The previous-note memory must be per voice. Two lines sharing one would interfere in a way that would look like a bug and sound like a mess.
+
+### Lane processors
+
+The strongest structural idea in the conversation, and it is what turns MPX from a transport into a domain with a chain in it.
+
+**A processor changes one lane and passes everything else along.** A pan processor that modulates pan and forwards the rest. A duration processor watching the harmony. A swing processor. Something that turns a plain flow of notes into a groove by adjusting timing and velocity together.
+
+MIDI never really got this, because a MIDI effect has no note object to work on — it is a stream of bytes. MPX has a note with named lanes, so a module that touches one lane is the natural unit, and each one stays small. A pan processor is about a hundred lines. That is a far better way to grow the family than a few large modules with menus.
+
+**What is easy** is anything that changes a value on a note as it passes: pan, velocity, duration, and the continuing lanes. Read it, change one field, emit. A tremolo written onto the pressure lane while a note sounds is the same shape.
+
+Clipping a note at a chord change belongs here rather than inside the melody module.
+
+**The one real constraint is that timing can only be delayed, never advanced.** A processor sees a note at the moment it happens; it cannot have known about it sooner.
+
+That is less limiting than it sounds. Swing *is* delaying the off-beats. A laid-back feel is delaying everything slightly. Flams, lateness and dragging are all delays. What it rules out is pushing a note earlier, and quantising something that arrived late.
+
+The escape hatch is standard: a processor that runs the whole stream a fixed amount late — a sixteenth, say — can move notes both ways within that window. It costs latency, which matters when playing and does not when sequencing, so it wants to be a switch on the processors that need it rather than a property of the domain.
+
+Two bookkeeping details come with delaying. A delayed note-on must delay its note-off by the same amount or the note comes out short, so the processor holds a small per-note table. And a processor should keep the incoming handle when it is passing the same note along, minting only for notes it adds.
+
+**Once the shape exists, a lot follows nearly free**: humanise, accent by bar position, legato and staccato, a filter that drops hits by probability, a register folder, an arpeggiator, a harmoniser that turns one note into three.
+
+Each of those is a module somebody could write without understanding the rest of the system, which is the real test of whether the architecture is any good.
+
+---
+
+## Pass-through has to be automatic
+
+The same requirement arrives from two directions, which is a good sign that it is the right shape.
+
+Harmony riding the cable means a rhythm module — which cares nothing for harmony — must forward it, or the melody module downstream never sees it. Lane processors mean a pan processor must forward every lane it does not touch.
+
+**Including lanes that do not exist yet.** A timbre lane added next year must not be dropped by a pan processor written this year.
+
+So forwarding belongs in the shared transport code, and a module declares only what it changes. Left to each module to remember, one of them eventually will not, and the failure is silent: a lane quietly missing three modules downstream, with nothing to see.
 
 ---
 
@@ -184,11 +232,19 @@ But what makes GXW composable rather than merely generative is that the material
 
 ## Open questions
 
-Whether a note should carry **the beat it happened on**. Transport is deliberately kept off the MPX cable because tempo belongs to the performance rather than to a note — but a timestamp is per-note, so the rule may not forbid it. It would let any downstream module know where it is without its own clock. Worth deciding deliberately rather than discovering.
+Whether a note still needs to carry **the beat it happened on**. Harmony riding the cable brings the beat with it, so a module reading the cable already knows where it is — which was the whole reason for wanting a timestamp. Probably answered, and worth checking rather than assuming.
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
 
 Whether loading a real photograph is worth the cost it brings: a patch then points at a file on the disc, so it stops being portable unless the picture is stored inside it.
+
+---
+
+## What the two decisions above have in common
+
+Harmony on the cable and lane processors arrived separately and want the same thing: a module forwards what it does not consume, automatically, including what it has never heard of.
+
+That one requirement is the load-bearing part of both. If it is built into the transport, both ideas are cheap. If it is left to each module, both ideas are a slow accumulation of silent bugs.
 
 ---
 
