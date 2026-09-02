@@ -48,7 +48,7 @@
     {
       "slug": "mpxProgression",
       "name": "mpxProgression",
-      "description": "A short chord progression set on the panel and published as the harmony on an MPX cable. Eight slots, each a degree of the key, a quality and a length in beats; a slot of no length is not in the progression. Not a chart — no repeats, no sections, no import — but enough for everything downstream to be played against something.",
+      "description": "A dozen chord progressions everybody knows — two five one, a turnaround, twelve bar blues, the four chords, a Dorian vamp — chosen with one knob and shown as a chart in the key you set. Publishes them as the harmony on an MPX cable, so everything downstream is played against something. Not a chart module: no repeats, no sections, no import.",
       "tags": [
         "Sequencer",
         "Utility"

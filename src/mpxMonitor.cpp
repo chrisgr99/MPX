@@ -24,6 +24,7 @@ exactly the failure the forwarding rule exists to prevent — so getting it righ
 more than the module itself. */
 struct MonitorModule : Module, NoteSource, NoteSink {
 	enum ParamId {
+		P_HOLD,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -70,6 +71,9 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 
 	MonitorModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		// HOLD STOPS THE DISPLAY, NOT THE CABLE. Notes go on through either way: a monitor
+		// that could silence a patch by being read would be a trap.
+		configSwitch(P_HOLD, 0.f, 1.f, 0.f, "Display", {"Running", "Held"});
 		configInput(I_MPX, "MPX note in");
 		configOutput(O_MPX, "MPX note out");
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
@@ -146,10 +150,12 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 
 		// FORWARDED AS A WHOLE, not rebuilt. The event is copied and pushed on, so a lane this
 		// module has never heard of travels through it untouched.
+		const bool held = params[P_HOLD].getValue() > 0.5f;
 		Event e;
 		bool any = false;
 		while (reader.next(e)) {
-			record(e);
+			if (!held)
+				record(e);
 			if (e.kind == Event::ON)
 				sounding++;
 			else if (e.kind == Event::OFF && sounding > 0)
@@ -162,10 +168,12 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 		Harmony h;
 		if (reader.harmony(h)) {
 			busPublishHarmony(slot, h);
-			seen = h;
-			seenValid.store(true);
+			if (!held) {
+				seen = h;
+				seenValid.store(true);
+			}
 		}
-		else {
+		else if (!held) {
 			seenValid.store(false);
 		}
 
@@ -204,78 +212,93 @@ struct MonitorDisplay : widget::Widget {
 
 		nvgFontFaceId(args.vg, font->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-		const float pad = 6.f;
-		float y = 12.f;
+		const float pad = 5.f;
+		float y = 11.f;
 
 		if (!module) {
-			nvgFontSize(args.vg, 11.f);
+			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, PANEL_DIM);
 			nvgText(args.vg, pad, y, "mpxMonitor", NULL);
 			return;
 		}
 
-		// ---- the harmony ----
-		nvgFontSize(args.vg, 11.f);
+		char buf[80];
+		nvgFontSize(args.vg, 10.f);
+
+		// ---- the harmony, three short lines rather than two long ones ----
 		if (module->seenValid.load()) {
 			const Harmony& h = module->seen;
+			nvgFillColor(args.vg, PANEL_DIM);
+			std::snprintf(buf, sizeof(buf), "%s %s  %d/%d  cycle %.0f",
+				pitchClassName(h.key.tonic), h.key.minor ? "min" : "maj",
+				h.barBeats, h.barUnit, h.cycleBeats);
+			nvgText(args.vg, pad, y, buf, NULL);
+			y += 12.f;
+
 			nvgFillColor(args.vg, nvgRGB(0xff, 0x3c, 0xc8));
-			char buf[96];
-			std::snprintf(buf, sizeof(buf), "%s %s   %s  → %s   in %.1f",
-				pitchClassName(h.key.tonic), h.key.minor ? "minor" : "major",
+			nvgFontSize(args.vg, 12.f);
+			std::snprintf(buf, sizeof(buf), "%s \u2192 %s   in %.1f",
 				chordLetter(h.current, h.key).c_str(),
 				chordLetter(h.next, h.key).c_str(), h.beatsToNext);
 			nvgText(args.vg, pad, y, buf, NULL);
-			y += 14.f;
+			y += 13.f;
+
+			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, PANEL_DIM);
-			std::snprintf(buf, sizeof(buf), "%s  bar %d beat %.2f   cycle %.0f  %d/%d",
-				chordRoman(h.current).c_str(), h.bar + 1, h.beatInBar + 1.f,
-				h.cycleBeats, h.barBeats, h.barUnit);
+			std::snprintf(buf, sizeof(buf), "%s   bar %d  beat %.1f",
+				chordRoman(h.current).c_str(), h.bar + 1, h.beatInBar + 1.f);
 			nvgText(args.vg, pad, y, buf, NULL);
-			y += 16.f;
+			y += 14.f;
 		}
 		else {
 			nvgFillColor(args.vg, nvgRGB(0x6a, 0x72, 0x7e));
-			nvgText(args.vg, pad, y, "no harmony on this cable", NULL);
-			y += 30.f;
+			nvgText(args.vg, pad, y, "no harmony here", NULL);
+			y += 26.f;
 		}
 
 		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, pad, y - 6.f);
-		nvgLineTo(args.vg, box.size.x - pad, y - 6.f);
+		nvgMoveTo(args.vg, pad, y - 5.f);
+		nvgLineTo(args.vg, box.size.x - pad, y - 5.f);
 		nvgStrokeColor(args.vg, nvgRGB(0x2c, 0x32, 0x3b));
 		nvgStroke(args.vg);
+
+		if (module->params[MonitorModule::P_HOLD].getValue() > 0.5f) {
+			nvgFillColor(args.vg, nvgRGB(0xff, 0x9a, 0x3c));
+			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, box.size.x - pad, 11.f, "HELD", NULL);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+		}
 
 		// ---- the notes, newest at the top ----
 		nvgFontSize(args.vg, 10.f);
 		const uint32_t w = module->logWrite.load(std::memory_order_acquire);
 		if (w == 0) {
 			nvgFillColor(args.vg, nvgRGB(0x6a, 0x72, 0x7e));
-			nvgText(args.vg, pad, y + 4.f, "no notes yet", NULL);
+			nvgText(args.vg, pad, y + 3.f, "no notes yet", NULL);
 			return;
 		}
 		const int shown = (int) std::min<uint32_t>(w, LOG);
 		for (int i = 0; i < shown; i++) {
 			const MonitorModule::Line& line = module->log[(w - 1 - i) % LOG];
-			char buf[96];
 			if (line.kind == Event::ON) {
 				nvgFillColor(args.vg, nvgRGB(0x3d, 0xd6, 0x8c));
-				std::snprintf(buf, sizeof(buf), "on   %s  lvl %.2f  %.2fs  #%lld",
+				std::snprintf(buf, sizeof(buf), "on  %-4s %.2f %.2fs %lld",
 					voltsAsNote(line.a).c_str(), line.b, line.c,
 					(long long) (line.handle % 1000));
 			}
 			else if (line.kind == Event::OFF) {
 				nvgFillColor(args.vg, nvgRGB(0x8a, 0x92, 0x9e));
-				std::snprintf(buf, sizeof(buf), "off                          #%lld",
+				std::snprintf(buf, sizeof(buf), "off                %lld",
 					(long long) (line.handle % 1000));
 			}
 			else {
-				static const char* LANE[] = {"bend", "press", "timb"};
+				static const char* LANE[] = {"bend", "prs", "tmb"};
 				nvgFillColor(args.vg, nvgRGB(0xff, 0x9a, 0x3c));
-				std::snprintf(buf, sizeof(buf), "%-5s %+.3f                #%lld",
+				std::snprintf(buf, sizeof(buf), "%-4s %+.3f        %lld",
 					line.lane < 3 ? LANE[line.lane] : "?", line.a,
 					(long long) (line.handle % 1000));
 			}
-			nvgText(args.vg, pad, y + 4.f + i * 11.f, buf, NULL);
+			nvgText(args.vg, pad, y + 3.f + i * 11.f, buf, NULL);
 		}
 	}
 };
@@ -285,7 +308,7 @@ struct MonitorDisplay : widget::Widget {
 
 static Layout monitorLayout() {
 	Layout L;
-	L.hp = 20.f;
+	L.hp = 14.f;
 	L.title = "mpxMonitor";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -305,17 +328,24 @@ static Layout monitorLayout() {
 		label(key + ".label", x, y + 8.f, name, Panel::CENTRE, true, size, key);
 	};
 
-	jack("in.mpx", Item::PORT_IN, 14.f, 118.f, MonitorModule::I_MPX, "mpxIn", 12.f);
-	jack("out.mpx", Item::PORT_OUT, 88.f, 118.f, MonitorModule::O_MPX, "mpxOut", 12.f);
+	jack("in.mpx", Item::PORT_IN, 12.f, 116.f, MonitorModule::I_MPX, "mpxIn", 12.f);
+	jack("out.mpx", Item::PORT_OUT, 59.f, 116.f, MonitorModule::O_MPX, "mpxOut", 12.f);
+
+	Item hold;
+	hold.key = "p.hold"; hold.kind = Item::PARAM; hold.id = MonitorModule::P_HOLD;
+	hold.style = "lamps"; hold.x = 28.f; hold.y = 111.f;
+	hold.pitch = 9.f; hold.names = {"RUN", "HOLD"};
+	hold.labelSide = Panel::RIGHT;
+	L.items.push_back(hold);
 
 	Item linked;
 	linked.key = "lamp.linked"; linked.kind = Item::LIGHT;
-	linked.id = MonitorModule::L_LINKED; linked.x = 24.f; linked.y = 113.f;
+	linked.id = MonitorModule::L_LINKED; linked.x = 20.f; linked.y = 111.f;
 	linked.owner = "in.mpx";
 	L.items.push_back(linked);
 	Item active;
 	active.key = "lamp.active"; active.kind = Item::LIGHT;
-	active.id = MonitorModule::L_ACTIVE; active.x = 78.f; active.y = 113.f;
+	active.id = MonitorModule::L_ACTIVE; active.x = 51.f; active.y = 111.f;
 	active.owner = "out.mpx";
 	L.items.push_back(active);
 
@@ -337,8 +367,8 @@ struct MonitorWidget : ModuleWidget {
 
 		MonitorDisplay* display = new MonitorDisplay;
 		display->module = module;
-		display->box.pos = mm2px(math::Vec(4.f, 14.f));
-		display->box.size = mm2px(math::Vec(93.6f, 90.f));
+		display->box.pos = mm2px(math::Vec(3.f, 13.f));
+		display->box.size = mm2px(math::Vec(65.f, 91.f));
 		addChild(display);
 	}
 

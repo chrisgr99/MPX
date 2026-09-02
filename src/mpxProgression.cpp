@@ -3,30 +3,68 @@
 #include "Layout.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 namespace px {
 
 
-static const int SLOTS = 8;
+static const int MAX_STEPS = 16;
+
+struct Step {
+	int8_t degree;
+	int8_t accidental;
+	uint8_t quality;
+	float beats;
+};
+
+struct Progression {
+	const char* name;
+	bool minor;
+	int count;
+	Step steps[MAX_STEPS];
+};
+
+#define CH(d, q) {(int8_t) d, 0, (uint8_t) q, 4.f}
+
+/** A dozen progressions worth playing a line against.
+
+CHOSEN, NOT TYPED. An earlier version of this module gave each of eight slots a degree, a
+quality and a length — twenty-four knobs to arrive at four chords, with no way to see what you
+had until every one was set. The module exists so the melody generator has something to be
+played against, and a list of progressions everybody already knows does that with one control.
+
+Stored as degrees, so choosing a key transposes them and nothing is written twice. */
+static const Progression PROGRESSIONS[] = {
+	{"Two five one", false, 4, {CH(2, Q_MIN7), CH(5, Q_DOM7), CH(1, Q_MAJ7), CH(1, Q_MAJ7)}},
+	{"Turnaround", false, 4, {CH(1, Q_MAJ7), CH(6, Q_MIN7), CH(2, Q_MIN7), CH(5, Q_DOM7)}},
+	{"Jazz eight", false, 8, {CH(2, Q_MIN7), CH(5, Q_DOM7), CH(1, Q_MAJ7), CH(6, Q_DOM7),
+		CH(2, Q_MIN7), CH(5, Q_DOM7), CH(1, Q_MAJ7), CH(1, Q_MAJ7)}},
+	{"Four chords", false, 4, {CH(1, Q_MAJOR), CH(5, Q_MAJOR), CH(6, Q_MINOR), CH(4, Q_MAJOR)}},
+	{"Sensitive", false, 4, {CH(6, Q_MINOR), CH(4, Q_MAJOR), CH(1, Q_MAJOR), CH(5, Q_MAJOR)}},
+	{"Doo wop", false, 4, {CH(1, Q_MAJOR), CH(6, Q_MINOR), CH(4, Q_MAJOR), CH(5, Q_MAJOR)}},
+	{"Three chord", false, 4, {CH(1, Q_MAJOR), CH(1, Q_MAJOR), CH(4, Q_MAJOR), CH(5, Q_MAJOR)}},
+	{"Canon", false, 8, {CH(1, Q_MAJOR), CH(5, Q_MAJOR), CH(6, Q_MINOR), CH(3, Q_MINOR),
+		CH(4, Q_MAJOR), CH(1, Q_MAJOR), CH(4, Q_MAJOR), CH(5, Q_MAJOR)}},
+	{"Twelve bar blues", false, 12, {CH(1, Q_DOM7), CH(1, Q_DOM7), CH(1, Q_DOM7), CH(1, Q_DOM7),
+		CH(4, Q_DOM7), CH(4, Q_DOM7), CH(1, Q_DOM7), CH(1, Q_DOM7),
+		CH(5, Q_DOM7), CH(4, Q_DOM7), CH(1, Q_DOM7), CH(5, Q_DOM7)}},
+	{"Minor two five one", true, 4,
+		{CH(2, Q_HALFDIM), CH(5, Q_DOM7), CH(1, Q_MINOR), CH(1, Q_MINOR)}},
+	{"Andalusian", true, 4, {CH(1, Q_MINOR), CH(7, Q_MAJOR), CH(6, Q_MAJOR), CH(5, Q_MAJOR)}},
+	{"Dorian vamp", true, 2, {{1, 0, Q_MIN7, 8.f}, {4, 0, Q_DOM7, 8.f}}},
+};
+
+#undef CH
+
+static const int NUM_PROGRESSIONS = (int) (sizeof(PROGRESSIONS) / sizeof(PROGRESSIONS[0]));
 
 
-/** A short chord progression, set on the panel, published as the harmony on an MPX cable.
-
-NOT A CHART. It has no repeats, no sections, no endings and no import — those are what mpxChart
-will be. This exists so that harmony-on-the-cable can be built and heard end to end before any
-of that is written, and so the melody generator has something to be played against.
-
-A slot whose length is zero is not in the progression, so the cycle is as long as the slots that
-are set rather than always eight of them. */
 struct ProgressionModule : Module, NoteSource {
 	enum ParamId {
+		P_WHICH,
 		P_KEY,
-		P_MODE,
 		P_TEMPO,
-		P_DEGREE,
-		P_QUALITY = P_DEGREE + SLOTS,
-		P_BEATS = P_QUALITY + SLOTS,
-		NUM_PARAMS = P_BEATS + SLOTS
+		NUM_PARAMS
 	};
 	enum InputId {
 		I_CLOCK,
@@ -38,8 +76,8 @@ struct ProgressionModule : Module, NoteSource {
 		NUM_OUTPUTS
 	};
 	enum LightId {
-		L_SLOT,
-		NUM_LIGHTS = L_SLOT + SLOTS
+		L_BEAT,
+		NUM_LIGHTS
 	};
 
 	int slot = -1;
@@ -48,32 +86,20 @@ struct ProgressionModule : Module, NoteSource {
 	clock pulses and beatsToNext counts down smoothly rather than in steps. */
 	double beats = 0.0;
 	dsp::SchmittTrigger clockTrigger, resetTrigger;
-	float internalPhase = 0.f;
-	/** Seconds a beat lasts, measured from the clock, so the position can advance between
-	pulses. Falls back to the tempo knob until two pulses have been seen. */
+	/** Seconds a beat lasts, measured from the clock so the position can advance between
+	pulses. The tempo knob supplies it until a clock is patched. */
 	float beatSeconds = 0.5f;
 	float sinceLastPulse = 0.f;
+	/** For the display, which runs on the other thread. */
+	std::atomic<int> playing{0};
 
 	ProgressionModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam(P_WHICH, 0.f, (float) (NUM_PROGRESSIONS - 1), 0.f, "Progression");
+		paramQuantities[P_WHICH]->snapEnabled = true;
 		configParam(P_KEY, 0.f, 11.f, 0.f, "Key");
 		paramQuantities[P_KEY]->snapEnabled = true;
-		configSwitch(P_MODE, 0.f, 1.f, 0.f, "Mode", {"Major", "Minor"});
-		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo (when no clock is patched)", " bpm");
-
-		// A two-five-one and a turnaround, so the module makes sense the moment it is placed.
-		const int degree[SLOTS] = {1, 6, 2, 5, 1, 6, 2, 5};
-		const int quality[SLOTS] = {Q_MAJ7, Q_MIN7, Q_MIN7, Q_DOM7, Q_MAJ7, Q_MIN7, Q_MIN7, Q_DOM7};
-		for (int i = 0; i < SLOTS; i++) {
-			configParam(P_DEGREE + i, 1.f, 7.f, (float) degree[i],
-				string::f("Slot %d degree", i + 1));
-			paramQuantities[P_DEGREE + i]->snapEnabled = true;
-			configParam(P_QUALITY + i, 0.f, (float) (NUM_QUALITIES - 1), (float) quality[i],
-				string::f("Slot %d quality", i + 1));
-			paramQuantities[P_QUALITY + i]->snapEnabled = true;
-			configParam(P_BEATS + i, 0.f, 16.f, 4.f, string::f("Slot %d beats", i + 1));
-			paramQuantities[P_BEATS + i]->snapEnabled = true;
-		}
+		configParam(P_TEMPO, 30.f, 300.f, 100.f, "Tempo (when no clock is patched)", " bpm");
 
 		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
@@ -98,16 +124,15 @@ struct ProgressionModule : Module, NoteSource {
 		beats = 0.0;
 	}
 
-	Chord chordAt(int i) {
-		Chord c;
-		c.valid = true;
-		c.degree = (int8_t) std::round(params[P_DEGREE + i].getValue());
-		c.quality = (uint8_t) std::round(params[P_QUALITY + i].getValue());
-		return c;
+	int which() {
+		return clamp((int) std::round(params[P_WHICH].getValue()), 0, NUM_PROGRESSIONS - 1);
 	}
 
-	float beatsAt(int i) {
-		return std::round(params[P_BEATS + i].getValue());
+	Key currentKey() {
+		Key k;
+		k.tonic = (int8_t) std::round(params[P_KEY].getValue());
+		k.minor = PROGRESSIONS[which()].minor;
+		return k;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -125,8 +150,6 @@ struct ProgressionModule : Module, NoteSource {
 		sinceLastPulse += args.sampleTime;
 		if (inputs[I_CLOCK].isConnected()) {
 			if (clockTrigger.process(inputs[I_CLOCK].getVoltage(), 0.1f, 1.f)) {
-				// The interval between the last two pulses is what a beat is worth, so the
-				// position can be interpolated between them.
 				if (sinceLastPulse > 0.001f && sinceLastPulse < 10.f)
 					beatSeconds = sinceLastPulse;
 				sinceLastPulse = 0.f;
@@ -141,102 +164,143 @@ struct ProgressionModule : Module, NoteSource {
 			beats += args.sampleTime / beatSeconds;
 		}
 
+		const Progression& p = PROGRESSIONS[which()];
 		float cycle = 0.f;
-		for (int i = 0; i < SLOTS; i++)
-			cycle += beatsAt(i);
+		for (int i = 0; i < p.count; i++)
+			cycle += p.steps[i].beats;
 
-		Harmony h;
-		h.key.tonic = (int8_t) std::round(params[P_KEY].getValue());
-		h.key.minor = params[P_MODE].getValue() > 0.5f;
-		h.barBeats = 4;
-		h.barUnit = 4;
-		h.cycleBeats = cycle;
-
-		if (cycle <= 0.f) {
-			// Nothing set: still publish, so a module downstream knows the key and the beat
-			// even when there are no chords to speak of.
-			h.valid = true;
-			h.beat = std::fmod(beats, 4.0);
-			h.bar = 0;
-			h.beatInBar = (float) h.beat;
-			busPublishHarmony(slot, h);
-			for (int i = 0; i < SLOTS; i++)
-				lights[L_SLOT + i].setBrightness(0.f);
-			return;
-		}
-
-		const double pos = std::fmod(std::fmod(beats, (double) cycle) + cycle, (double) cycle);
-
-		// Which slot is sounding, and the two after it. Slots of no length are stepped over
-		// rather than treated as silence, so shortening one to nothing removes it.
-		int order[SLOTS];
-		int n = 0;
-		for (int i = 0; i < SLOTS; i++) {
-			if (beatsAt(i) > 0.f)
-				order[n++] = i;
-		}
+		const double pos = (cycle > 0.f)
+			? std::fmod(std::fmod(beats, (double) cycle) + cycle, (double) cycle) : 0.0;
 
 		int at = 0;
 		float start = 0.f;
-		for (int k = 0; k < n; k++) {
-			const float len = beatsAt(order[k]);
-			if (pos < start + len) {
-				at = k;
+		for (int i = 0; i < p.count; i++) {
+			if (pos < start + p.steps[i].beats) {
+				at = i;
 				break;
 			}
-			start += len;
+			start += p.steps[i].beats;
 		}
 
+		Harmony h;
 		h.valid = true;
-		h.current = chordAt(order[at]);
-		h.next = chordAt(order[(at + 1) % n]);
-		h.after = chordAt(order[(at + 2) % n]);
-		h.beatsToNext = (float) (start + beatsAt(order[at]) - pos);
+		h.key = currentKey();
+		h.current = chordOf(p, at);
+		h.next = chordOf(p, (at + 1) % p.count);
+		h.after = chordOf(p, (at + 2) % p.count);
+		h.beatsToNext = (float) (start + p.steps[at].beats - pos);
 		h.beat = pos;
-		h.bar = (int) (pos / h.barBeats);
-		h.beatInBar = (float) (pos - h.bar * h.barBeats);
+		h.cycleBeats = cycle;
+		h.barBeats = 4;
+		h.barUnit = 4;
+		h.bar = (int) (pos / 4.0);
+		h.beatInBar = (float) (pos - h.bar * 4.0);
 		busPublishHarmony(slot, h);
 
-		for (int i = 0; i < SLOTS; i++)
-			lights[L_SLOT + i].setBrightness(i == order[at] ? 1.f : 0.f);
+		playing.store(at);
+		// A pulse each beat, so the panel shows it running with no cable patched.
+		lights[L_BEAT].setBrightness(std::fmod(pos, 1.0) < 0.25 ? 1.f : 0.f);
+	}
+
+	static Chord chordOf(const Progression& p, int i) {
+		Chord c;
+		c.valid = true;
+		c.degree = p.steps[i].degree;
+		c.accidental = p.steps[i].accidental;
+		c.quality = p.steps[i].quality;
+		return c;
 	}
 };
 
 
-/** The chord each row is set to, written out, because two knob positions are not a chord. */
+/** The progression as it would be written: its name, then its chords in bars, with the one
+sounding picked out. */
 struct ProgressionDisplay : widget::Widget {
 	ProgressionModule* module = NULL;
-	float rowTop = 0.f, rowPitch = 0.f;
 
 	void draw(const DrawArgs& args) override {
-		std::shared_ptr<window::Font> font =
+		std::shared_ptr<window::Font> body =
 			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
-		if (!font || font->handle < 0)
+		std::shared_ptr<window::Font> face =
+			APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+		if (!body || body->handle < 0)
 			return;
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, 11.f);
-		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 3.f);
+		nvgFillColor(args.vg, nvgRGB(0x12, 0x15, 0x1a));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGB(0x35, 0x3c, 0x47));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		const int index = module ? module->which() : 0;
+		const Progression& p = PROGRESSIONS[index];
 		Key key;
-		if (module) {
-			key.tonic = (int8_t) std::round(module->params[ProgressionModule::P_KEY].getValue());
-			key.minor = module->params[ProgressionModule::P_MODE].getValue() > 0.5f;
-		}
+		if (module)
+			key = module->currentKey();
+		else
+			key.minor = p.minor;
+		const int at = module ? module->playing.load() : -1;
 
-		for (int i = 0; i < SLOTS; i++) {
-			const float y = rowTop + i * rowPitch;
-			if (!module) {
-				nvgFillColor(args.vg, PANEL_DIM);
-				nvgText(args.vg, 0.f, y, "Imaj7", NULL);
-				continue;
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+		nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle : body->handle);
+		nvgFontSize(args.vg, 13.f);
+		nvgFillColor(args.vg, PANEL_INK);
+		nvgText(args.vg, 7.f, 14.f, p.name, NULL);
+
+		nvgFontFaceId(args.vg, body->handle);
+		nvgFontSize(args.vg, 9.f);
+		nvgFillColor(args.vg, PANEL_DIM);
+		char head[64];
+		std::snprintf(head, sizeof(head), "%s %s", pitchClassName(key.tonic),
+			p.minor ? "minor" : "major");
+		nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+		nvgText(args.vg, box.size.x - 7.f, 14.f, head, NULL);
+
+		// FOUR TO A LINE, which is how a chart is written and how a phrase is counted.
+		const float left = 7.f;
+		const float width = (box.size.x - 14.f) / 4.f;
+		const float top = 36.f;
+		const float lineHeight = 24.f;
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		for (int i = 0; i < p.count; i++) {
+			const int row = i / 4;
+			const int col = i % 4;
+			const float x = left + col * width;
+			const float y = top + row * lineHeight;
+			const Chord c = ProgressionModule::chordOf(p, i);
+
+			if (i == at) {
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x + 1.f, y - 10.f, width - 2.f, 20.f, 3.f);
+				nvgFillColor(args.vg, nvgRGBA(0xff, 0x3c, 0xc8, 0x30));
+				nvgFill(args.vg);
 			}
-			const bool unused = module->beatsAt(i) <= 0.f;
-			const Chord c = module->chordAt(i);
-			// The degree and the letter both: the degree is what the rules work on, and the
-			// letter is what anybody reads.
-			const std::string text = chordRoman(c) + "   " + chordLetter(c, key);
-			nvgFillColor(args.vg, unused ? nvgRGB(0x4a, 0x52, 0x5e) : PANEL_INK);
-			nvgText(args.vg, 0.f, y, text.c_str(), NULL);
+
+			// A barline before each cell, so they read as bars rather than as a list.
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, x, y - 10.f);
+			nvgLineTo(args.vg, x, y + 10.f);
+			nvgStrokeColor(args.vg, nvgRGB(0x3a, 0x41, 0x4c));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+
+			nvgFontSize(args.vg, 12.f);
+			nvgFillColor(args.vg, i == at ? nvgRGB(0xff, 0x3c, 0xc8) : PANEL_INK);
+			nvgText(args.vg, x + width / 2.f, y - 3.f, chordLetter(c, key).c_str(), NULL);
+
+			nvgFontSize(args.vg, 8.f);
+			nvgFillColor(args.vg, PANEL_DIM);
+			nvgText(args.vg, x + width / 2.f, y + 8.f, chordRoman(c).c_str(), NULL);
+
+			if (col == 3 || i == p.count - 1) {
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, x + width, y - 10.f);
+				nvgLineTo(args.vg, x + width, y + 10.f);
+				nvgStrokeColor(args.vg, nvgRGB(0x3a, 0x41, 0x4c));
+				nvgStroke(args.vg);
+			}
 		}
 	}
 };
@@ -244,12 +308,9 @@ struct ProgressionDisplay : widget::Widget {
 
 // ---- panel -------------------------------------------------------------------------------
 
-static const float PC_DEG = 13.f, PC_QUAL = 27.f, PC_BEATS = 41.f;
-static const float PC_ROW_TOP = 40.f, PC_ROW_PITCH = 10.6f;
-
 static Layout progressionLayout() {
 	Layout L;
-	L.hp = 20.f;
+	L.hp = 16.f;
 	L.title = "mpxProgression";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -266,8 +327,7 @@ static Layout progressionLayout() {
 		Item i;
 		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = style;
 		L.items.push_back(i);
-		if (!name.empty())
-			label(key + ".label", x, y + 8.f, name, Panel::CENTRE, false, 0.f, key);
+		label(key + ".label", x, y + 9.f, name, Panel::CENTRE, true, 0.f, key);
 	};
 	auto jack = [&](const std::string& key, Item::Kind kind, float x, float y, int id,
 			const std::string& name, NVGcolor color, float size = 0.f) {
@@ -277,38 +337,21 @@ static Layout progressionLayout() {
 		label(key + ".label", x, y + 8.f, name, Panel::CENTRE, size > 0.f, size, key);
 	};
 
-	knob("p.key", 13.f, 20.f, ProgressionModule::P_KEY, "KEY");
-	Item mode;
-	mode.key = "p.mode"; mode.kind = Item::PARAM; mode.id = ProgressionModule::P_MODE;
-	mode.style = "lamps"; mode.x = 25.f; mode.y = 15.f;
-	mode.pitch = 9.f; mode.names = {"MAJOR", "MINOR"};
-	mode.labelSide = Panel::RIGHT;
-	L.items.push_back(mode);
+	knob("p.which", 18.f, 95.f, ProgressionModule::P_WHICH, "PROGRESSION", "knob.large");
+	knob("p.key", 48.f, 95.f, ProgressionModule::P_KEY, "KEY");
+	knob("p.tempo", 68.f, 95.f, ProgressionModule::P_TEMPO, "TEMPO");
+	label("h.drive", 40.f, 106.f, "TEMPO drives it until a clock is patched",
+		Panel::CENTRE, false, 7.f);
 
-	label("h.degree", PC_DEG, 32.f, "DEG", Panel::CENTRE, true);
-	label("h.quality", PC_QUAL, 32.f, "QUAL", Panel::CENTRE, true);
-	label("h.beats", PC_BEATS, 32.f, "BEATS", Panel::CENTRE, true);
+	jack("in.clock", Item::PORT_IN, 12.f, 116.f, ProgressionModule::I_CLOCK, "clock", SIG_GATE);
+	jack("in.reset", Item::PORT_IN, 28.f, 116.f, ProgressionModule::I_RESET, "reset", SIG_GATE);
+	jack("out.mpx", Item::PORT_OUT, 68.f, 116.f, ProgressionModule::O_MPX, "mpxOut",
+		NOTE_CABLE, 12.f);
 
-	for (int i = 0; i < SLOTS; i++) {
-		const float y = PC_ROW_TOP + i * PC_ROW_PITCH;
-		const std::string n = std::to_string(i + 1);
-		knob("p.deg" + n, PC_DEG, y, ProgressionModule::P_DEGREE + i, "");
-		knob("p.qual" + n, PC_QUAL, y, ProgressionModule::P_QUALITY + i, "");
-		knob("p.beats" + n, PC_BEATS, y, ProgressionModule::P_BEATS + i, "");
-		Item lamp;
-		lamp.key = "lamp.slot" + n; lamp.kind = Item::LIGHT;
-		lamp.id = ProgressionModule::L_SLOT + i;
-		lamp.x = 6.f; lamp.y = y;
-		L.items.push_back(lamp);
-	}
-
-	jack("in.clock", Item::PORT_IN, 13.f, 128.f - 12.f, ProgressionModule::I_CLOCK,
-		"clock", SIG_GATE);
-	jack("in.reset", Item::PORT_IN, 29.f, 128.f - 12.f, ProgressionModule::I_RESET,
-		"reset", SIG_GATE);
-	knob("p.tempo", 45.f, 128.f - 12.f, ProgressionModule::P_TEMPO, "tempo");
-	jack("out.mpx", Item::PORT_OUT, 88.f, 128.f - 12.f, ProgressionModule::O_MPX,
-		"mpxOut", NOTE_CABLE, 12.f);
+	Item lamp;
+	lamp.key = "lamp.beat"; lamp.kind = Item::LIGHT; lamp.id = ProgressionModule::L_BEAT;
+	lamp.x = 45.f; lamp.y = 116.f;
+	L.items.push_back(lamp);
 
 	L.bindOffsets();
 	return L;
@@ -328,10 +371,8 @@ struct ProgressionWidget : ModuleWidget {
 
 		ProgressionDisplay* display = new ProgressionDisplay;
 		display->module = module;
-		display->box.pos = mm2px(math::Vec(52.f, 0.f));
-		display->box.size = mm2px(math::Vec(48.f, 128.5f));
-		display->rowTop = mm2px(math::Vec(0, PC_ROW_TOP)).y;
-		display->rowPitch = mm2px(math::Vec(0, PC_ROW_PITCH)).y;
+		display->box.pos = mm2px(math::Vec(3.f, 13.f));
+		display->box.size = mm2px(math::Vec(75.f, 68.f));
 		addChild(display);
 	}
 
