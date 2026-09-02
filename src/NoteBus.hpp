@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include "Chord.hpp"
 #include <atomic>
 #include <cstdint>
 
@@ -66,11 +67,44 @@ struct Event {
 	float value = 0.f;
 };
 
+/** THE HARMONY THE NOTES ARE PLAYED AGAINST, carried by the same cable.
+
+STATE, NOT EVENTS. A stream of chord changes would leave a module that starts listening between
+two of them knowing nothing until the next one. Rack's own model is the guide: a cable carries a
+value readable at any sample, not a stream that must not be missed. So this is a block anyone
+can read whenever they like, and forwarding it costs a copy.
+
+AND IT DESCRIBES THE FUTURE. Notes arrive as they happen; this says what is coming. That is why
+a harmony processor can insert a chord before a dominant it can already see, where every note
+processor has to work around having no lookahead. */
+struct Harmony {
+	bool valid = false;
+	Key key;
+	Chord current, next, after;
+	/** Beats until the current chord gives way. */
+	float beatsToNext = 0.f;
+	/** Where we are, in beats from the start of the cycle, and how long the cycle is. */
+	double beat = 0.0;
+	float cycleBeats = 0.f;
+	/** The time signature, so a module can work in bars without being told what one is. */
+	uint8_t barBeats = 4;
+	uint8_t barUnit = 4;
+	int bar = 0;
+	float beatInBar = 0.f;
+};
+
 struct Bus {
 	std::atomic<bool> claimed{false};
 	std::atomic<uint32_t> generation{0};
 	std::atomic<uint32_t> write{0};
 	Event ring[BUS_RING];
+
+	/** A seqlock, because the harmony is larger than a word and Rack may run several engine
+	threads: the writer raises the count before and after, and a reader that sees it change
+	underneath reads again. Written a few times a second and read every sample, which is
+	exactly the traffic a seqlock suits. */
+	std::atomic<uint32_t> hseq{0};
+	Harmony harmony;
 };
 
 extern Bus gBuses[MAX_BUSES];
@@ -83,19 +117,42 @@ void busRelease(int slot);
 /** Appends an event. Audio thread, one writer per bus. */
 void busPush(int slot, const Event& e);
 
-/** A voice's cursor into a bus. */
-struct BusReader {
-	int slot = -1;
-	uint32_t generation = 0;
-	uint32_t read = 0;
+/** Publishes the harmony on this bus. Audio thread, one writer per bus. */
+void busPublishHarmony(int slot, const Harmony& h);
+/** Reads it. False if the slot is empty or nothing has published one. */
+bool busReadHarmony(int slot, Harmony& out);
 
-	/** Points at a bus and starts at its present, so connecting a cable does not replay
-	every note the source has ever sent. */
-	void attach(int newSlot, uint32_t newGeneration);
-	void detach() { slot = -1; }
-	bool attached() const { return slot >= 0; }
-	/** Takes the next event, if there is one. Audio thread. */
+/** How many cables one input can be fed by. Rack has allowed several into one input since
+version 2.5, and interleaving their events is the note-domain equivalent of the voltage summing
+it does for everything else — which is what makes parallel chains work. */
+static const int MAX_UPSTREAM = 4;
+
+/** A reader's cursors. One per cable feeding the input. */
+struct BusReader {
+	struct Link {
+		int slot = -1;
+		uint32_t generation = 0;
+		uint32_t read = 0;
+	};
+	Link links[MAX_UPSTREAM];
+	int count = 0;
+
+	/** Rebuilt each time the patching changes. Starts at each bus's present, so connecting a
+	cable does not replay every note the source has ever sent. */
+	void clear() { count = 0; }
+	void add(int slot, uint32_t generation);
+	/** The single-cable case, which is most of them. */
+	void attach(int slot, uint32_t generation);
+	void detach() { count = 0; }
+	bool attached() const { return count > 0; }
+	/** Whether this is the same set of upstreams, so an unchanged frame does not reset the
+	cursors and replay nothing. */
+	bool sameAs(const int* slots, const uint32_t* generations, int n) const;
+
+	/** Takes the next event from any upstream. Audio thread. */
 	bool next(Event& e);
+	/** The harmony from the first upstream that has one. */
+	bool harmony(Harmony& out) const;
 };
 
 /** A unique name for a note. */

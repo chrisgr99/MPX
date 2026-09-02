@@ -44,6 +44,26 @@
         "Random"
       ],
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/design.md"
+    },
+    {
+      "slug": "mpxProgression",
+      "name": "mpxProgression",
+      "description": "A short chord progression set on the panel and published as the harmony on an MPX cable. Eight slots, each a degree of the key, a quality and a length in beats; a slot of no length is not in the progression. Not a chart — no repeats, no sections, no import — but enough for everything downstream to be played against something.",
+      "tags": [
+        "Sequencer",
+        "Utility"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
+    },
+    {
+      "slug": "mpxMonitor",
+      "name": "mpxMonitor",
+      "description": "Shows what is on an MPX cable and passes it on unchanged: the harmony being played against, and the notes going by with their pitch, level and duration. An MPX cable carries no voltage, so a scope says nothing about it and this is the way to see one.",
+      "tags": [
+        "Visual",
+        "Utility"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
     }
   ]
 }

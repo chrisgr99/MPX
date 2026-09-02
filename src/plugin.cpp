@@ -8,4 +8,6 @@ void init(Plugin* p) {
 	p->addModel(modelFromMPX);
 	p->addModel(modelToMPX);
 	p->addModel(modelEuclid);
+	p->addModel(modelProgression);
+	p->addModel(modelMonitor);
 }

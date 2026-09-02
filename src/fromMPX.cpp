@@ -74,7 +74,7 @@ struct Ramp {
 };
 
 
-struct VoiceModule : Module {
+struct VoiceModule : Module, NoteSink {
 	enum ParamId {
 		P_POLY,
 		P_ROLLOVER,
@@ -160,6 +160,10 @@ struct VoiceModule : Module {
 	void onReset() override {
 		for (Slot& s : slots)
 			s = Slot();
+	}
+
+	bool isMPXInputId(int inputId) override {
+		return inputId == I_NOTE;
 	}
 
 	/** Called from the widget once a frame with whatever the cable says. */
@@ -420,7 +424,10 @@ struct VoiceModule : Module {
 
 
 bool isMPXInput(engine::Module* module, int inputId) {
-	return dynamic_cast<VoiceModule*>(module) != NULL && inputId == VoiceModule::I_NOTE;
+	// Asked of the capability, not of the class, for the same reason noteBusOf is: a module
+	// added later should need no special case here.
+	NoteSink* sink = dynamic_cast<NoteSink*>(module);
+	return sink != NULL && sink->isMPXInputId(inputId);
 }
 
 

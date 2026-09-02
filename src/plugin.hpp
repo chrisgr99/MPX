@@ -7,6 +7,8 @@ extern Plugin* pluginInstance;
 extern Model* modelFromMPX;
 extern Model* modelToMPX;
 extern Model* modelEuclid;
+extern Model* modelProgression;
+extern Model* modelMonitor;
 
 namespace px {
 
@@ -18,6 +20,13 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation);
 sending end so a cable can be coloured for whether the link actually works rather than for which
 jack it happens to leave. */
 bool isMPXInput(engine::Module* module, int inputId);
+
+/** Implemented by any module with an MPX input, so the sending end can tell whether a cable
+lands somewhere that listens. The same question as noteBusOf, asked the other way round. */
+struct NoteSink {
+	virtual ~NoteSink() {}
+	virtual bool isMPXInputId(int inputId) = 0;
+};
 
 /** The signal families, coloured the same way DreamRack colours them: the colour says what
 kind of signal a jack carries, and it is the same code on every panel. */
