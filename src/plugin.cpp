@@ -10,4 +10,5 @@ void init(Plugin* p) {
 	p->addModel(modelEuclid);
 	p->addModel(modelProgression);
 	p->addModel(modelMonitor);
+	p->addModel(modelChart);
 }

@@ -64,6 +64,16 @@
         "Utility"
       ],
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
+    },
+    {
+      "slug": "mpxChart",
+      "name": "mpxChart",
+      "description": "Reads iReal Pro playlists and plays their charts onto an MPX cable. Import an HTML export once and the songs are yours to choose from; the chosen one is stored in the patch itself, so it opens on a machine that has never seen your playlists. Repeats, endings and similes are written out and the chart is shown as it is played, four bars to a line, with the sounding bar picked out. Transposes with one knob, since chords are held as degrees of the key.",
+      "tags": [
+        "Sequencer",
+        "Utility"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
     }
   ]
 }

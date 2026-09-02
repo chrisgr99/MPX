@@ -9,6 +9,7 @@ extern Model* modelToMPX;
 extern Model* modelEuclid;
 extern Model* modelProgression;
 extern Model* modelMonitor;
+extern Model* modelChart;
 
 namespace px {
 
