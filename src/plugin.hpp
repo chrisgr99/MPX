@@ -6,6 +6,7 @@ using namespace rack;
 extern Plugin* pluginInstance;
 extern Model* modelFromMPX;
 extern Model* modelToMPX;
+extern Model* modelEuclid;
 
 namespace px {
 
@@ -84,6 +85,11 @@ struct Lamps : ParamWidget {
 	/** The lamp nearest a point, or -1. */
 	int lampAt(math::Vec pos);
 	math::Vec lampPos(int i);
+	/** SIZES THE BOX FROM THE LAMPS RATHER THAN BEING TOLD. A box smaller than the row it holds
+	is a control whose later lamps are outside it and can never be clicked, and that is not
+	something an author should have to work out. The names are covered too, so clicking one
+	chooses it — a word beside a lamp is part of the same control. */
+	void fit();
 };
 
 /** Painted OVER the ports rather than behind them, because a jack's colour belongs on the jack.

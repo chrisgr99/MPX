@@ -33,6 +33,17 @@
         "Utility"
       ],
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/manual.md"
+    },
+    {
+      "slug": "mpxEuclid",
+      "name": "mpxEuclid",
+      "description": "Four Euclidean voices on one MPX cable. Each has its own steps, pulses and offset, and its own clock divider. Every note's level and length come from a slowly wandering value that is correlated with its own past and repeats after a set number of beats, so each voice reads as a separate player rather than as a machine being random. Harder hits ring longer by however much you ask.",
+      "tags": [
+        "Sequencer",
+        "Polyphonic",
+        "Random"
+      ],
+      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/design.md"
     }
   ]
 }

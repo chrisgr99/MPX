@@ -14,6 +14,8 @@ The idea comes from MIDI Polyphonic Expression, which gives every sounding note 
 
 **fromMPX** takes one voice cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend as a control signal and as volts per octave, pressure, timbre, pan and duration. It allocates the notes among its voices, one channel per voice, so a polyphonic oscillator, envelope and amplifier patched to it play the notes with no adapter in between.
 
+**mpxEuclid** is four Euclidean voices on one MPX cable, and the first source that speaks MPX natively rather than adapting to it. Each voice has its own steps, pulses, offset and clock divider. Every note's velocity and duration come from values that change slowly and repeat, so each voice is heard as a separate source rather than as one behaving randomly. [docs/euclid.md](docs/euclid.md) has the whole of it.
+
 The intended arrangement is one fromMPX among each group of modules that implements an instrument, with a voice cable running to it from wherever the notes come from. Four instruments is four cables, and four toMPX modules to make them — a polyphonic cable in Rack carries one instrument's voices, so a module looking at one has one instrument to hand on. They are adapters, and they leave the patch entirely once a source speaks MPX for itself.
 
 ## How the cable works

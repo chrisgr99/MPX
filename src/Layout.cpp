@@ -272,8 +272,10 @@ static math::Rect itemRect(const Item& item) {
 			if (item.style == "knob.huge") w = h = 20.f;
 			else if (item.style == "knob.large") w = h = 14.f;
 			else if (item.style == "lamps") {
-				w = item.horizontal ? item.pitch * (float) item.names.size() : 10.f;
-				h = item.horizontal ? 7.f : item.pitch * (float) item.names.size();
+				// The same extent the widget gives itself: lamps along, names across.
+				const float along = 4.4f + (std::max((size_t) 1, item.names.size()) - 1) * item.pitch;
+				w = item.horizontal ? along : 12.f;
+				h = item.horizontal ? 7.f : along;
 				// Placed by its corner, so its rect starts there rather than straddling it.
 				return math::Rect(math::Vec(item.x, item.y), math::Vec(w, h));
 			}

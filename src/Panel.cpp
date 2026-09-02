@@ -185,8 +185,32 @@ void JackPaint::draw(const DrawArgs& args) {
 static const float LAMP_R = 6.5f;
 
 math::Vec Lamps::lampPos(int i) {
-	return horizontal ? math::Vec(LAMP_R + i * pitch, box.size.y / 2.f)
-		: math::Vec(box.size.x / 2.f, LAMP_R + i * pitch);
+	// ANCHORED TO THE CORNER, not to the middle of the box. The box grows to cover the names,
+	// and lamps measured from its centre would slide as it grew.
+	return horizontal ? math::Vec(LAMP_R + i * pitch, LAMP_R)
+		: math::Vec(LAMP_R, LAMP_R + i * pitch);
+}
+
+void Lamps::fit() {
+	const int n = std::max(1, (int) names.size());
+	const float along = 2.f * LAMP_R + (n - 1) * pitch;
+	// Room for the longest name, estimated from its characters: a text width wants a font and a
+	// drawing context, and a target that is a little generous costs nothing.
+	size_t longest = 0;
+	for (const std::string& name : names) {
+		size_t start = 0;
+		while (start <= name.size()) {
+			const size_t brk = name.find('\n', start);
+			const size_t len = (brk == std::string::npos ? name.size() : brk) - start;
+			longest = std::max(longest, len);
+			if (brk == std::string::npos)
+				break;
+			start = brk + 1;
+		}
+	}
+	const float names_w = longest ? (LAMP_R + 5.f + longest * 4.6f) : LAMP_R;
+	const float across = 2.f * LAMP_R + (labelSide == Panel::RIGHT ? names_w : 0.f);
+	box.size = horizontal ? math::Vec(along, across) : math::Vec(across, along);
 }
 
 int Lamps::lampAt(math::Vec pos) {

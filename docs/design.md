@@ -158,6 +158,12 @@ The duration is in the note-on as well as being what ends the note at the source
 
 At toMPX the same scales apply to the inputs: level and pressure and timbre are 0 to 10 V, pan is -5 to 5 V, duration is one volt per second.
 
+## The modules
+
+**toMPX** and **fromMPX** are adapters: they bring ordinary control voltages into the domain and take them back out. A patch needs them only where a source or an instrument does not speak MPX itself.
+
+**mpxEuclid** is a source. It has no adapter in front of it, which is what the transport was designed to allow and what this document claimed before anything but toMPX could do it. [euclid.md](euclid.md) describes it.
+
 ## Limits
 
 Sixteen toMPX modules can exist at once, each holding four voice cables. Each holds two hundred and fifty-six events, which is more than a sample's worth by a wide margin.

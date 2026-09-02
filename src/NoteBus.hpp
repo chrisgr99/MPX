@@ -101,5 +101,17 @@ struct BusReader {
 /** A unique name for a note. */
 int64_t mintHandle();
 
+/** ANYTHING THAT PUTS NOTES ON A CABLE. Implemented by toMPX and by every native source after
+it, so the far end asks a question about a capability rather than about a class: a sequencer
+that speaks MPX plugs straight into an unbundler with no adapter and nothing to whitelist.
+
+This is what the design has always claimed — that the link is established by capability — and
+until there was a second source it was only true on paper. */
+struct NoteSource {
+	virtual ~NoteSource() {}
+	/** The bus this output writes to, or -1 for a port that is not an MPX one. */
+	virtual int busSlotFor(int outputId, uint32_t* generation) = 0;
+};
+
 
 } // namespace px

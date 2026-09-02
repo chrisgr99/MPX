@@ -16,7 +16,7 @@ static const float GATE_HIGH = 1.f;
 static const float GATE_LOW = 0.1f;
 
 
-struct NoteModule : Module {
+struct NoteModule : Module, NoteSource {
 	enum ParamId {
 		P_LEVEL,
 		P_DURATION,
@@ -108,6 +108,14 @@ struct NoteModule : Module {
 	void onReset() override {
 		for (Channel& c : channels)
 			c = Channel();
+	}
+
+	int busSlotFor(int outputId, uint32_t* generation) override {
+		if (outputId != O_VOICE)
+			return -1;
+		if (generation)
+			*generation = this->generation;
+		return slot;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -262,14 +270,12 @@ struct NoteModule : Module {
 
 
 int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
-	NoteModule* note = dynamic_cast<NoteModule*>(module);
-	if (!note)
+	// Asked of the capability, not of the class. Any module that can put notes on a cable
+	// answers this, so a native source needs no special case at the far end.
+	NoteSource* source = dynamic_cast<NoteSource*>(module);
+	if (!source)
 		return -1;
-	if (outputId != NoteModule::O_VOICE)
-		return -1;
-	if (generation)
-		*generation = note->generation;
-	return note->slot;
+	return source->busSlotFor(outputId, generation);
 }
 
 
