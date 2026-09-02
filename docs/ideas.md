@@ -350,6 +350,74 @@ In Decorate, after the ornament processor. Running first, the notes an ornament 
 
 ---
 
+## What already exists, and what Bitwig teaches
+
+Checked rather than remembered, on 2 September 2026.
+
+### The landscape
+
+**Bitwig** is the closest thing built. Every note carries five expression dimensions — velocity, pressure, timbre, gain and per-note pitch bend — and they travel with the note through the whole chain. Its Note FX devices chain and combine, and its Note Grid is a modular environment for generating and processing notes. The architecture is therefore validated; what follows is what to take from it.
+
+**Reason's Players** put note processors in a rack, which is the closest metaphor, on plain MIDI with no note object.
+
+**Ableton and Logic MIDI effects** are the widely known version of the same chain, again on MIDI.
+
+**TidalCycles and Strudel** are the functional equivalent and have by far the richest vocabulary of transformations. Worth mining for WHAT is worth having, even though the mechanism is nothing like a cable.
+
+**Nothing in VCV Rack or Eurorack.** A polyphonic cable carries sixteen channels of voltage and nothing else; the "Polyphonic" tag means only that a module handles sixteen of them. There is no note object anywhere in the ecosystem.
+
+### What is ours
+
+**Harmony travelling with the notes.** Bitwig has no chord awareness in its note chain at all, which is what Scaler and Cthulhu are sold to fix.
+
+**Determinism as the mechanism.** Bitwig's Randomize is random; TidalCycles is deterministic but has no equivalent of a path over a field.
+
+**A modular rack**, where the chain is a cable you can see, split and re-order by dragging.
+
+### Adopt: chance on every processor, not a chance module
+
+Chance is everywhere in their set. Humanize has a chance that an arriving note is passed on at all; Multi-note has one per note unit; Note Repeats has one per repeat; Randomize applies per note across pitch, velocity, timbre, pressure, pan and gain.
+
+Variation is **distributed** rather than centralised in one randomiser, and it costs one knob per processor.
+
+**With one change.** Their chance is random. Ours must be driven by a deterministic draw — the same nought-to-one value the melody module takes — or recurrence is destroyed, and recurrence is what the system is built on. A chance that rolls differently every lap would undo it.
+
+### Adopt: an adder scales, it does not replace
+
+Their Echo scales velocity, pitch and the length of repeated notes. The Arpeggiator outputs notes with scaled velocity and a pitch offset. Multi-note spreads velocity per unit.
+
+Nothing invents values: added notes are derived from the note that spawned them, which is what keeps them sounding related rather than pasted in. The ornament and arpeggiator processors should do the same.
+
+### Adopt: correct or remove, as a choice
+
+Their Key Filter corrects notes that do not match the key, or removes them — both wanted at different times. Any filter here should offer the pair rather than pick one.
+
+Their Quantize has a **forgiveness** parameter: leeway rather than a hard snap. The same instinct, and worth carrying into anything that would otherwise force a value.
+
+### Adopt: physical simulation as an expression generator
+
+Ricochet treats notes as balls bouncing in a room, retriggering on collision, and uses each ball's position to animate panning and timbre. Dribble bounces with damping, losing height each time, and optionally **holds the last note out** — the sort of detail that only comes from using a thing, since the tail of a bouncing sequence wants to stop somewhere deliberate.
+
+A simulation writing to the expression lanes is a shape MPX supports directly, and a different way to generate correlated values from the field idea — probably a more musical one for gestures.
+
+### Worth considering: harmony by listening
+
+Their Harmonize conforms notes to the active notes of **a different track**. Chord awareness with no chart at all: the harmony is whatever something else is playing.
+
+For MPX that would be a second cable input, whose sounding notes define the chord. It cannot say what is coming next or where the cadence is, so it does not replace the chart — but it is a much cheaper path to a working harmoniser, it works with a keyboard being played live, and it is a good first module while the chart does not exist.
+
+### The question their Note FX Layer raises
+
+They run note processors in **parallel** as well as in series.
+
+MPX assumes one cable into one input. If an input **merged** several cables — interleaving their events rather than choosing one — parallel chains come free, and so does combining several sources into one stream.
+
+Rack's own convention points the same way: several cables into one input sum their voltages, and interleaving events is the note-domain equivalent. It is a small change to the reader.
+
+Worth deciding deliberately, because it is far easier to allow now than to add once modules assume a single upstream.
+
+---
+
 ## Open questions
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
