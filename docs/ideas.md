@@ -238,7 +238,17 @@ The case that tested it was swing. A processor that delays the off-beats breaks 
 
 **The resolution is an ordering rule.** Timing processors go last, after everything that cares about metrical position — chart, rhythm, accent, pitch, then swing, then the instrument. That is the natural order anyway: you decide what a note is and how hard it is played, and then you push it about for feel. Nobody swings first and then decides which chord tone it should have been. With that ordering, nothing downstream of a timing processor needs the original beat, because everything that needed it has already run.
 
-The rule as refined by the ornament case below: **timing processors last, and within that group, things that MOVE notes before things that ADD them.**
+### The rule, as three stages
+
+The flat ordering was refined twice — once by the ornament processor and once by the bend processor — and it is more useful stated as stages, because that tells you where a module nobody has thought of yet belongs.
+
+**Decide** — what notes there are, what pitch they have, how hard they are played. Needs metrical position, so it runs before anything moves a note. Chart, rhythm, accent, melody.
+
+**Place** — swing and groove. Moves notes in time, and in doing so smears the correspondence between arrival and metrical position.
+
+**Decorate** — ornaments first, then bend and the other lane shapers. Needs to see every note, including the ones added a moment earlier.
+
+A processor belongs in the stage matching what it needs. Two rules follow from that and are worth stating on their own: **within Place, movers come before adders**, or an ornament comes adrift from what it ornaments; and **anything that must treat every note runs last**, or the notes an ornament added go untreated.
 
 **A beat field would be worse than nothing.** With a beat on the note and an arrival time, there are two sources of truth. A processor that delays a note either leaves the field alone, making it a lie, or updates it, making it the arrival time written down twice. Redundant or wrong, with no third option.
 
@@ -303,6 +313,40 @@ One note in, several out — a trill on a two-second note could be twenty.
 Nothing breaks, since the added notes do not overlap and the unbundler needs no more voices. But the note rate on the cable rises sharply, which is worth remembering when the ring buffer is sized.
 
 It also means an ornament processor, an arpeggiator and a harmoniser are the same shape: one note becoming several, spread in time or stacked in pitch. If one of them works the others are variations on it.
+
+---
+
+## A pitch bend processor, worked through
+
+The first processor that writes a CONTINUING lane rather than shaping a note at its start, which makes it the cheapest kind in the family.
+
+Bend travels as updates tagged with a note's handle, sent while it sounds. So the processor passes the note-on through untouched and emits bend updates for the life of that note. **No delay, no lookahead, nothing held back.** It only has to remember which notes are sounding and when each ends, and the duration on the note tells it that.
+
+### The vocabulary, and which parts are free
+
+**Entry** — a scoop into the note, a slide from below, a pre-bend released down to pitch. Free, because the note is known the moment it arrives.
+
+**Sustain** — vibrato, usually delayed and then widening, which is what makes it sound played rather than switched on. Free.
+
+**Exit** — a fall or a doit. Free if it merely goes somewhere; not free if it targets the next note, which has not arrived.
+
+Same shape as the ornament case, and the same escape hatch: a slide INTO the next note is free if it becomes that note's entry gesture instead of this note's exit. Which is also how a player thinks about it.
+
+### What it needs from the cable
+
+**Duration**, to fit the gesture to the time available. Vibrato beginning after three hundred milliseconds is nonsense on a hundred-millisecond note.
+
+**Duration and phrase position again, to decide which notes are bent at all.** Bends cluster on long notes, at phrase peaks, and on the blue notes of the scale. A processor that bends everything sounds like an effect; one that bends a quarter of the notes sounds like a player.
+
+### The detail that would be easy to get wrong
+
+**It should set the bend range on the notes it treats.** The range is a note-on field saying what full deflection is worth, and it exists so the receiving end can produce a normalised control voltage. A whole-tone bend on a note whose range says twelve semitones barely moves that output.
+
+A processor applying a two-semitone bend should say so on the note. That is within its rights, since the range travels with the note, and it means the instrument responds correctly without being set up by hand.
+
+### Where it goes
+
+In Decorate, after the ornament processor. Running first, the notes an ornament adds would never be bent, and a trill of unbent notes among bent ones is conspicuous.
 
 ---
 
