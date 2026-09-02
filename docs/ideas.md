@@ -418,9 +418,77 @@ Worth deciding deliberately, because it is far easier to allow now than to add o
 
 ---
 
+## How the cable is carried, and what a reharmoniser shows about it
+
+### What exists
+
+The cable carries nothing. It is a real Rack cable so that Rack owns it — draws it, saves it, undoes it, removes it when a module goes — and it puts zero volts on the wire. Its only job is to say which source is joined to which destination.
+
+The data lives in a table inside the plugin: sixty-four buses, each a ring of 256 events with a claimed flag, a generation number and a write index. An event is a fixed-size record — a kind, a lane, a handle, and then pitch, level, duration, pan and bend range for a note-on, or one value for an update.
+
+**The handle is what makes it work.** Unique for the session, minted from a counter. A note-on names a note and every later message about it carries the same handle, so an off or a bend update reaches the right one with sixteen sounding.
+
+Reading is by cursor: each consumer holds its own read index, so one source feeds several consumers, each draining at its own pace, and a reader attaching starts at the present rather than replaying everything ever sent.
+
+### Harmony should be STATE, not events
+
+A stream of chord-change events would leave a module that starts listening between changes knowing nothing until the next one. Rack's own model is the guide: a cable carries a value readable at any sample, not a stream that must not be missed.
+
+So a bus becomes two things — a ring of note events, and a **block of current harmony** any reader can read at any moment. The chart writes it; everything else reads it whenever it likes.
+
+Forwarding then costs almost nothing: a processor copies the upstream block into its own each sample. No stream to relay, nothing to miss.
+
+### The rule that lets it survive its own future
+
+**A processor mutates a COPY of an event. It never builds a new one field by field.**
+
+Read the event, change the one field you care about, push it on. A lane added next year travels through every processor written this year, because they copied a record they did not fully understand rather than reconstructing one they did.
+
+That is a discipline rather than a mechanism, so the shared code should make it the easy path: a processor declares what it changes and the framework does the copying.
+
+### A reharmoniser, and the asymmetry it reveals
+
+It reads the harmony block, transforms it, and writes a new one. Notes pass through untouched, and it belongs first in the chain — straight after the chart, before anything that reads harmony.
+
+**Notes arrive as they happen; harmony describes what is coming.** The block carries the chord now, the next, the one after, and beats until the change — so a reharmoniser inserting an approach chord before a dominant already knows the dominant is coming and how much room there is, and can place the approach going forward in time.
+
+Note processors have no lookahead and must work around it. **Harmony processors get lookahead for free.** That asymmetry is a dividend from carrying harmony as state rather than as a stream, and it was not obvious when that choice was made.
+
+### What a reharmoniser needs, and why Roman storage earns its place
+
+Reharmonisation rules are about FUNCTION, not about chords: before a dominant insert its predominant; replace a dominant with the one a tritone away; substitute the relative minor for a tonic.
+
+Chords stored as Roman degrees relative to the key give function directly. Stored as letters it would have to be worked out against the key every time, and got wrong at every modulation. That is the strongest practical argument for the storage model GXW uses.
+
+### Two operations, deserving separate controls
+
+**Colour** — keep the root and the function, change the quality. Triad to seventh, seventh to ninth or thirteenth. This is most of what "make it jazzy" means and it is nearly risk-free, because the harmony still does the same job.
+
+**Substitute** — replace a chord, or insert new ones. Tritone substitution, an approach before a target, a passing diminished, borrowing from the parallel minor. Interesting and much riskier, because it changes where the music is going.
+
+Two knobs. Colour can be turned up freely; substitution wants using sparingly and turning down when a passage stops making sense.
+
+### A style is a weighted rule set
+
+Each rule a pattern to match — this function, in this position, with this coming next — and a substitution to apply. Pop is mostly colour with some suspension; jazz adds sevenths, approaches and substituted dominants; bossa, gospel and blues have their own small vocabularies. A style is data rather than code, so adding one is cheap.
+
+With the chance driven by a **deterministic draw**, per the lesson from Bitwig. A reharmonisation rolling differently every lap would destroy recurrence, and the point is that the fourth chorus differs from the first AND comes back.
+
+### Two consequences worth having
+
+Everything downstream follows automatically: the melody and the bass both read the cable, so they get the new chords without being told, and they agree with each other because they read the same block.
+
+And a chart viewer patched after it shows the REHARMONISED chart — which suggests the viewer should read harmony from a cable rather than only from the module holding the chart, so one can be put anywhere in the chain to see what the harmony is at that point. A better module than one welded to the chart, and it costs nothing extra.
+
+---
+
 ## Open questions
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
+
+Whether an MPX input should MERGE several cables, interleaving their events, which would give parallel chains for free. Far easier to allow before modules assume a single upstream than after.
+
+Whether 256 events a bus is still enough once a processor can turn one note into twenty. Enormous headroom while a note is a note; worth revisiting before ornaments and arpeggiators exist rather than after.
 
 Whether loading a real photograph is worth the cost it brings: a patch then points at a file on the disc, so it stops being portable unless the picture is stored inside it.
 
