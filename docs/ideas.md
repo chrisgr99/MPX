@@ -238,6 +238,8 @@ The case that tested it was swing. A processor that delays the off-beats breaks 
 
 **The resolution is an ordering rule.** Timing processors go last, after everything that cares about metrical position — chart, rhythm, accent, pitch, then swing, then the instrument. That is the natural order anyway: you decide what a note is and how hard it is played, and then you push it about for feel. Nobody swings first and then decides which chord tone it should have been. With that ordering, nothing downstream of a timing processor needs the original beat, because everything that needed it has already run.
 
+The rule as refined by the ornament case below: **timing processors last, and within that group, things that MOVE notes before things that ADD them.**
+
 **A beat field would be worse than nothing.** With a beat on the note and an arrival time, there are two sources of truth. A processor that delays a note either leaves the field alone, making it a lie, or updates it, making it the arrival time written down twice. Redundant or wrong, with no third option.
 
 The caveat, which is honest and small: chain two timing processors and the second reads positions the first has already smeared. Audio effects behave the same way and nobody finds it surprising.
@@ -265,6 +267,42 @@ There is real use for them, and this is also the category that rots a protocol. 
 **And it can usually be avoided, because intent is best acted on where it is produced.** The melody module already knows a note ends a phrase, so it can lengthen that note itself rather than labelling it and hoping something downstream obliges. Lane processors make that natural, since shaping a note is what they do.
 
 If it ever genuinely cannot be avoided, the honest form is one small tag that a producer sets and a consumer interprets by private agreement, documented as exactly that rather than dressed up as a standard meaning.
+
+---
+
+## An ornament processor, worked through
+
+Taken as a test of the ordering rule, and it refined it.
+
+**Two families.** Rhythmic ornaments — a flam, a drag, a ruff — need no pitch and can run anywhere. Pitched ornaments — grace notes, mordents, turns, trills, slides — need to know what a step above means, so they need the scale and the chord, and they run after the melody module.
+
+**It needs the note's duration**, which decides what ornament is even possible: a trill on a long note is many alternations, and the same instruction on a short note is a mordent. The processor should choose an ornament to fit the time it has rather than being told one and mangling it.
+
+**And it needs to know where it is in the phrase.** Ornaments cluster at cadences and phrase ends in most styles. This is the strongest argument for the chart computing cadences once: an ornament processor with no cadence information decorates uniformly, which sounds mechanical in a way that is hard to name and easy to hear.
+
+### The timing question is a musical question
+
+Most ornaments happen before the beat, and a processor cannot emit a note earlier than it heard about one.
+
+But that is only half the truth musically. Baroque ornaments are played ON the beat — the ornament takes its time from the main note, starting where the main note would have started. Later music and percussion put the grace note before the beat instead.
+
+So the control on the panel is "on the beat or before it", and it maps exactly onto whether the processor needs to run the stream late. The on-beat form needs no lookahead and is historically correct; the before-the-beat form needs the fixed delay recorded above as the escape hatch. The constraint and the style choice are the same control, which is a coincidence worth taking rather than a compromise.
+
+### Why it goes after the timing processors
+
+If ornaments come before swing, the swing processor sees a grace note and its main note as two separate notes twenty milliseconds apart, and can push them to opposite sides of its decision. The ornament comes adrift from what it ornaments.
+
+After means swing decides where the beat lands and the ornament decorates wherever the note ended up, which is what a player does.
+
+The cost is that it reads a metrical position swing has already smeared, and that is tolerable here because what it needs is coarse: whether this is a cadence or a phrase end are bar-scale questions, and thirty milliseconds does not change the answer.
+
+### It is the first module that increases the note count
+
+One note in, several out — a trill on a two-second note could be twenty.
+
+Nothing breaks, since the added notes do not overlap and the unbundler needs no more voices. But the note rate on the cable rises sharply, which is worth remembering when the ring buffer is sized.
+
+It also means an ornament processor, an arpeggiator and a harmoniser are the same shape: one note becoming several, spread in time or stacked in pitch. If one of them works the others are variations on it.
 
 ---
 
