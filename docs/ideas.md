@@ -482,6 +482,56 @@ And a chart viewer patched after it shows the REHARMONISED chart — which sugge
 
 ---
 
+## Sequencers, and mpxPhrase
+
+### Why the family is shaped as it is
+
+A step sequencer's velocity, gate length, ratchet and skip controls are excellent, because those are perceptually forgiving — almost any pattern of accents sounds like something. Its pitch knobs are poor, because each has to be right against the others and against the harmony, with no feedback but the ear, one knob at a time.
+
+That asymmetry is why **mpxPattern and mpxEuclid are sequencers with the pitch taken out**: all the forgiving controls and none of the unforgiving ones. It was not stated when the family was proposed and it is the reason the family is shaped that way.
+
+### mpxPhrase — capture and revise
+
+A processor, not a source. Notes arrive with pitches already chosen; it holds a phrase of them, shows them, and lets them be adjusted — which steps play, their velocity, their length, ratchets, and their pitch.
+
+That is composing WITH a generator rather than being at its mercy: it proposes, and eleven notes are kept while two are fixed.
+
+**Pitch edits are diatonic offsets, not voltages.** Up one scale step, down a third, up an octave, relative to what the generator chose and resolved against the harmony on the cable. Always musical, where an absolute voltage rarely is — and precisely the thing VCV sequencers get wrong.
+
+It also completes the recurrence idea. Run the generator, listen for a lap worth keeping, capture it, and it stops being regenerated and becomes material. That is the moment a session turns into a piece.
+
+The name is for what it holds: a musical unit rather than sixteen arbitrary steps. And since the harmony already knows where phrases begin and end, **"capture one phrase" is a button that means something precise** — from this cadence to the next, rather than the next sixteen events.
+
+### Its grid comes off the cable
+
+Sixteen steps is sixteen steps whatever the music is doing. A grid of bars and beats is the same length as the music.
+
+The harmony block carries the time signature, so the length is in **bars** and the resolution is a **subdivision of the beat** — one, two, three, four, six or eight, with three giving triplets. Neither number has to be told to the module.
+
+**Steps are stored grouped by bar, not as a flat array.** Charts change time signature mid-tune, and a phrase spanning the change has bars of different lengths. Grouped by bar that works and inserting or removing a bar is clean; flat it is a mess to unpick later.
+
+**One subdivision for the whole phrase, with ratchets doing the local case.** Per-beat subdivisions would give every tuplet and multiply the interface enormously. A ratchet already means "this step fires N times", which covers intermediate hits at the level where they are placed.
+
+**Capture quantises to the grid but keeps the offset.** A note from a generator, or one that has passed a swing processor, will not land on a grid position. Snapping loses the feel; not snapping makes it uneditable. Storing the position and how far off it was makes quantising a knob to turn afterwards rather than a decision taken at capture — the forgiveness idea in a different place.
+
+**It captures one line to begin with.** A step holds one note and a ratchet count; a polyphonic capture needs lanes and is a considerably larger module. Melodies are monophonic, four voices means four of these, and polyphony is a later decision rather than a compromise made now.
+
+One honest limitation follows: capture is **lossy above the grid resolution**. Denser material loses notes, which argues for allowing a fine grid and for showing the offsets so what was moved can be seen.
+
+### Arpeggiators, of which there are two
+
+**A note arp** cycles the notes currently sounding on the cable. Classic, and it belongs in Decorate because it adds notes.
+
+**A harmony arp** reads the chord from the harmony block and arpeggiates it with nothing held at all. Patch a chart into it and it plays the changes with no melody module in the picture. The more useful of the two here, barely more work since the chord is already on the cable, and nearly a source rather than a processor — it needs harmony and a clock and no notes.
+
+### Where they all go
+
+Rhythm sequencers at the head of Decide. **mpxPhrase at the end of Decide**, since it edits decisions already made and must run before anything moves or decorates. Note arp in Decorate. Harmony arp as a source.
+
+And mpxPhrase is the first module that must **hold and display** a phrase, so it shares machinery with the monitor and the chart viewer. That is a further argument for building the monitor first: it is the same widget three times.
+
+---
+
 ## Open questions
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
