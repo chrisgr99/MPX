@@ -24,6 +24,8 @@ A voice cable is a real Rack cable — Rack draws it, saves it with the patch an
 
 [docs/design.md](docs/design.md) has the whole of it, including why this is not sixteen channels of voltage and not an expander.
 
+[docs/ideas.md](docs/ideas.md) is a separate thing: a record of a design conversation about harmony, melody and the sources that drive them. Nothing in it is settled and nothing in it is built.
+
 ## Building from source
 
 Set `RACK_DIR` to your Rack SDK and run `make`. Requires a C++11 compiler.
