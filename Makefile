@@ -47,3 +47,17 @@ dev: $(TARGET)
 	@echo "installed to $(PLUGIN_DIR)"
 
 .PHONY: dev
+
+# THE PARSER'S OWN TEST, built without Rack because the parser has no Rack in it. Two thousand
+# real charts in a second says more than one chart patched up and listened to.
+test:
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		test/irealtest.cpp src/IReal.cpp src/Chord.cpp -o build/irealtest \
+		-L$(RACK_DIR) -lRack 2>&1 | head -20
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/irealtest \
+		"$(HOME)/ProgrammingProjects/GXW/Blues 50.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Pop 400.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Brazilian 220.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
+
+.PHONY: test

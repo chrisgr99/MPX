@@ -253,7 +253,7 @@ struct ProgressionDisplay : widget::Widget {
 		nvgFontSize(args.vg, 9.f);
 		nvgFillColor(args.vg, PANEL_DIM);
 		char head[64];
-		std::snprintf(head, sizeof(head), "%s %s", pitchClassName(key.tonic),
+		std::snprintf(head, sizeof(head), "%s %s", pitchClassNameIn(key.tonic, key),
 			p.minor ? "minor" : "major");
 		nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
 		nvgText(args.vg, box.size.x - 7.f, 14.f, head, NULL);

@@ -230,7 +230,7 @@ struct MonitorDisplay : widget::Widget {
 			const Harmony& h = module->seen;
 			nvgFillColor(args.vg, PANEL_DIM);
 			std::snprintf(buf, sizeof(buf), "%s %s  %d/%d  cycle %.0f",
-				pitchClassName(h.key.tonic), h.key.minor ? "min" : "maj",
+				pitchClassNameIn(h.key.tonic, h.key), h.key.minor ? "min" : "maj",
 				h.barBeats, h.barUnit, h.cycleBeats);
 			nvgText(args.vg, pad, y, buf, NULL);
 			y += 12.f;

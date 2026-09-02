@@ -25,6 +25,22 @@ enum ChordQuality {
 	Q_HALFDIM,
 	Q_AUG,
 	Q_SUS4,
+	// The rest are what a real chart uses. Nine was enough for a progression somebody types;
+	// an iReal export asks for sixths, ninths, elevenths, thirteenths, altered dominants,
+	// minor-major sevenths and diminished sevenths within the first dozen songs.
+	Q_SIX,
+	Q_MIN6,
+	Q_DIM7,
+	Q_MINMAJ7,
+	Q_NINE,
+	Q_MIN9,
+	Q_MAJ9,
+	Q_ELEVEN,
+	Q_THIRTEEN,
+	Q_DOM7ALT,
+	Q_SUS2,
+	Q_DOM7SUS4,
+	Q_FIVE,
 	NUM_QUALITIES,
 };
 
@@ -66,5 +82,9 @@ const char* qualityName(int quality);
 
 /** A pitch class as a letter, using sharps. */
 const char* pitchClassName(int pc);
+
+/** A pitch class as a letter, SPELLED FOR THE KEY. B flat major writes B flat, not A sharp — a
+chart spelled the other way is readable but wrong, and a musician notices immediately. */
+const char* pitchClassNameIn(int pc, const Key& key);
 
 } // namespace px
