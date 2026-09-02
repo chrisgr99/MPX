@@ -230,9 +230,45 @@ But what makes GXW composable rather than merely generative is that the material
 
 ---
 
-## Open questions
+## Timing, and what a note does not carry
 
-Whether a note still needs to carry **the beat it happened on**. Harmony riding the cable brings the beat with it, so a module reading the cable already knows where it is — which was the whole reason for wanting a timestamp. Probably answered, and worth checking rather than assuming.
+**Resolved: a note carries no beat of its own.** Its arrival is its time, and where that is comes from the harmony on the cable.
+
+The case that tested it was swing. A processor that delays the off-beats breaks the correspondence between when a note arrives and where it belongs, so something downstream might want to know the beat it was written for.
+
+**The resolution is an ordering rule.** Timing processors go last, after everything that cares about metrical position — chart, rhythm, accent, pitch, then swing, then the instrument. That is the natural order anyway: you decide what a note is and how hard it is played, and then you push it about for feel. Nobody swings first and then decides which chord tone it should have been. With that ordering, nothing downstream of a timing processor needs the original beat, because everything that needed it has already run.
+
+**A beat field would be worse than nothing.** With a beat on the note and an arrival time, there are two sources of truth. A processor that delays a note either leaves the field alone, making it a lie, or updates it, making it the arrival time written down twice. Redundant or wrong, with no third option.
+
+The caveat, which is honest and small: chain two timing processors and the second reads positions the first has already smeared. Audio effects behave the same way and nobody finds it surprising.
+
+One consequence worth building: a **swing processor should apply its own accent** if it wants one, since it is the last thing that knows which notes it treated as off-beats. A feature on one module rather than a protocol change.
+
+---
+
+## What else a module might want to know, and where it should come from
+
+Three categories, wanting three different answers.
+
+**Derivable — do not carry it.** Whether a note is a chord tone or a passing tone is one set-membership test, since the pitch and the chord are both on the cable. Carrying a flag would store a conclusion beside its own premises, where it can come to disagree with them after a transposer has run. The same goes for beat strength and for whether a note is in the key.
+
+The rule: if it can be recomputed from what is already there, recomputing is safer than trusting.
+
+**A property of time — put it on the harmony.** Cadences and phrases are relationships and moments, true whether or not a note happens there. They are also analysis rather than data: detecting a full cadence means recognising dominant to tonic, a half cadence an arrival on the dominant. Every consumer doing that independently is duplicated work and duplicated disagreement, so the chart module should do it once.
+
+Which sets out what the harmony ought to carry: the current chord, the next, and the one after; beats until the change; the position in the cycle and the cycle's length; the bar, the beat within it, and the time signature; the section and whether this is a boundary; the phrase, and whether this moment begins or ends one; the cadence and its kind.
+
+**Intent — the only candidate for a new lane, and the one to be careful about.** "This note is a resolution", "this is an approach note", "this is an ornament". Not derivable, because they are what the generator meant.
+
+There is real use for them, and this is also the category that rots a protocol. Once one exists the vocabulary grows with no principle to stop it, which is what happened to MIDI's controller space.
+
+**And it can usually be avoided, because intent is best acted on where it is produced.** The melody module already knows a note ends a phrase, so it can lengthen that note itself rather than labelling it and hoping something downstream obliges. Lane processors make that natural, since shaping a note is what they do.
+
+If it ever genuinely cannot be avoided, the honest form is one small tag that a producer sets and a consumer interprets by private agreement, documented as exactly that rather than dressed up as a standard meaning.
+
+---
+
+## Open questions
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
 
