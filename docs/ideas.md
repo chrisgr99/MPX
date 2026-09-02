@@ -486,9 +486,7 @@ And a chart viewer patched after it shows the REHARMONISED chart — which sugge
 
 Whether the field module belongs in this plugin at all, given that it knows nothing about MPX.
 
-Whether an MPX input should MERGE several cables, interleaving their events, which would give parallel chains for free. Far easier to allow before modules assume a single upstream than after.
-
-Whether 256 events a bus is still enough once a processor can turn one note into twenty. Enormous headroom while a note is a note; worth revisiting before ornaments and arpeggiators exist rather than after.
+*(Merging and ring size were open and are now resolved — see below.)*
 
 Whether loading a real photograph is worth the cost it brings: a patch then points at a file on the disc, so it stops being portable unless the picture is stored inside it.
 
@@ -499,6 +497,54 @@ Whether loading a real photograph is worth the cost it brings: a patch then poin
 Harmony on the cable and lane processors arrived separately and want the same thing: a module forwards what it does not consume, automatically, including what it has never heard of.
 
 That one requirement is the load-bearing part of both. If it is built into the transport, both ideas are cheap. If it is left to each module, both ideas are a slow accumulation of silent bugs.
+
+---
+
+## Resolved
+
+**Merging is allowed.** An MPX input takes several cables and interleaves their events, so parallel chains work and several sources can feed one stream. The reader holds a cursor per upstream instead of one. Decided early on purpose, since it is far easier to allow before modules assume a single upstream than to add after.
+
+**Ring size is left at 256 events a bus.** It is a constant and a rebuild, so it can be revisited when something actually turns one note into twenty rather than in anticipation.
+
+**The field loads images rather than generating them, to begin with.** A loaded photograph needs a file dialogue and nothing else; a synthesised field needs a generator plus half a dozen knobs before it produces anything worth hearing. Images are also already proven in GXW. Generated fields remain the better long-term answer for a self-contained patch, and drop into the same slot when they come.
+
+---
+
+## The family
+
+**Sources** — put a stream on a cable. mpxChart, holding and displaying a chart and owning the beat. mpxEuclid, built. mpxPattern, the crosses-and-dots editor aligned to measures. Later, controllers: a harmonica embouchure, a guitar, a plain step sequencer.
+
+**Adapters** — toMPX and fromMPX, both built, and **mpxFromMIDI**, which is small and turns the system from something programmed into something played.
+
+**Harmony processors** — first in the chain, since everything downstream reads what they write. mpxReharmonise, with colour and substitute. Later a transposer and a key filter.
+
+**Decide** — mpxMelody, the pitch generator and the one that matters. mpxAccent, velocity by metrical position. mpxThin, dropping notes by a deterministic draw.
+
+**Place** — mpxSwing. mpxHumanise, its timing and velocity correlated rather than independent.
+
+**Decorate** — mpxOrnament. mpxArp and mpxVoicing, the same module spreading in time or stacking in pitch. mpxBend. mpxPan. Something for note length: latch, legato, staccato.
+
+**Drivers** — control voltage, not MPX. The field module takes an MPX cable only to read the cycle, so its laps lock to the form, and falls back to a clock and a beat count when nothing is patched.
+
+**Utility** — a monitor showing what is on a cable, and the chart viewer, reading harmony from any cable rather than from the module that holds it.
+
+---
+
+## What to build first, and it is not the melody
+
+**The monitor.** An MPX cable carries no voltage, so there is nothing to look at: a scope says nothing and the only feedback is whether a lamp lights. Everything after is easier with a window showing the notes going past, their lanes and the harmony block. Small, and already wanted several times.
+
+**Then a progression module.** Eight chord slots, each a degree, a quality and a length in beats, writing the harmony block. No import, no repeats, no viewer. A few hundred lines, and it proves harmony-on-the-cable end to end.
+
+**Then mpxMelody**, the melodic step ported from GXW with the draw as a control voltage input. That is the question worth answering — whether the line sounds like music — and everything else is in service of it.
+
+The field module comes after, because for a first test the draw can come from any cable at all. Once the melody is right, an image gives it material worth having.
+
+### The change the chain requires
+
+**mpxEuclid must gain an MPX input.** It is a source today and takes nothing; for a chain to work it has to accept a cable and forward the harmony to whatever comes next.
+
+That is the automatic-forwarding requirement becoming real rather than theoretical, and it is the right first place to build it, since the module does not care about harmony at all and so has no reason to get it right by accident.
 
 ---
 
