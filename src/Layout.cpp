@@ -58,6 +58,24 @@ bool layoutHasUser(const std::string& slug) {
 	return system::isFile(layoutUserPath(slug));
 }
 
+void layoutPlaceDisplay(ModuleWidget* mw, Layout& layout, const std::string& key,
+	widget::Widget* display) {
+
+	if (!display)
+		return;
+	Item* item = layout.find(key);
+	if (!item) {
+		// Not in the layout: the module still gets its widget, wherever it put it.
+		mw->addChild(display);
+		return;
+	}
+	display->box.pos = mm2px(math::Vec(item->x, item->y));
+	display->box.size = mm2px(math::Vec(item->w, item->h));
+	mw->addChild(display);
+	item->widget = display;
+}
+
+
 void layoutApplyUser(const std::string& slug, Layout& layout) {
 	FILE* file = std::fopen(layoutUserPath(slug).c_str(), "r");
 	if (!file)
@@ -194,7 +212,6 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 				ParamWidget* p = NULL;
 				if (item.style == "lamps") {
 					Lamps* lamps = createParam<Lamps>(pos, module, item.id);
-					lamps->box.size = mm2px(math::Vec(item.w, item.h));
 					lamps->pitch = item.horizontal
 						? mm2px(math::Vec(item.pitch, 0)).x : mm2px(math::Vec(0, item.pitch)).y;
 					lamps->names = item.names;
@@ -204,6 +221,12 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 					// A lamp list is placed by its CORNER, because it is a list rather than a
 					// point; everything else on a panel is placed by its centre.
 					lamps->box.pos = pos;
+					// AND IT SIZES ITSELF. The box was being set from the item's w and h, which
+					// a layout is under no obligation to fill in — and when they are left at
+					// nought the box is empty, so the lamps are drawn and can never be clicked.
+					// Every lamp control in this plugin was in that state. The widget knows how
+					// much room its own lamps and names need; nothing else does.
+					lamps->fit();
 				}
 				else if (item.style == "button")
 					p = createParamCentered<DreamerButton>(pos, module, item.id);
@@ -239,6 +262,9 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 			} break;
 			case Item::LABEL:
 			case Item::BRACKET:
+			case Item::DISPLAY:
+				// Nothing to build. A label and a bracket are painted by the panel; a display
+				// is made by the module and handed over afterwards.
 				break;
 		}
 	}
@@ -304,6 +330,9 @@ static math::Rect itemRect(const Item& item) {
 			// Placed by its top-left corner, like the lamp list, because it is an extent
 			// rather than a point.
 			return math::Rect(math::Vec(item.x - 1.f, item.y), math::Vec(item.w + 2.f, item.h));
+		case Item::DISPLAY:
+			// An area, by its corner: exactly the rectangle it draws in.
+			return math::Rect(math::Vec(item.x, item.y), math::Vec(item.w, item.h));
 		case Item::LABEL: {
 			const float size = item.size > 0.f ? item.size : (item.heading ? 10.f : 8.f);
 			// Estimated rather than measured: a text width needs a font and a context, and a
@@ -351,13 +380,22 @@ struct PanelEditor : widget::OpaqueWidget {
 		return math::Vec(px.x / RACK_GRID_WIDTH * 5.08f, px.y / RACK_GRID_WIDTH * 5.08f);
 	}
 
-	/** Puts a widget where its item says it is. Lamp lists are placed by their corner because
-	they are a list rather than a point; everything else is placed by its centre. */
+	/** Puts a widget where its item says it is.
+
+	BY THE CORNER OR BY THE CENTRE, and it has to be the same answer the outline uses. A lamp
+	list and a display are areas and are placed by their top-left corner; a knob, a jack and a
+	light are points and are placed by their centre.
+
+	Getting this wrong is invisible until something is dragged: the outline is drawn from the
+	item and the widget is moved from the same item, so if the two disagree about what x and y
+	MEAN, the widget lands half its own size away from its outline. That is what displays did —
+	the box was drawn down and to the right of the thing it belonged to, and anyone lining the
+	display up by its outline was really putting it half a plate away from where they wanted. */
 	static void placeWidget(Item& item) {
 		if (!item.widget)
 			return;
 		const math::Vec pos = mm2px(math::Vec(item.x, item.y));
-		if (item.style == "lamps")
+		if (item.style == "lamps" || item.kind == Item::DISPLAY)
 			item.widget->box.pos = pos;
 		else
 			item.widget->box.pos = pos.minus(item.widget->box.size.div(2.f));

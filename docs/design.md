@@ -164,6 +164,10 @@ At toMPX the same scales apply to the inputs: level and pressure and timbre are 
 
 **mpxEuclid** is a source. It has no adapter in front of it, which is what the transport was designed to allow and what this document claimed before anything but toMPX could do it. [euclid.md](euclid.md) describes it.
 
+**mpxChart** is a source and the plugin's only reader of written music: it loads iReal Pro charts, shows one as a lead sheet in a window, and publishes its harmony. [chart.md](chart.md) describes it.
+
+**mpxMonitor** lists what is passing on a cable, and **mpxProgression** is a chooser of short progressions.
+
 ## Limits
 
 Sixteen toMPX modules can exist at once, each holding four voice cables. Each holds two hundred and fifty-six events, which is more than a sample's worth by a wide margin.

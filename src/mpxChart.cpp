@@ -238,6 +238,10 @@ struct ChartModule : Module, NoteSource {
 	nothing exactly when the music is at its plainest. This is what came out of the resolver,
 	which is what is being played. */
 	std::atomic<int32_t> soundingChord{-1};
+	/** THE TEMPO ACTUALLY IN FORCE, for the readout — which is not always the knob. With a
+	clock patched the knob is ignored and the rate is whatever the clock is doing, so the
+	readout follows the clock and the knob stops being the answer. */
+	std::atomic<float> soundingBpm{120.f};
 
 	static int32_t packChord(const Chord& chord) {
 		return (int32_t) ((chord.valid ? 1 : 0) << 24)
@@ -273,12 +277,20 @@ struct ChartModule : Module, NoteSource {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(P_TRANSPOSE, -11.f, 11.f, 0.f, "Transpose", " semitones");
 		paramQuantities[P_TRANSPOSE]->snapEnabled = true;
-		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo (when no clock is patched)", " bpm");
+		// JUST "TEMPO". The name is read in a pop-up beside the pointer while the knob is
+		// being turned, and a caveat in brackets is clutter there — at that moment the reader
+		// wants the number, not a note about a case that may not even apply. That the clock
+		// input overrides this belongs in the manual and in the clock port's own name.
+		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo", " bpm");
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		configButton(P_REWIND, "Rewind to the start");
-		configSwitch(P_CHORD_MODE, 0.f, 1.f, 0.f, "Chord symbols", {"Letters", "Roman"});
+		// LETTER NAMES is the term, not "chord symbols": a Roman numeral IS a chord symbol,
+		// so calling one of the two by the name of both would say nothing. The pair a musician
+		// uses is letter names against Roman numerals — C minor seven against two minor seven.
+		configSwitch(P_CHORD_MODE, 0.f, 1.f, 0.f, "Chord symbols",
+			{"Letter names", "Roman numerals"});
 		configButton(P_OPEN, "Open the chart");
-		configInput(I_CLOCK, "Clock");
+		configInput(I_CLOCK, "Clock, which overrides the tempo knob");
 		configInput(I_RESET, "Reset");
 		configOutput(O_MPX, "MPX note out");
 		configOutput(O_CHORD, "Chord tones as polyphonic V/Oct");
@@ -333,6 +345,17 @@ struct ChartModule : Module, NoteSource {
 		playingIndex = best;
 	}
 
+	/** Back to the top AND STOPPED, which is what pressing rewind means on any transport: you
+	are not asking to hear the first bar go by, you are putting the tape back to the start.
+
+	The reset JACK is a different thing and does not stop. It is a sync signal — something in
+	the patch saying "here is the top of the form" — and a clock that reset the music and then
+	silenced it would be useless. */
+	void rewindAndStop() {
+		params[P_PLAY].setValue(0.f);
+		rewind();
+	}
+
 	/** Back to the top. Safe from the drawing thread: the audio thread reads these each block
 	and a beat count set to nought part way through one is a beat count set to nought. */
 	void rewind() {
@@ -370,7 +393,11 @@ struct ChartModule : Module, NoteSource {
 		haveSong.store(!loaded[spare].playback.timeline.empty());
 		// A new song knows nothing of the old one's sections.
 		section = 0;
-		beats = 0.0;
+		// AND IT ARRIVES STOPPED, AT THE TOP. A chart swapped under a running transport
+		// carries on from wherever the beat count happened to be, in the middle of a piece
+		// nobody has looked at yet — and the harmony it publishes changes key and chord in the
+		// same instant. Loading a chart is the start of reading it, not of playing it.
+		rewindAndStop();
 	}
 
 	const Loaded& current() {
@@ -556,10 +583,10 @@ struct ChartModule : Module, NoteSource {
 		if (slot < 0 || !haveSong.load())
 			return;
 
-		if (resetTrigger.process(inputs[I_RESET].getVoltage(), 0.1f, 1.f)
-			|| rewindTrigger.process(params[P_REWIND].getValue(), 0.1f, 1.f)) {
+		if (resetTrigger.process(inputs[I_RESET].getVoltage(), 0.1f, 1.f))
 			rewind();
-		}
+		if (rewindTrigger.process(params[P_REWIND].getValue(), 0.1f, 1.f))
+			rewindAndStop();
 
 		// STOPPED MEANS STOPPED, whatever the clock is doing. It is a transport rather than a
 		// mute: nothing advances while it is off.
@@ -588,10 +615,14 @@ struct ChartModule : Module, NoteSource {
 				beats += args.sampleTime / beatSeconds;
 			}
 		}
-		else if (running) {
+		else {
+			// Taken from the knob whether or not the transport is running, so the readout is
+			// right while stopped.
 			beatSeconds = 60.f / std::fmax(1.f, params[P_TEMPO].getValue());
-			beats += args.sampleTime / beatSeconds;
+			if (running)
+				beats += args.sampleTime / beatSeconds;
 		}
+		soundingBpm.store(60.f / std::fmax(0.0001f, beatSeconds));
 
 		const Loaded& L = loaded[live.load()];
 		const ChartPlayback& pb = L.playing;
@@ -824,9 +855,14 @@ struct ChartDisplay : widget::OpaqueWidget {
 		// before, and that is what should be on the face.
 		{
 			std::string text;
+			// THE SAME CHOICE AS THE CHART. It is one switch, so it has to reach both: the
+			// readout was always spelling the chord as a letter, which meant setting the chart
+			// to degrees left the face disagreeing with the window about the same chord.
 			const Chord sounding = ChartModule::unpackChord(module->soundingChord.load());
-			if (sounding.valid)
-				text = chordLetter(sounding, key);
+			if (sounding.valid) {
+				text = (module->chordMode() == 1) ? chordRoman(sounding)
+					: chordLetter(sounding, key);
+			}
 			if (!text.empty()) {
 				nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle
 					: body->handle);
@@ -836,6 +872,49 @@ struct ChartDisplay : widget::OpaqueWidget {
 				nvgText(args.vg, 6.f, 88.f, text.c_str(), NULL);
 			}
 		}
+	}
+};
+
+
+/** THE TEMPO, IN NUMBERS, above the knob that sets it.
+
+A knob's position is a poor way to read a tempo — a few degrees is several beats a minute, and
+the one thing anybody wants to know about a tempo is the number. Green because it is a reading
+rather than a control: nothing on this panel is green except the things the module is telling
+you.
+
+IT SHOWS WHAT IS IN FORCE, not what the knob says. Patch a clock and the knob is ignored, so the
+readout follows the clock — otherwise it would sit there confidently reporting a tempo nothing
+is playing at. */
+struct ChartTempoDisplay : widget::Widget {
+	ChartModule* module = NULL;
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<window::Font> face =
+			APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 2.5f);
+		nvgFillColor(args.vg, nvgRGB(0x0e, 0x14, 0x11));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, nvgRGB(0x2a, 0x3a, 0x31));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+		if (!face || face->handle < 0)
+			return;
+
+		const float bpm = module ? module->soundingBpm.load() : 120.f;
+		char text[24];
+		std::snprintf(text, sizeof(text), "%.1f", clamp(bpm, 0.f, 9999.f));
+
+		// THE NUMBER, AND NOTHING ELSE. It sits directly above a knob labelled TEMPO, so
+		// writing BPM after it says what the label above already says — and it was taking a
+		// third of the plate to do it, which left the number itself short of room.
+		nvgFontFaceId(args.vg, face->handle);
+		nvgFillColor(args.vg, nvgRGB(0x3d, 0xe0, 0x7a));
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		nvgFontSize(args.vg, box.size.y * 0.72f);
+		nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, text, NULL);
 	}
 };
 
@@ -947,10 +1026,13 @@ struct ChartWindow : widget::OpaqueWidget {
 		m.chordSize = m.barW * 0.225f;
 		m.markSize = m.barW * 0.135f;
 		m.sectionSize = m.barW * 0.185f;
-		// NOTHING ABOVE THE MUSIC. Everything that is not the chart — which song, which
-		// playlist, which key, how the chords are written — is set on the module, where it is
-		// plainly part of the patch and is saved with it. What is left here is the chart.
-		m.headH = m.rowH * 0.35f;
+		// A LINE ABOVE THE MUSIC, holding the transport and the tune's name and nothing else.
+		// Everything that CHANGES the chart — which song, which playlist, which key, how the
+		// chords are written — is set on the module, where it is plainly part of the patch and
+		// is saved with it. Starting and stopping is not a change to the patch, and is wanted
+		// with the eye on the page.
+		m.headH = 0.f;   // Filled in below, once the metrics it depends on are known.
+		m.headH = std::fmax(TBTN + 10.f, m.rowH * 0.62f);
 		m.top = body().pos.y + m.headH - scroll;
 		return m;
 	}
@@ -995,12 +1077,31 @@ struct ChartWindow : widget::OpaqueWidget {
 	possibly behind the window. The same two parameters, so the two pairs cannot disagree. */
 	static const int TBTN = 17;
 
+	/** ON THE CHART, not on the title bar. The transport belongs with the music: the title bar
+	is the window's furniture — its name, its close cross, the thing you drag it by — and the
+	eye reading a chart is at the top of the page, not up in the frame. They sit in front of the
+	tune's name, so the line reads as "play this". */
+	/** A HEADER DOES NOT SCROLL. It subtracted the scroll like everything else, so scrolling
+	the chart slid the transport and the tune's name up under the title bar and the music was
+	drawn over the top of them. The head stays; only the music moves under it.
+
+	Its height is whatever the buttons need or whatever the bar width suggests, whichever is
+	larger — the buttons are a fixed size and the rest of the window is not, so at a small size
+	the proportional answer is smaller than the thing it has to hold. */
+	float headHeight() {
+		return std::fmax(TBTN + 10.f, metrics().rowH * 0.62f);
+	}
+
+	float headTop() {
+		return body().pos.y + (headHeight() - TBTN) / 2.f;
+	}
+
 	math::Rect playBox() {
-		return math::Rect(math::Vec(5.f, (CW_TITLE - TBTN) / 2.f), math::Vec(TBTN, TBTN));
+		return math::Rect(math::Vec(metrics().pad, headTop()), math::Vec(TBTN, TBTN));
 	}
 
 	math::Rect rewindBox() {
-		return math::Rect(math::Vec(5.f + TBTN + 3.f, (CW_TITLE - TBTN) / 2.f),
+		return math::Rect(math::Vec(metrics().pad + TBTN + 4.f, headTop()),
 			math::Vec(TBTN, TBTN));
 	}
 
@@ -1143,7 +1244,7 @@ struct ChartWindow : widget::OpaqueWidget {
 				return;
 			}
 			if (module && rewindBox().contains(e.pos)) {
-				module->rewind();
+				module->rewindAndStop();
 				claim(e, this);
 				return;
 			}
@@ -1245,6 +1346,13 @@ struct ChartWindow : widget::OpaqueWidget {
 			return;
 		}
 		widget::OpaqueWidget::onHoverKey(e);
+	}
+
+	/** Puts a row in the middle of the view, as far as the chart's length allows. */
+	void scrollToRow(int row) {
+		const Metrics m = metrics();
+		const float want = row * m.rowH - (body().size.y - m.headH) / 2.f + m.rowH / 2.f;
+		scroll = std::fmax(0.f, want);
 	}
 
 	void onHoverScroll(const HoverScrollEvent& e) override {
@@ -1404,39 +1512,6 @@ struct ChartWindow : widget::OpaqueWidget {
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 		nvgText(args.vg, rewindBox().pos.x + TBTN + 9.f, CW_TITLE / 2.f, "mpxChart", NULL);
 
-		// The transport, drawn from the module's own parameters so the two pairs always agree.
-		{
-			const bool playing = module && module->params[ChartModule::P_PLAY]
-				.getValue() > 0.5f;
-			const math::Rect play = playBox();
-			nvgSave(args.vg);
-			nvgTranslate(args.vg, play.pos.x, play.pos.y);
-			drawRaisedButton(args.vg, play.size, playing, playing);
-			drawPlayGlyph(args.vg, play.size, playing);
-			nvgRestore(args.vg);
-
-			const math::Rect rewind = rewindBox();
-			nvgSave(args.vg);
-			nvgTranslate(args.vg, rewind.pos.x, rewind.pos.y);
-			drawRaisedButton(args.vg, rewind.size, false, false);
-			drawRewindGlyph(args.vg, rewind.size);
-			nvgRestore(args.vg);
-		}
-
-		// The close cross.
-		{
-			const math::Rect r = closeBox();
-			const float m = 6.f;
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x + m, r.pos.y + m);
-			nvgLineTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + r.size.y - m);
-			nvgMoveTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + m);
-			nvgLineTo(args.vg, r.pos.x + m, r.pos.y + r.size.y - m);
-			nvgStrokeColor(args.vg, CW_INK);
-			nvgStrokeWidth(args.vg, 2.f);
-			nvgStroke(args.vg);
-		}
-
 		if (haveSong)
 			drawChart(args, chartTextFont(), body_);
 		else {
@@ -1497,8 +1572,6 @@ struct ChartWindow : widget::OpaqueWidget {
 		}
 
 		const math::Rect view = body();
-		nvgSave(args.vg);
-		nvgScissor(args.vg, view.pos.x, view.pos.y, view.size.x, view.size.y);
 
 		// EVERY SIZE COMES FROM THE BAR'S WIDTH. See the note at the top of the file, and
 		// metrics() for the numbers, which clicking shares.
@@ -1515,6 +1588,60 @@ struct ChartWindow : widget::OpaqueWidget {
 		// window taller pulls the chart back down instead of leaving a gap under it.
 		contentHeight = headH + rows.size() * rowH + rowH * 0.5f;
 		scroll = math::clamp(scroll, 0.f, std::fmax(0.f, contentHeight - view.size.y));
+
+		// The transport, drawn from the module's own parameters so the two pairs always agree.
+		{
+			const bool playing = module && module->params[ChartModule::P_PLAY]
+				.getValue() > 0.5f;
+			const math::Rect play = playBox();
+			nvgSave(args.vg);
+			nvgTranslate(args.vg, play.pos.x, play.pos.y);
+			drawRaisedButton(args.vg, play.size, playing, playing);
+			drawPlayGlyph(args.vg, play.size, playing);
+			nvgRestore(args.vg);
+
+			const math::Rect rewind = rewindBox();
+			nvgSave(args.vg);
+			nvgTranslate(args.vg, rewind.pos.x, rewind.pos.y);
+			drawRaisedButton(args.vg, rewind.size, false, false);
+			drawRewindGlyph(args.vg, rewind.size);
+			nvgRestore(args.vg);
+		}
+
+		// The close cross.
+		{
+			const math::Rect r = closeBox();
+			const float m = 6.f;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x + m, r.pos.y + m);
+			nvgLineTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + r.size.y - m);
+			nvgMoveTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + m);
+			nvgLineTo(args.vg, r.pos.x + m, r.pos.y + r.size.y - m);
+			nvgStrokeColor(args.vg, CW_INK);
+			nvgStrokeWidth(args.vg, 2.f);
+			nvgStroke(args.vg);
+		}
+
+
+		// The tune's name, after the transport, so the line reads as "play this".
+		{
+			nvgFontFaceId(args.vg, face->handle);
+			nvgFontSize(args.vg, m.markSize * 1.35f);
+			nvgFillColor(args.vg, CW_INK);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+			std::string name = song.title;
+			if (!song.composer.empty())
+				name += "   " + song.composer;
+			nvgText(args.vg, rewindBox().pos.x + TBTN + m.markSize * 0.8f,
+				headTop() + TBTN / 2.f, name.c_str(), NULL);
+		}
+
+
+		// THE MUSIC IS CLIPPED BELOW THE HEAD, so a row scrolling up stops at the header
+		// rather than running through it.
+		nvgSave(args.vg);
+		nvgScissor(args.vg, view.pos.x, view.pos.y + headH,
+			view.size.x, std::fmax(1.f, view.size.y - headH));
 
 		float y = view.pos.y + headH - scroll;
 
@@ -1890,6 +2017,9 @@ void ChartWindow::onRemove(const RemoveEvent& e) {
 	widget::OpaqueWidget::onRemove(e);
 }
 
+/** Puts the playing measure in view, without moving anything else. */
+static void chartWindowScrollToPlaying();
+
 void chartWindowShow(ChartModule* module) {
 	if (gChartWindow) {
 		// Already up: bring it to the front rather than opening a second one.
@@ -1901,6 +2031,31 @@ void chartWindowShow(ChartModule* module) {
 	gChartWindow = new ChartWindow;
 	gChartWindow->module = module;
 	APP->scene->addChild(gChartWindow);
+	// OPENED ON THE MUSIC, not at the top of the page. A chart of any length opened at bar one
+	// while the band is at bar forty shows you the one thing you did not open it to see.
+	chartWindowScrollToPlaying();
+}
+
+
+static void chartWindowScrollToPlaying() {
+	if (!gChartWindow || !gChartWindow->module)
+		return;
+	ChartModule* module = gChartWindow->module;
+	if (!module->haveSong.load())
+		return;
+	const std::vector<ChartBar>& bars = module->current().chartBars;
+	const int at = module->playingBar.load();
+	if (at < 0 || bars.empty())
+		return;
+	const std::vector<std::vector<RowCell> > rows = chartRows(bars, 4);
+	for (size_t r = 0; r < rows.size(); r++) {
+		for (size_t c = 0; c < rows[r].size(); c++) {
+			if (rows[r][c].empty || rows[r][c].bar != at)
+				continue;
+			gChartWindow->scrollToRow((int) r);
+			return;
+		}
+	}
 }
 
 
@@ -1937,7 +2092,8 @@ static Layout chartLayout() {
 		// CLOSE UNDER THE CONTROL. A knob is about ten millimetres across, so its edge is five
 		// below its centre; a name set nine below sat four clear of it and read as a caption
 		// for the panel rather than for the knob. Two millimetres is a label; four is a gap.
-		label(key + ".label", x, y + 7.f, name, Panel::CENTRE, true, 0.f, key);
+		label(key + ".label", x, y + (std::string(style) == "knob.large" ? 9.5f : 7.f),
+			name, Panel::CENTRE, true, 0.f, key);
 	};
 	auto jack = [&](const std::string& key, Item::Kind kind, float x, float y, int id,
 			const std::string& name, NVGcolor color, float size = 0.f) {
@@ -1966,38 +2122,62 @@ static Layout chartLayout() {
 	mode.labelSide = Panel::LEFT;
 	L.items.push_back(mode);
 
-	knob("p.tempo", 12.f, 72.f, ChartModule::P_TEMPO, "TEMPO");
+	// THE TWO DISPLAYS, in the layout rather than placed in code, so the editor can move them
+	// like anything else. The widgets themselves are made by the module and handed over.
+	auto display = [&](const std::string& key, float x, float y, float w, float h) {
+		Item i;
+		i.key = key; i.kind = Item::DISPLAY;
+		i.x = x; i.y = y; i.w = w; i.h = h;
+		L.items.push_back(i);
+	};
+	display("d.readout", 2.5f, 13.f, 46.f, 35.f);
+	// NARROW, because it holds five characters at most — "300.0" — and eighteen millimetres of
+	// plate around eleven of number is a frame looking for something to hold.
+	// CENTRED ON THE KNOB IT BELONGS TO. Thirteen wide about a centre of 12.5, so its corner
+	// is at 6 — a display is placed by its corner, which is the arithmetic worth writing down
+	// rather than working out again next time.
+	display("d.bpm", 6.f, 67.75f, 13.f, 6.5f);
+
+	// LARGER, AND LOWER. Tempo is the knob on this panel that gets turned, and it had the same
+	// body as everything else; it is the large one now, with the reading it sets written above
+	// it. Moved down to make that room.
+	knob("p.tempo", 12.5f, 83.5f, ChartModule::P_TEMPO, "TEMPO", "knob.large");
 
 	Item play;
 	play.key = "p.play"; play.kind = Item::PARAM; play.id = ChartModule::P_PLAY;
-	play.style = "transport.play"; play.x = 30.f; play.y = 72.f;
+	play.style = "transport.play"; play.x = 30.f; play.y = 71.5f;
 	L.items.push_back(play);
 	label("p.play.label", 30.f, 78.5f, "PLAY", Panel::CENTRE, true, 0.f, "p.play");
 
 	Item rewind;
 	rewind.key = "p.rewind"; rewind.kind = Item::PARAM; rewind.id = ChartModule::P_REWIND;
-	rewind.style = "transport.rewind"; rewind.x = 41.f; rewind.y = 72.f;
+	rewind.style = "transport.rewind"; rewind.x = 41.f; rewind.y = 71.5f;
 	L.items.push_back(rewind);
 	label("p.rewind.label", 41.f, 78.5f, "REWIND", Panel::CENTRE, true, 0.f, "p.rewind");
 
 	Item lamp;
 	lamp.key = "lamp.beat"; lamp.kind = Item::LIGHT; lamp.id = ChartModule::L_BEAT;
-	lamp.x = 21.f; lamp.y = 71.f;
+	// Beside the reading rather than out on its own: the number says the tempo and the lamp
+	// beats it.
+	lamp.x = 23.f; lamp.y = 71.f;
 	L.items.push_back(lamp);
 
 	// THREE ROWS. The inputs, then the chart as pitches, then the chart as scales — grouped so
 	// that the pair in one format looks like a pair, and so that nobody reaches for the twelve
 	// on-or-off flags when they wanted notes they can hear.
-	jack("in.clock", Item::PORT_IN, 12.f, 89.f, ChartModule::I_CLOCK, "clock", SIG_GATE);
-	jack("in.reset", Item::PORT_IN, 27.f, 89.f, ChartModule::I_RESET, "reset", SIG_GATE);
-	jack("out.mpx", Item::PORT_OUT, 42.f, 89.f, ChartModule::O_MPX, "mpxOut", NOTE_CABLE, 8.f);
+	// THREE COLUMNS AT FIFTEEN MILLIMETRES, which is the arrangement worked out in the panel
+	// editor and squared up here: the two inputs down the left, the two ways of hearing a chord
+	// down the middle, and the MPX bundle above the two that are its plainer equivalents.
+	jack("out.mpx", Item::PORT_OUT, 42.5f, 89.f, ChartModule::O_MPX, "mpxOut", NOTE_CABLE, 8.f);
 
-	jack("out.chord", Item::PORT_OUT, 12.f, 102.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
-	jack("out.root", Item::PORT_OUT, 27.f, 102.f, ChartModule::O_ROOT, "root", SIG_PITCH);
+	jack("in.clock", Item::PORT_IN, 12.5f, 102.f, ChartModule::I_CLOCK, "clock", SIG_GATE);
+	jack("out.chord", Item::PORT_OUT, 27.5f, 102.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
+	jack("out.root", Item::PORT_OUT, 42.5f, 102.f, ChartModule::O_ROOT, "root", SIG_PITCH);
 
-	jack("out.pesChord", Item::PORT_OUT, 12.f, 115.f, ChartModule::O_PES_CHORD,
+	jack("in.reset", Item::PORT_IN, 12.5f, 114.f, ChartModule::I_RESET, "reset", SIG_GATE);
+	jack("out.pesChord", Item::PORT_OUT, 27.5f, 114.f, ChartModule::O_PES_CHORD,
 		"PES chord", SIG_CV);
-	jack("out.pesScale", Item::PORT_OUT, 27.f, 115.f, ChartModule::O_PES_SCALE,
+	jack("out.pesScale", Item::PORT_OUT, 42.5f, 114.f, ChartModule::O_PES_SCALE,
 		"PES scale", SIG_CV);
 
 	L.bindOffsets();
@@ -2017,11 +2197,15 @@ struct ChartWidget : ModuleWidget {
 		addChild(panel);
 		layoutBuild(this, panel, layout);
 
+		// Made here, placed by the layout — so where they sit is one answer, in one file, and
+		// the editor can change it.
 		ChartDisplay* display = new ChartDisplay;
 		display->module = module;
-		display->box.pos = mm2px(math::Vec(2.5f, 13.f));
-		display->box.size = mm2px(math::Vec(46.f, 35.f));
-		addChild(display);
+		layoutPlaceDisplay(this, layout, "d.readout", display);
+
+		ChartTempoDisplay* bpm = new ChartTempoDisplay;
+		bpm->module = module;
+		layoutPlaceDisplay(this, layout, "d.bpm", bpm);
 	}
 
 	/** The songs of one playlist, behind a letter each, because a menu of fourteen hundred is
@@ -2120,12 +2304,12 @@ struct ChartWidget : ModuleWidget {
 		if (chart) {
 			const float now = chart->params[ChartModule::P_OPEN].getValue();
 			if (now > 0.5f && lastOpen <= 0.5f) {
-				// STOPPED AND WOUND BACK, because opening the chart is the start of choosing
-				// something — a different song, a different section, a different key — and
-				// every one of those changes the music under a transport that is still going.
-				// Whatever came out of that would not be worth hearing.
-				chart->params[ChartModule::P_PLAY].setValue(0.f);
-				chart->rewind();
+				// OPENING THE CHART CHANGES NOTHING. It was stopping the transport and winding
+				// it back, on the reasoning that opening the chart is the start of choosing
+				// something — but looking at the music while it plays is the commonest reason
+				// to open it, and a window that silences the patch to show you where you are
+				// has answered a question nobody asked. LOADING a chart still stops, because
+				// that genuinely does change what is playing.
 				chartWindowShow(chart);
 			}
 			lastOpen = now;

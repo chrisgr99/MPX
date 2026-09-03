@@ -32,6 +32,17 @@ struct Item {
 		LABEL,
 		/** A bracket, using w for how far its arms reach and h for how far it spans. */
 		BRACKET,
+		/** A DISPLAY: a widget the module makes itself — a readout, a chart, a scope face —
+		given a place in the layout so that it can be moved like everything else.
+
+		The layout does not build it. It cannot: a display is whatever the module needs it to
+		be, and the layout knows about knobs and jacks. What the layout owns is WHERE it goes
+		and HOW BIG it is; the module hands its widget over with layoutPlaceDisplay and the two
+		are joined from then on — the editor drags it, the file remembers it.
+
+		Placed by its TOP-LEFT CORNER and sized by w and h, because a display is an area rather
+		than a point. */
+		DISPLAY,
 	};
 
 	/** The name this item is saved under. Stable for the life of the module: rename one and
@@ -112,6 +123,13 @@ bool layoutHasUser(const std::string& slug);
 /** Creates every param, port and light, fills the panel's labels, and adds the widget that
 paints the jacks over the top of them. */
 void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout);
+
+/** Puts a display widget where its layout item says, adds it to the module, and joins the two
+so the editor can move it afterwards. Called after layoutBuild, once the module has made the
+widget it wants. Does nothing if the layout has no item of that key, so a module can hand over
+a display the layout has not been told about without anything breaking. */
+void layoutPlaceDisplay(ModuleWidget* mw, Layout& layout, const std::string& key,
+	widget::Widget* display);
 /** Regenerates only what the panel draws. Called after anything moves. */
 void layoutRefreshPanel(Panel* panel, Layout& layout);
 
