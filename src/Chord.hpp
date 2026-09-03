@@ -10,6 +10,7 @@ It is also what makes a reharmoniser possible at all, since its rules are about 
 */
 #include <rack.hpp>
 #include <string>
+#include <vector>
 
 using namespace rack;
 
@@ -76,6 +77,32 @@ std::string chordRoman(const Chord& chord);
 /** How the chord is written as a letter in this key — "Dm7", "G7". Sharps rather than flats,
 since one spelling has to be chosen and this one needs no key signature to work out. */
 std::string chordLetter(const Chord& chord, const Key& key);
+
+/** A chord symbol split for setting, the way a chart is engraved: a full-size ROOT, an
+accidental raised beside it, and the quality and extensions small and lowered.
+
+Printed as one run of text a chart reads as a list of words. Set this way it reads as chords,
+because the eye finds the roots without looking for them — which is the whole point of a chord
+chart and the difference between something that looks like iReal Pro and something that does
+not. */
+struct ChordRun {
+	/** UTF-8. A music run holds one SMuFL codepoint from Petaluma; a text run holds letters or
+	digits from the text face. */
+	std::string text;
+	bool music = false;
+	/** Set full size on the baseline, or small and raised: the root is the first, everything
+	after it the second. */
+	bool raised = false;
+};
+
+struct ChordText {
+	std::vector<ChordRun> parts;
+};
+
+/** The chord as a letter in this key, split for setting. */
+ChordText chordTextLetter(const Chord& chord, const Key& key);
+/** The chord as a degree, split for setting. */
+ChordText chordTextRoman(const Chord& chord);
 
 /** The quality's suffix on its own, for a panel that shows the two separately. */
 const char* qualityName(int quality);

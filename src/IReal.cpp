@@ -271,14 +271,33 @@ static std::vector<Cell> tokenise(const std::string& body, const Key& key) {
 		if (startsWith(body, i, "LZ")) {
 			Cell cell; cell.kind = Cell::BAR; cells.push_back(cell); i += 2; continue;
 		}
-		if (c == '*' && i + 1 < body.size()) {
+		if (c == '*' && i + 1 < body.size()
+			&& (std::isalnum((unsigned char) body[i + 1]) || body[i + 1] == '_')) {
+			// A LETTER OR A DIGIT after the star, and nothing else. A star followed by
+			// punctuation is not a rehearsal mark, and taking it as one gave charts sections
+			// labelled with a comma or a bracket. Four charts in two thousand, found by
+			// running this against the reader it was ported from.
 			Cell cell; cell.kind = Cell::SECTION; cell.label = body[i + 1];
 			cells.push_back(cell); i += 2; continue;
 		}
 		if (c == '<') {
-			// A comment, which carries no harmony.
+			// A comment. No harmony in it, but iReal writes the NAVIGATION as comments —
+			// "D.C. al Coda", "Fine", "3x" — so the text is kept and classified later rather
+			// than thrown away here.
+			// AND ONLY WHEN IT CLOSES. An opening bracket with no closing one is not a
+			// comment, and reading it as one swallowed the whole rest of the chart —
+			// "Turnaround" lost a third of its bars that way. Unmatched, the bracket is
+			// simply not a token.
 			const size_t close = body.find('>', i);
-			i = (close == std::string::npos) ? body.size() : close + 1;
+			if (close == std::string::npos) {
+				i++;
+				continue;
+			}
+			Cell cell;
+			cell.kind = Cell::COMMENT;
+			cell.raw = body.substr(i + 1, close - i - 1);
+			cells.push_back(cell);
+			i = close + 1;
 			continue;
 		}
 		if (c == 'T' && i + 2 < body.size()

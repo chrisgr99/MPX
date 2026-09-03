@@ -8,9 +8,12 @@ RACK_DIR ?= ../Rack-SDK
 
 SOURCES += $(wildcard src/*.cpp)
 
-# NO res DIRECTORY. Every panel is drawn in code, so the plugin ships no artwork. Listing a res
-# directory that is not in the repository fails on a clean checkout, which is what the VCV
-# Library builds from.
+# THE ONLY THING IN res IS TYPE. Every panel is drawn in code and the plugin ships no artwork,
+# but a chord chart needs music symbols — the major-seventh triangle, the diminished circle, the
+# segno and coda, the measure-repeat marks — and those are glyphs, not shapes to be approximated
+# with a few strokes. Petaluma is Steinberg's handwritten music font, under the Open Font
+# Licence, which is redistributed here with its licence beside it.
+DISTRIBUTABLES += res
 DISTRIBUTABLES += $(wildcard LICENSE*)
 
 include $(RACK_DIR)/plugin.mk
@@ -41,6 +44,8 @@ dev: $(TARGET)
 	@rm -f "$(PLUGIN_DIR)/plugin.dylib"
 	@cp $(TARGET) "$(PLUGIN_DIR)/plugin.dylib"
 	@cp plugin.json "$(PLUGIN_DIR)/"
+	@rm -rf "$(PLUGIN_DIR)/res"
+	@cp -R res "$(PLUGIN_DIR)/"
 	@cp LICENSE "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@xattr -c "$(PLUGIN_DIR)/plugin.dylib" 2>/dev/null || true
 	@codesign -v "$(PLUGIN_DIR)/plugin.dylib" && echo "signature valid"
@@ -59,5 +64,16 @@ test:
 		"$(HOME)/ProgrammingProjects/GXW/Pop 400.html" \
 		"$(HOME)/ProgrammingProjects/GXW/Brazilian 220.html" \
 		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
+
+charttest:
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		test/charttest.cpp src/ChartLayout.cpp src/IReal.cpp src/Chord.cpp \
+		-o build/charttest -L$(RACK_DIR) -lRack 2>&1 | head -20
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/charttest $(ARGS) \
+		"$(HOME)/ProgrammingProjects/GXW/Blues 50.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Pop 400.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Brazilian 220.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
+
 
 .PHONY: test

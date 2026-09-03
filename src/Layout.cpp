@@ -205,6 +205,14 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 					// point; everything else on a panel is placed by its centre.
 					lamps->box.pos = pos;
 				}
+				else if (item.style == "button")
+					p = createParamCentered<DreamerButton>(pos, module, item.id);
+				else if (item.style == "transport.play")
+					p = createParamCentered<DreamerPlay>(pos, module, item.id);
+				else if (item.style == "transport.rewind")
+					p = createParamCentered<DreamerRewind>(pos, module, item.id);
+				else if (item.style == "latch")
+					p = createParamCentered<DreamerLatch>(pos, module, item.id);
 				else if (item.style == "knob.huge")
 					p = createParamCentered<RoundHugeBlackKnob>(pos, module, item.id);
 				else if (item.style == "knob.large")
@@ -269,7 +277,11 @@ static math::Rect itemRect(const Item& item) {
 	float w = 8.f, h = 8.f;
 	switch (item.kind) {
 		case Item::PARAM:
-			if (item.style == "knob.huge") w = h = 20.f;
+			if (item.style == "button" || item.style == "latch"
+				|| item.style == "transport.play" || item.style == "transport.rewind") {
+				w = h = 9.f;
+			}
+			else if (item.style == "knob.huge") w = h = 20.f;
 			else if (item.style == "knob.large") w = h = 14.f;
 			else if (item.style == "lamps") {
 				// The same extent the widget gives itself: lamps along, names across.

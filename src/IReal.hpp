@@ -44,6 +44,10 @@ struct Cell {
 		DIVIDER,        /**< A beat divider within a bar. */
 		SEGNO,
 		CODA,
+		/** A comment. It carries no harmony, but iReal hides the navigation in one:
+		"D.C. al Coda", "Fine", and the repeat count "3x" are all written as comments, so the
+		text is kept rather than dropped. See chartClassifyNav in ChartLayout.hpp. */
+		COMMENT,
 	};
 	Kind kind = CHORD;
 	/** CHORD. Invalid for a No Chord cell, which still occupies its time. */
@@ -55,7 +59,7 @@ struct Cell {
 	int ending = 0;
 	/** TIME. */
 	int beats = 4, unit = 4;
-	/** CHORD, kept for diagnostics: the symbol as it was written. */
+	/** CHORD, kept for diagnostics: the symbol as it was written. COMMENT: its text. */
 	std::string raw;
 };
 

@@ -153,6 +153,125 @@ static int letterIndexOfTonic(const Key& key) {
 	return best;
 }
 
+/** THE SMuFL CODEPOINTS we use out of Petaluma. Named rather than written as numbers, because
+E873 says nothing and csymMajorSeventh says everything. */
+static const char* SYM_MAJ7      = "";
+static const char* SYM_DIM       = "";
+static const char* SYM_HALFDIM   = "";
+static const char* SYM_AUG       = "";
+static const char* SYM_FLAT      = "";   /**< The chord-symbol flat, cut for this size. */
+static const char* SYM_SHARP     = "";
+
+static void addText(ChordText& out, const std::string& text, bool raised) {
+	if (text.empty())
+		return;
+	// Runs of the same kind join, so "sus" and "4" are one call to the text engine.
+	if (!out.parts.empty() && !out.parts.back().music
+		&& out.parts.back().raised == raised) {
+		out.parts.back().text += text;
+		return;
+	}
+	ChordRun run;
+	run.text = text;
+	run.raised = raised;
+	out.parts.push_back(run);
+}
+
+static void addSymbol(ChordText& out, const char* symbol, bool raised) {
+	ChordRun run;
+	run.text = symbol;
+	run.music = true;
+	run.raised = raised;
+	out.parts.push_back(run);
+}
+
+/** The quality, set as a chart sets it: the triangle for a major seventh, the small circle for a
+diminished, the slashed circle for a half diminished, and real flats and sharps in alterations.
+Everything that is a SYMBOL becomes a glyph from the music font; everything that is a NUMBER or a
+letter stays in the text face. */
+static void engraveQuality(ChordText& out, const std::string& suffix) {
+	for (size_t i = 0; i < suffix.size(); i++) {
+		if (suffix.compare(i, 4, "maj7") == 0) {
+			addSymbol(out, SYM_MAJ7, true);
+			addText(out, "7", true);
+			i += 3;
+			continue;
+		}
+		if (suffix.compare(i, 4, "Maj7") == 0) {
+			addSymbol(out, SYM_MAJ7, true);
+			addText(out, "7", true);
+			i += 3;
+			continue;
+		}
+		// The degree sign and the slashed circle arrive from QUALITY_SUFFIX as UTF-8 already.
+		if (suffix.compare(i, 2, "°") == 0) {
+			addSymbol(out, SYM_DIM, true);
+			i += 1;
+			continue;
+		}
+		if (suffix.compare(i, 2, "ø") == 0) {
+			addSymbol(out, SYM_HALFDIM, true);
+			i += 1;
+			continue;
+		}
+		if (suffix[i] == '+') {
+			addSymbol(out, SYM_AUG, true);
+			continue;
+		}
+		if (suffix[i] == 'b') {
+			addSymbol(out, SYM_FLAT, true);
+			continue;
+		}
+		if (suffix[i] == '#') {
+			addSymbol(out, SYM_SHARP, true);
+			continue;
+		}
+		addText(out, std::string(1, suffix[i]), true);
+	}
+}
+
+ChordText chordTextLetter(const Chord& chord, const Key& key) {
+	ChordText out;
+	const std::string whole = chordLetter(chord, key);
+	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
+	addText(out, whole.substr(0, 1), false);
+	size_t i = 1;
+	while (i < whole.size() && (whole[i] == '#' || whole[i] == 'b')) {
+		addSymbol(out, whole[i] == 'b' ? SYM_FLAT : SYM_SHARP, true);
+		i++;
+	}
+	engraveQuality(out, QUALITY_SUFFIX[q]);
+	return out;
+}
+
+ChordText chordTextRoman(const Chord& chord) {
+	ChordText out;
+	const int d = clamp((int) chord.degree, 1, 7) - 1;
+	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
+	// Roman writes the accidental in FRONT of the numeral: a flat six is a flat, then VI.
+	if (chord.accidental < 0)
+		addSymbol(out, SYM_FLAT, false);
+	else if (chord.accidental > 0)
+		addSymbol(out, SYM_SHARP, false);
+	addText(out, minorNumeral(q) ? ROMAN_LOWER[d] : ROMAN_UPPER[d], false);
+	// The numeral already says the third is minor, so the suffix does not repeat it.
+	if (q == Q_MINOR)
+		return out;
+	if (q == Q_MIN7)
+		addText(out, "7", true);
+	else if (q == Q_MIN6)
+		addText(out, "6", true);
+	else if (q == Q_MIN9)
+		addText(out, "9", true);
+	else if (q == Q_MINMAJ7) {
+		addSymbol(out, SYM_MAJ7, true);
+		addText(out, "7", true);
+	}
+	else
+		engraveQuality(out, QUALITY_SUFFIX[q]);
+	return out;
+}
+
 std::string chordLetter(const Chord& chord, const Key& key) {
 	static const char* LETTERS = "CDEFGAB";
 	static const int LETTER_PC[7] = {0, 2, 4, 5, 7, 9, 11};

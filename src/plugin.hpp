@@ -78,6 +78,53 @@ struct Panel : widget::Widget {
 it. A knob that snaps to five positions says nothing about what the five are; a list of five
 names says all of it without a tooltip, and clicking a name is a bigger target than turning a
 knob to a detent. */
+/** A BUTTON THAT LOOKS LIKE A BUTTON.
+
+Rack's stock buttons are dark on a dark panel, which on ours meant a control you had to know was
+there. This one is drawn as a raised cap: a shadow under it, a body lit from the top, a bright
+edge along the upper rim and a dark one along the lower, and a sheen across the top half. Those
+are the four things that make a flat shape read as something standing proud of the surface, and
+between them they make it obvious that it is for pressing.
+
+Pressed, the lighting turns over — dark at the top, bright at the bottom — which is what a cap
+going down actually does to the light. A latch that is ON is lit in the panel's accent, so its
+state is a colour rather than a shade. */
+void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on);
+
+/** The momentary one. Rack's Switch gives it its behaviour; this only draws. */
+struct DreamerButton : app::Switch {
+	DreamerButton();
+	void draw(const DrawArgs& args) override;
+};
+
+/** The latching one, which stays down and lit. */
+struct DreamerLatch : app::Switch {
+	DreamerLatch();
+	void draw(const DrawArgs& args) override;
+};
+
+
+/** THE TRANSPORT PAIR, drawn as a transport is drawn everywhere: a triangle that becomes two
+bars while it is running, and a pair of arrows back.
+
+A word would have done, but the symbols are read without being read — nobody spells out "play"
+on a tape machine — and at six millimetres a symbol is legible where two words are not. */
+struct DreamerPlay : app::Switch {
+	DreamerPlay();
+	void draw(const DrawArgs& args) override;
+};
+
+struct DreamerRewind : app::Switch {
+	DreamerRewind();
+	void draw(const DrawArgs& args) override;
+};
+
+/** The transport glyphs on their own, so the same shapes can be drawn in the chart window
+without a parameter behind them. `playing` draws the pause bars instead of the triangle. */
+void drawPlayGlyph(NVGcontext* vg, math::Vec size, bool playing);
+void drawRewindGlyph(NVGcontext* vg, math::Vec size);
+
+
 struct Lamps : ParamWidget {
 	std::vector<std::string> names;
 	bool horizontal = false;

@@ -69,7 +69,7 @@ void Panel::draw(const DrawArgs& args) {
 	}
 	else {
 		nvgFontSize(args.vg, 8.f);
-		nvgFillColor(args.vg, PANEL_DIM);
+		nvgFillColor(args.vg, PANEL_INK);
 		nvgText(args.vg, box.size.x / 2, 9, titleAbove.c_str(), NULL);
 		nvgFillColor(args.vg, PANEL_INK);
 		nvgFontSize(args.vg, 14);
@@ -107,7 +107,10 @@ void Panel::draw(const DrawArgs& args) {
 		nvgFontFaceId(args.vg, label.heading && face && face->handle >= 0
 			? face->handle : font->handle);
 		nvgFontSize(args.vg, label.size > 0.f ? label.size : (label.heading ? 10.f : 8.f));
-		nvgFillColor(args.vg, label.heading ? PANEL_INK : PANEL_DIM);
+		// ALL OF IT WHITE. Half the names on a panel were set in a grey two thirds as bright as
+		// the rest, which made a panel look like two panels and made the smaller names the
+		// hardest thing on it to read. A name is a name.
+		nvgFillColor(args.vg, PANEL_INK);
 		nvgTextAlign(args.vg, alignFlag(label.align) | NVG_ALIGN_MIDDLE);
 		nvgText(args.vg, label.x, label.y, label.text.c_str(), NULL);
 	}
@@ -184,18 +187,9 @@ void JackPaint::draw(const DrawArgs& args) {
 /** In pixels. Large enough to read as a lamp at rack distance rather than as a dot. */
 static const float LAMP_R = 6.5f;
 
-math::Vec Lamps::lampPos(int i) {
-	// ANCHORED TO THE CORNER, not to the middle of the box. The box grows to cover the names,
-	// and lamps measured from its centre would slide as it grew.
-	return horizontal ? math::Vec(LAMP_R + i * pitch, LAMP_R)
-		: math::Vec(LAMP_R, LAMP_R + i * pitch);
-}
-
-void Lamps::fit() {
-	const int n = std::max(1, (int) names.size());
-	const float along = 2.f * LAMP_R + (n - 1) * pitch;
-	// Room for the longest name, estimated from its characters: a text width wants a font and a
-	// drawing context, and a target that is a little generous costs nothing.
+/** Room for the longest name, estimated from its characters: a text width wants a font and a
+drawing context, and a target that is a little generous costs nothing. */
+static float lampsNamesWidth(const std::vector<std::string>& names) {
 	size_t longest = 0;
 	for (const std::string& name : names) {
 		size_t start = 0;
@@ -208,8 +202,156 @@ void Lamps::fit() {
 			start = brk + 1;
 		}
 	}
-	const float names_w = longest ? (LAMP_R + 5.f + longest * 4.6f) : LAMP_R;
-	const float across = 2.f * LAMP_R + (labelSide == Panel::RIGHT ? names_w : 0.f);
+	return longest ? (LAMP_R + 5.f + longest * 4.6f) : LAMP_R;
+}
+
+void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on) {
+	const float w = size.x, h = size.y;
+	const float r = std::fmin(w, h) * 0.28f;
+
+	// The shadow it casts, which is most of what says "raised".
+	if (!down) {
+		nvgBeginPath(vg);
+		nvgRoundedRect(vg, 1.f, 2.f, w - 2.f, h - 1.f, r);
+		nvgFillColor(vg, nvgRGBA(0, 0, 0, 0x99));
+		nvgFill(vg);
+	}
+
+	const NVGcolor bright = on ? nvgRGB(0x8d, 0xf5, 0xc2) : nvgRGB(0x9d, 0xa8, 0xb8);
+	const NVGcolor dark = on ? nvgRGB(0x24, 0x9c, 0x67) : nvgRGB(0x4c, 0x55, 0x62);
+
+	nvgBeginPath(vg);
+	nvgRoundedRect(vg, 1.f, down ? 1.5f : 0.f, w - 2.f, h - 2.f, r);
+	// Lit from above, and from below when it is pressed: a cap going down turns the light over.
+	nvgFillPaint(vg, nvgLinearGradient(vg, 0.f, down ? h : 0.f, 0.f, down ? 0.f : h,
+		bright, dark));
+	nvgFill(vg);
+
+	// The rims. A bright one along the top and a dark one along the bottom is the whole of what
+	// an edge catching the light looks like.
+	nvgBeginPath(vg);
+	nvgRoundedRect(vg, 1.5f, (down ? 1.5f : 0.f) + 0.5f, w - 3.f, h - 3.f, r);
+	nvgStrokeWidth(vg, 1.f);
+	nvgStrokePaint(vg, nvgLinearGradient(vg, 0.f, 0.f, 0.f, h,
+		down ? nvgRGBA(0, 0, 0, 0xaa) : nvgRGBA(0xff, 0xff, 0xff, 0xaa),
+		down ? nvgRGBA(0xff, 0xff, 0xff, 0x55) : nvgRGBA(0, 0, 0, 0xaa)));
+	nvgStroke(vg);
+
+	// The sheen: a soft light across the upper half, which is what tells the eye the top is
+	// curved rather than flat.
+	if (!down) {
+		nvgBeginPath(vg);
+		nvgRoundedRect(vg, 2.5f, 1.5f, w - 5.f, h * 0.42f, r * 0.8f);
+		nvgFillPaint(vg, nvgLinearGradient(vg, 0.f, 1.5f, 0.f, h * 0.5f,
+			nvgRGBA(0xff, 0xff, 0xff, on ? 0x88 : 0x66), nvgRGBA(0xff, 0xff, 0xff, 0x00)));
+		nvgFill(vg);
+	}
+}
+
+DreamerButton::DreamerButton() {
+	// MOMENTARY, which Rack's Switch is not unless it is told. Left as it comes, a press
+	// INCREMENTS: one press sets the value to one, the next wraps it back to nought. Anything
+	// watching for the rise then fires on every other press, which is exactly what "it takes
+	// two clicks" looks like from the front.
+	momentary = true;
+	box.size = mm2px(math::Vec(6.2f, 6.2f));
+}
+
+void DreamerButton::draw(const DrawArgs& args) {
+	const bool down = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	drawRaisedButton(args.vg, box.size, down, false);
+}
+
+DreamerLatch::DreamerLatch() {
+	box.size = mm2px(math::Vec(6.2f, 6.2f));
+}
+
+void DreamerLatch::draw(const DrawArgs& args) {
+	const bool on = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	drawRaisedButton(args.vg, box.size, on, on);
+}
+
+/** The ink a transport symbol is cut in: dark, so it reads as a mark ON the cap rather than as
+another thing beside it. */
+static const NVGcolor TRANSPORT_INK = nvgRGB(0x14, 0x18, 0x1e);
+
+void drawPlayGlyph(NVGcontext* vg, math::Vec size, bool playing) {
+	const float w = size.x, h = size.y;
+	nvgFillColor(vg, TRANSPORT_INK);
+	if (playing) {
+		// Two bars, which is pause: what pressing it now would do.
+		const float bw = w * 0.13f;
+		const float gap = w * 0.11f;
+		nvgBeginPath(vg);
+		nvgRect(vg, w / 2.f - gap / 2.f - bw, h * 0.28f, bw, h * 0.44f);
+		nvgRect(vg, w / 2.f + gap / 2.f, h * 0.28f, bw, h * 0.44f);
+		nvgFill(vg);
+		return;
+	}
+	// A triangle pointing the way the music goes.
+	nvgBeginPath(vg);
+	nvgMoveTo(vg, w * 0.37f, h * 0.27f);
+	nvgLineTo(vg, w * 0.71f, h * 0.50f);
+	nvgLineTo(vg, w * 0.37f, h * 0.73f);
+	nvgClosePath(vg);
+	nvgFill(vg);
+}
+
+void drawRewindGlyph(NVGcontext* vg, math::Vec size) {
+	const float w = size.x, h = size.y;
+	nvgFillColor(vg, TRANSPORT_INK);
+	for (int i = 0; i < 2; i++) {
+		const float x = w * (0.30f + i * 0.24f);
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, x, h * 0.50f);
+		nvgLineTo(vg, x + w * 0.22f, h * 0.28f);
+		nvgLineTo(vg, x + w * 0.22f, h * 0.72f);
+		nvgClosePath(vg);
+		nvgFill(vg);
+	}
+}
+
+DreamerPlay::DreamerPlay() {
+	box.size = mm2px(math::Vec(6.6f, 6.6f));
+}
+
+void DreamerPlay::draw(const DrawArgs& args) {
+	const bool on = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	drawRaisedButton(args.vg, box.size, on, on);
+	drawPlayGlyph(args.vg, box.size, on);
+}
+
+DreamerRewind::DreamerRewind() {
+	momentary = true;
+	box.size = mm2px(math::Vec(6.6f, 6.6f));
+}
+
+void DreamerRewind::draw(const DrawArgs& args) {
+	const bool down = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	drawRaisedButton(args.vg, box.size, down, false);
+	drawRewindGlyph(args.vg, box.size);
+}
+
+math::Vec Lamps::lampPos(int i) {
+	// ANCHORED TO THE CORNER, not to the middle of the box. The box grows to cover the names,
+	// and lamps measured from its centre would slide as it grew.
+	//
+	// WITH THE NAMES ON THE LEFT the lamps sit at the far side, since the names are inside the
+	// box and come first. Before this they were drawn outside it: off the widget, so a click on
+	// a name chose nothing and a lamp column placed against another control overlapped it.
+	const float lead = (!horizontal && labelSide == Panel::LEFT)
+		? lampsNamesWidth(names) : 0.f;
+	return horizontal ? math::Vec(LAMP_R + i * pitch, LAMP_R)
+		: math::Vec(lead + LAMP_R, LAMP_R + i * pitch);
+}
+
+void Lamps::fit() {
+	const int n = std::max(1, (int) names.size());
+	const float along = 2.f * LAMP_R + (n - 1) * pitch;
+	const float names_w = lampsNamesWidth(names);
+	const bool sided = (labelSide == Panel::RIGHT)
+		|| (!horizontal && labelSide == Panel::LEFT);
+	const float across = 2.f * LAMP_R + (sided ? names_w : 0.f);
 	box.size = horizontal ? math::Vec(along, across) : math::Vec(across, along);
 }
 
