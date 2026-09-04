@@ -1688,8 +1688,33 @@ struct ChartWindow : widget::OpaqueWidget {
 			std::string name = song.title;
 			if (!song.composer.empty())
 				name += "   " + song.composer;
-			nvgText(args.vg, rewindBox().pos.x + TBTN + m.markSize * 0.8f,
-				headTop() + TBTN / 2.f, name.c_str(), NULL);
+
+			// CUT TO FIT, WITH AN ELLIPSIS. A long title in a narrow window ran off the right
+			// edge and out of the frame — which reads as a fault in the window rather than as a
+			// name too long for it. The composer goes first, since the title is the part being
+			// identified.
+			const float x = rewindBox().pos.x + TBTN + m.markSize * 0.8f;
+			const float room = box.size.x - m.pad - x;
+			float bounds[4] = {0.f, 0.f, 0.f, 0.f};
+			nvgTextBounds(args.vg, 0.f, 0.f, name.c_str(), NULL, bounds);
+			if (bounds[2] - bounds[0] > room) {
+				name = song.title;
+				nvgTextBounds(args.vg, 0.f, 0.f, name.c_str(), NULL, bounds);
+			}
+			while (name.size() > 1 && bounds[2] - bounds[0] > room) {
+				// Back off a whole character rather than a byte: a title with an accent in it
+				// would otherwise be cut in the middle of one and drawn as rubble.
+				do {
+					name.erase(name.size() - 1);
+				} while (!name.empty() && ((unsigned char) name[name.size() - 1] & 0xC0) == 0x80);
+				const std::string tryIt = name + "\u2026";
+				nvgTextBounds(args.vg, 0.f, 0.f, tryIt.c_str(), NULL, bounds);
+				if (bounds[2] - bounds[0] <= room) {
+					name = tryIt;
+					break;
+				}
+			}
+			nvgText(args.vg, x, headTop() + TBTN / 2.f, name.c_str(), NULL);
 		}
 
 
@@ -2078,12 +2103,16 @@ void ChartWindow::onRemove(const RemoveEvent& e) {
 static void chartWindowScrollToPlaying();
 
 void chartWindowCloseFor(ChartModule* module) {
+	INFO("mpxChart: module going; window is %s",
+		gChartWindow ? (gChartWindow->module == module ? "its own, closing" : "another's")
+		: "not open");
 	if (gChartWindow && gChartWindow->module == module)
 		gChartWindow->requestDelete();
 }
 
 
 void chartWindowShow(ChartModule* module) {
+	INFO("mpxChart: CHART pressed; window %s", gChartWindow ? "is up" : "is not up");
 	if (gChartWindow) {
 		// ALREADY UP: THE BUTTON CLOSES IT. The window is a child of the scene and therefore
 		// always over the rack, so bringing an open one to the front achieves nothing you can
@@ -2110,6 +2139,10 @@ void chartWindowShow(ChartModule* module) {
 			mw->box.size.mult(mw->getAbsoluteZoom())));
 	}
 	APP->scene->addChild(gChartWindow);
+	INFO("mpxChart: window opened at (%g,%g) size %gx%g, scene %gx%g",
+		gChartWindow->box.pos.x, gChartWindow->box.pos.y,
+		gChartWindow->box.size.x, gChartWindow->box.size.y,
+		APP->scene->box.size.x, APP->scene->box.size.y);
 	// OPENED ON THE MUSIC, not at the top of the page. A chart of any length opened at bar one
 	// while the band is at bar forty shows you the one thing you did not open it to see.
 	chartWindowScrollToPlaying();
