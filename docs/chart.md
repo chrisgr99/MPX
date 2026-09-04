@@ -64,7 +64,7 @@ The chord shown is the one the player resolved, not the one written in the bar, 
 
 LETTER and ROMAN choose how chords are written, in the chart and in the readout alike. It is a parameter, so it saves with the patch, appears in Rack's menu and can be mapped.
 
-CHART opens the window. TEMPO is the large knob with the tempo in force written above it in green — the clock's measured rate when one is patched, the knob's otherwise, and correct while stopped.
+CHART opens the window, and closes it again. The window is a child of the scene and therefore always over the rack, so bringing an open one to the front achieves nothing you can see — while a button labelled CHART that shuts the chart is what anybody would try. A second chart module asking for the window is the exception: that is not "close it", it is "show me mine instead". TEMPO is the large knob with the tempo in force written above it in green — the clock's measured rate when one is patched, the knob's otherwise, and correct while stopped.
 
 Play and rewind are drawn as a transport: a triangle that becomes two bars while running, and a pair of arrows back. The same pair appears in the window.
 

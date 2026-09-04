@@ -2033,18 +2033,19 @@ static void chartWindowScrollToPlaying();
 
 void chartWindowShow(ChartModule* module) {
 	if (gChartWindow) {
-		// Already up: bring it to the front rather than opening a second one. Rack reorders a
-		// child by taking it out and putting it back.
+		// ALREADY UP: THE BUTTON CLOSES IT. The window is a child of the scene and therefore
+		// always over the rack, so bringing an open one to the front achieves nothing you can
+		// see — while a button labelled CHART that shuts the chart is what anybody would try.
 		//
-		// HELD IN A LOCAL, and the global put back afterwards. removeChild dispatches the remove
-		// event BEFORE it unhooks anything, and this window's onRemove clears gChartWindow —
-		// which is right when the window is really going away and fatal here, because the next
-		// line would then hand addChild a null pointer.
+		// The only case worth keeping open is a second chart module asking for the window: that
+		// is not "close it", it is "show me mine instead".
+		if (gChartWindow->module == module) {
+			gChartWindow->requestDelete();
+			return;
+		}
 		ChartWindow* window = gChartWindow;
-		APP->scene->removeChild(window);
-		APP->scene->addChild(window);
-		gChartWindow = window;
 		window->module = module;
+		chartWindowScrollToPlaying();
 		return;
 	}
 	gChartWindow = new ChartWindow;
