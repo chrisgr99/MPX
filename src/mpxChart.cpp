@@ -921,6 +921,11 @@ struct ChartTempoDisplay : widget::Widget {
 
 static void chartWindowShow(ChartModule* module);
 
+/** Closes the window if it is showing this module. A WINDOW IS A VIEW OF A MODULE, so when the
+module goes the window has nothing to show — and its pointer to that module is a dangling one the
+moment the patch it belonged to is replaced. */
+static void chartWindowCloseFor(ChartModule* module);
+
 // ---- the chart window ------------------------------------------------------------------------
 
 /** THE CHART, AT A SIZE YOU CAN READ, in a window of its own.
@@ -2072,6 +2077,12 @@ void ChartWindow::onRemove(const RemoveEvent& e) {
 /** Puts the playing measure in view, without moving anything else. */
 static void chartWindowScrollToPlaying();
 
+void chartWindowCloseFor(ChartModule* module) {
+	if (gChartWindow && gChartWindow->module == module)
+		gChartWindow->requestDelete();
+}
+
+
 void chartWindowShow(ChartModule* module) {
 	if (gChartWindow) {
 		// ALREADY UP: THE BUTTON CLOSES IT. The window is a child of the scene and therefore
@@ -2256,6 +2267,17 @@ static Layout chartLayout() {
 struct ChartWidget : ModuleWidget {
 	Panel* panel = NULL;
 	Layout layout;
+
+	/** THE WINDOW IS A VIEW OF THIS MODULE, so it goes when the module does.
+
+	Left standing, it holds a pointer to a module that has been destroyed — which happens on
+	every patch load, not only when somebody deletes the module — and it would go on drawing a
+	chart out of freed memory. It also leaves the CHART button toggling a window that belongs to
+	a rack that is no longer there. */
+	void onRemove(const RemoveEvent& e) override {
+		chartWindowCloseFor(dynamic_cast<ChartModule*>(module));
+		ModuleWidget::onRemove(e);
+	}
 
 	ChartWidget(ChartModule* module) {
 		setModule(module);
