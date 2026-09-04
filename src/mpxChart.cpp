@@ -992,6 +992,11 @@ static std::shared_ptr<window::Font> chartMusicFont() {
 }
 
 
+/** Where the window was last dragged to, or negative when it has never been moved. A position
+somebody chose outranks one that was worked out. */
+static math::Vec gChartWhere = math::Vec(-1.f, -1.f);
+
+
 struct ChartWindow : widget::OpaqueWidget {
 	ChartModule* module = NULL;
 	/** How far the chart is scrolled, in pixels of the drawn chart. */
@@ -1007,6 +1012,37 @@ struct ChartWindow : widget::OpaqueWidget {
 	ChartWindow() {
 		box.size = math::Vec(720.f, 460.f);
 		box.pos = math::Vec(120.f, 80.f);
+	}
+
+	/** OPENED CLEAR OF THE MODULE THAT OPENED IT.
+
+	The window is a child of the scene and therefore over the rack, and at a comfortable zoom a
+	ten HP module is wide enough that a window in the default place lands on top of it. Then the
+	button you just pressed is underneath the thing it opened, and pressing it again — to close
+	the chart, to choose another song, to stop the transport — reaches the window instead.
+
+	So the first time it opens it takes the first of a few berths that leaves the module visible.
+	Once you have dragged it somewhere yourself, that is where it opens: a position you chose is
+	worth more than one that was worked out. */
+	void placeClearOf(math::Rect avoid) {
+		const math::Vec scene = APP->scene->box.size;
+		const float m = 40.f;
+		const math::Vec spots[5] = {
+			math::Vec(120.f, 80.f),
+			math::Vec(scene.x - box.size.x - m, 80.f),
+			math::Vec(120.f, scene.y - box.size.y - m),
+			math::Vec(scene.x - box.size.x - m, scene.y - box.size.y - m),
+			math::Vec((scene.x - box.size.x) / 2.f, (scene.y - box.size.y) / 2.f),
+		};
+		for (int i = 0; i < 5; i++) {
+			const math::Rect there(spots[i], box.size);
+			if (avoid.size.x <= 0.f || !there.intersects(avoid)) {
+				box.pos = spots[i];
+				return;
+			}
+		}
+		// Nowhere is clear — a very small window, or a module filling it. The default will do;
+		// the window can be dragged.
 	}
 
 	/** THE CHART'S GEOMETRY, worked out in one place.
@@ -1285,8 +1321,12 @@ struct ChartWindow : widget::OpaqueWidget {
 
 	void onDragMove(const DragMoveEvent& e) override {
 		// Rack's mouse deltas are in scene pixels already, since this is a child of the scene.
-		if (drag == 1)
+		if (drag == 1) {
 			box.pos = box.pos.plus(e.mouseDelta);
+			// Remembered, so the next opening is where you put it rather than where the
+			// placement rule would have chosen.
+			gChartWhere = box.pos;
+		}
 		else if (drag == 2) {
 			// A left or top edge moves the window as it resizes it, so the OPPOSITE edge holds
 			// still — which is what dragging an edge means everywhere else.
@@ -1893,6 +1933,7 @@ struct ChartWindow : widget::OpaqueWidget {
 
 static ChartWindow* gChartWindow = NULL;
 
+
 /** THE CHART PICKER: import, then every playlist, then its songs behind their initials.
 
 A playlist runs to fourteen hundred songs and a menu of fourteen hundred is not a menu; behind
@@ -2050,6 +2091,13 @@ void chartWindowShow(ChartModule* module) {
 	}
 	gChartWindow = new ChartWindow;
 	gChartWindow->module = module;
+	if (gChartWhere.x >= 0.f) {
+		gChartWindow->box.pos = gChartWhere;
+	}
+	else if (app::ModuleWidget* mw = APP->scene->rack->getModule(module->id)) {
+		gChartWindow->placeClearOf(math::Rect(mw->getAbsoluteOffset(math::Vec()),
+			mw->box.size.mult(mw->getAbsoluteZoom())));
+	}
 	APP->scene->addChild(gChartWindow);
 	// OPENED ON THE MUSIC, not at the top of the page. A chart of any length opened at bar one
 	// while the band is at bar forty shows you the one thing you did not open it to see.
