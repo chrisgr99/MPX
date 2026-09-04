@@ -1075,7 +1075,7 @@ struct ChartWindow : widget::OpaqueWidget {
 	/** THE TRANSPORT, REPEATED IN THE WINDOW. Reading the chart is exactly when you want to
 	start it, stop it and take it back to the top, and the module may be anywhere on the rack —
 	possibly behind the window. The same two parameters, so the two pairs cannot disagree. */
-	static const int TBTN = 17;
+	static const int TBTN = 34;
 
 	/** ON THE CHART, not on the title bar. The transport belongs with the music: the title bar
 	is the window's furniture — its name, its close cross, the thing you drag it by — and the
@@ -1101,7 +1101,7 @@ struct ChartWindow : widget::OpaqueWidget {
 	}
 
 	math::Rect rewindBox() {
-		return math::Rect(math::Vec(metrics().pad + TBTN + 4.f, headTop()),
+		return math::Rect(math::Vec(metrics().pad + TBTN + 8.f, headTop()),
 			math::Vec(TBTN, TBTN));
 	}
 
@@ -1127,9 +1127,17 @@ struct ChartWindow : widget::OpaqueWidget {
 		return -1;
 	}
 
+	/** A CROSS AT EACH END OF THE BAR. Where the close control belongs is a habit, not a fact:
+	the Mac puts it at the left and Windows at the right, and whichever you reach for first is
+	the one that feels right. Two of them cost a few pixels of a bar that is otherwise empty, and
+	nobody has to learn this window's opinion. */
 	math::Rect closeBox() {
 		return math::Rect(math::Vec(box.size.x - CW_TITLE, 0.f),
 			math::Vec(CW_TITLE, CW_TITLE));
+	}
+
+	math::Rect closeBoxLeft() {
+		return math::Rect(math::Vec(0.f, 0.f), math::Vec(CW_TITLE, CW_TITLE));
 	}
 
 	math::Rect gripBox() {
@@ -1223,7 +1231,7 @@ struct ChartWindow : widget::OpaqueWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (closeBox().contains(e.pos)) {
+			if (closeBox().contains(e.pos) || closeBoxLeft().contains(e.pos)) {
 				requestDelete();
 				claim(e, this);
 				return;
@@ -1608,18 +1616,21 @@ struct ChartWindow : widget::OpaqueWidget {
 			nvgRestore(args.vg);
 		}
 
-		// The close cross.
+		// The close crosses, one at each end of the title bar.
 		{
-			const math::Rect r = closeBox();
-			const float m = 6.f;
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, r.pos.x + m, r.pos.y + m);
-			nvgLineTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + r.size.y - m);
-			nvgMoveTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + m);
-			nvgLineTo(args.vg, r.pos.x + m, r.pos.y + r.size.y - m);
-			nvgStrokeColor(args.vg, CW_INK);
-			nvgStrokeWidth(args.vg, 2.f);
-			nvgStroke(args.vg);
+			const math::Rect boxes[2] = {closeBoxLeft(), closeBox()};
+			for (int i = 0; i < 2; i++) {
+				const math::Rect r = boxes[i];
+				const float m = 6.f;
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, r.pos.x + m, r.pos.y + m);
+				nvgLineTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + r.size.y - m);
+				nvgMoveTo(args.vg, r.pos.x + r.size.x - m, r.pos.y + m);
+				nvgLineTo(args.vg, r.pos.x + m, r.pos.y + r.size.y - m);
+				nvgStrokeColor(args.vg, CW_INK);
+				nvgStrokeWidth(args.vg, 2.f);
+				nvgStroke(args.vg);
+			}
 		}
 
 
@@ -2022,10 +2033,18 @@ static void chartWindowScrollToPlaying();
 
 void chartWindowShow(ChartModule* module) {
 	if (gChartWindow) {
-		// Already up: bring it to the front rather than opening a second one.
-		APP->scene->removeChild(gChartWindow);
-		APP->scene->addChild(gChartWindow);
-		gChartWindow->module = module;
+		// Already up: bring it to the front rather than opening a second one. Rack reorders a
+		// child by taking it out and putting it back.
+		//
+		// HELD IN A LOCAL, and the global put back afterwards. removeChild dispatches the remove
+		// event BEFORE it unhooks anything, and this window's onRemove clears gChartWindow —
+		// which is right when the window is really going away and fatal here, because the next
+		// line would then hand addChild a null pointer.
+		ChartWindow* window = gChartWindow;
+		APP->scene->removeChild(window);
+		APP->scene->addChild(window);
+		gChartWindow = window;
+		window->module = module;
 		return;
 	}
 	gChartWindow = new ChartWindow;
