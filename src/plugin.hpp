@@ -10,6 +10,7 @@ extern Model* modelEuclid;
 extern Model* modelProgression;
 extern Model* modelMonitor;
 extern Model* modelChart;
+extern Model* modelMpxComp;
 
 namespace px {
 

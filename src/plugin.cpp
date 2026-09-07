@@ -11,4 +11,5 @@ void init(Plugin* p) {
 	p->addModel(modelProgression);
 	p->addModel(modelMonitor);
 	p->addModel(modelChart);
+	p->addModel(modelMpxComp);
 }

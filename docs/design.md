@@ -166,6 +166,8 @@ At toMPX the same scales apply to the inputs: level and pressure and timbre are 
 
 **mpxChart** is a source and the plugin's only reader of written music: it loads iReal Pro charts, shows one as a lead sheet in a window, and publishes its harmony. [chart.md](chart.md) describes it.
 
+**mpxComp** is a processor of harmony rather than of notes: a chord in, the same chord voiced and led in, out as polyphonic pitch, gates and level. [comp.md](comp.md) describes it, including the rhythm that is planned and the controls that are on its panel waiting for it.
+
 **mpxMonitor** lists what is passing on a cable, and **mpxProgression** is a chooser of short progressions.
 
 ## Limits

@@ -189,6 +189,13 @@ struct ChartModule : Module, NoteSource {
 		O_ROOT,       /**< Its root, on its own. */
 		O_PES_CHORD,  /**< The chord as a Poly External Scale. */
 		O_PES_SCALE,  /**< The key as a Poly External Scale. */
+		/** THE ROOT AS SOMETHING TO PLAY, which is not the same as the root.
+
+		O_ROOT is a pitch class, which is the right answer for a quantizer and the wrong one for
+		a bass part: pitch classes leap, so a progression stepping down from C to B jumps up
+		eleven semitones. This is that root put where a bass player would put it — below every
+		note of the chord, and in the octave nearest to where the line already was. */
+		O_BASS,
 		NUM_OUTPUTS
 	};
 	enum LightId {
@@ -295,6 +302,7 @@ struct ChartModule : Module, NoteSource {
 		configOutput(O_MPX, "MPX note out");
 		configOutput(O_CHORD, "Chord tones as polyphonic V/Oct");
 		configOutput(O_ROOT, "Root as V/Oct");
+		configOutput(O_BASS, "Bass line as V/Oct, below the chord");
 		configOutput(O_PES_CHORD, "Notes of the current chord, as a Poly External Scale");
 		configOutput(O_PES_SCALE, "Notes of the key, as a Poly External Scale");
 		slot = busClaim(&generation);
@@ -361,6 +369,9 @@ struct ChartModule : Module, NoteSource {
 	void rewind() {
 		beats = 0.0;
 		playingIndex = 0;
+		// The bass line starts again too, or the same chart played twice gives two different
+		// lines depending on where the last one happened to end.
+		bassWas = -99.f;
 	}
 
 	/** Main thread. Restricts play to one section's label, or to the whole chart for nought.
@@ -549,6 +560,56 @@ struct ChartModule : Module, NoteSource {
 			out.setVoltage(10.f, ((tonic % 12) + 12) % 12);
 	}
 
+	/** THE ROOT, AN OCTAVE UNDER THE CHORD, HELD FOR AS LONG AS THE CHORD LASTS.
+
+	O_ROOT is a pitch class, which is the right answer for a quantizer and the wrong one to play:
+	the chord's own voices are built upward from that same pitch class, so a bass part on it sits
+	inside the harmony rather than under it. An octave below is under every note of the chord by
+	construction, and that is the whole rule — the voltage is written when the chord changes and
+	held until the next one, so anything playing it holds a note for the bar rather than being
+	re-triggered.
+
+	No octave following. A pitch class leaps — C down to B is eleven semitones up — and a bass
+	that chose the nearest octave each time would walk instead, but it would also mean the same
+	chart giving different notes depending on what came before it. Predictable was worth more
+	than smooth here; a slew or a bass module can have the last word on how the line moves. */
+	/** Where the bass last went, so the next note can be put near it. Below anything the chart
+	will ask for, which is how the first note of a run knows it is the first. */
+	float bassWas = -99.f;
+
+	void writeBass(int root, float lowestChordVoice) {
+		float v = (float) root / 12.f;
+
+		// THE NEAREST OCTAVE TO THE NOTE BEFORE, which is what makes this a line.
+		//
+		// A pitch class leaps: two roots a semitone apart fold into the same octave and become
+		// an eleven-semitone jump the other way, so a progression alternating between them
+		// bounces up and down on every other chord. Taking the octave nearest the previous note
+		// — never further than a tritone — turns the same progression into a step.
+		//
+		// It costs determinism, but only at the start: a chart played from its beginning always
+		// gives the same notes, because the first one is placed by the rule below and every
+		// note after it follows from that.
+		if (bassWas > -50.f) {
+			while (v - bassWas > 0.5f)
+				v -= 1.f;
+			while (bassWas - v > 0.5f)
+				v += 1.f;
+		}
+		else {
+			v -= 1.f;
+		}
+
+		// And under the chord, whatever that costs in distance. The chord is voiced upward from
+		// its own root, so an octave below its lowest voice clears all of it.
+		while (v > lowestChordVoice - 1.f + 0.001f)
+			v -= 1.f;
+
+		bassWas = v;
+		outputs[O_BASS].setChannels(1);
+		outputs[O_BASS].setVoltage(v);
+	}
+
 	/** The chord as pitches, voiced close: the root in the octave that starts at nought volts,
 	and every tone above it placed above the one before, which is how a chord is played rather
 	than how a set of pitch classes is listed. */
@@ -569,6 +630,7 @@ struct ChartModule : Module, NoteSource {
 			outputs[O_CHORD].setVoltage(0.f, 0);
 		outputs[O_ROOT].setChannels(1);
 		outputs[O_ROOT].setVoltage((float) root / 12.f);
+		writeBass(root, count > 0 ? outputs[O_CHORD].getVoltage(0) : (float) root / 12.f);
 
 		writePES(O_PES_CHORD, classes, count, root);
 
@@ -2278,12 +2340,14 @@ static Layout chartLayout() {
 	// that the pair in one format looks like a pair, and so that nobody reaches for the twelve
 	// on-or-off flags when they wanted notes they can hear.
 	// THREE COLUMNS AT FIFTEEN MILLIMETRES, which is the arrangement worked out in the panel
-	// editor and squared up here: the two inputs down the left, the two ways of hearing a chord
-	// down the middle, and the MPX bundle above the two that are its plainer equivalents.
+	// editor and squared up here: the two inputs down the left, and the chord beside the MPX
+	// bundle, since those two are the same harmony said in two ways. Under the chord are the
+	// two single notes taken from it — the bass to play, the root to quantize with.
+	jack("out.chord", Item::PORT_OUT, 27.5f, 89.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
 	jack("out.mpx", Item::PORT_OUT, 42.5f, 89.f, ChartModule::O_MPX, "mpxOut", NOTE_CABLE, 8.f);
 
 	jack("in.clock", Item::PORT_IN, 12.5f, 102.f, ChartModule::I_CLOCK, "clock", SIG_GATE);
-	jack("out.chord", Item::PORT_OUT, 27.5f, 102.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
+	jack("out.bass", Item::PORT_OUT, 27.5f, 102.f, ChartModule::O_BASS, "bass", SIG_PITCH);
 	jack("out.root", Item::PORT_OUT, 42.5f, 102.f, ChartModule::O_ROOT, "root", SIG_PITCH);
 
 	jack("in.reset", Item::PORT_IN, 12.5f, 114.f, ChartModule::I_RESET, "reset", SIG_GATE);

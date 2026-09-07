@@ -48,7 +48,7 @@
     {
       "slug": "mpxProgression",
       "name": "mpxProgression",
-      "description": "A dozen chord progressions everybody knows — two five one, a turnaround, twelve bar blues, the four chords, a Dorian vamp — chosen with one knob and shown as a chart in the key you set. Publishes them as the harmony on an MPX cable, so everything downstream is played against something. Not a chart module: no repeats, no sections, no import.",
+      "description": "A dozen chord progressions everybody knows \u2014 two five one, a turnaround, twelve bar blues, the four chords, a Dorian vamp \u2014 chosen with one knob and shown as a chart in the key you set. Publishes them as the harmony on an MPX cable, so everything downstream is played against something. Not a chart module: no repeats, no sections, no import.",
       "tags": [
         "Sequencer",
         "Utility"
@@ -74,6 +74,16 @@
         "Utility"
       ],
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
+    },
+    {
+      "slug": "mpxComp",
+      "name": "mpxComp",
+      "description": "Chordal accompaniment: voices a chord and leads the voices between changes",
+      "tags": [
+        "Polyphonic",
+        "Utility",
+        "Arpeggiator"
+      ]
     }
   ]
 }

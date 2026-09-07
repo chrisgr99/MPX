@@ -1,6 +1,6 @@
 # mpxChart
 
-A chord chart, read and played. It loads an iReal Pro playlist, shows one song as a lead sheet in a window of its own, and publishes the harmony onto an MPX cable and onto four ordinary outputs for a rack that knows nothing of MPX.
+A chord chart, read and played. It loads an iReal Pro playlist, shows one song as a lead sheet in a window of its own, and publishes the harmony onto an MPX cable and onto five ordinary outputs for a rack that knows nothing of MPX.
 
 ## Two views of one chart
 
@@ -82,7 +82,8 @@ Play is a transport, not a mute: nothing advances while it is off, but the harmo
 | --- | --- |
 | mpxOut | The harmony block on the MPX cable |
 | chord | The chord's tones as polyphonic V/Oct, voiced close from the root |
-| root | The root alone |
+| root | The root alone, as a pitch class — for a quantizer rather than to play |
+| bass | The root as something to play: below every note of the chord, in the octave nearest the note before it, held for the chord's length |
 | PES chord | The chord of the moment, twelve channels, 10 V on its root |
 | PES scale | The key, twelve channels, 10 V on the tonic |
 
@@ -100,10 +101,12 @@ A **display** is a widget the module makes itself. The layout owns where it goes
 
 The other modules place their displays in code and are unaffected. Giving each of them a display item is about four lines apiece and has not been done.
 
+The chord output is voiced upward from the root, so consecutive chords move in parallel. [mpxComp](comp.md) is the module that voices them as a player would.
+
 ## Still to do
 
 - The panel editor can move a display but not resize one.
-- The four ordinary outputs have never been tested against a quantizer.
+- The ordinary outputs have never been tested against a quantizer.
 - MPX has no manual. The clock input's own name carries the one fact that used to clutter the tempo readout.
 - Nothing in MPX is pushed to GitHub, and the repository has no CI, so no build is downloadable.
 - Unbuilt, and described in [ideas.md](ideas.md): mpxMelody, mpxPhrase, the field module that reads an image, and the three-stage processor order — swing, then ornament, then pitch bend.
