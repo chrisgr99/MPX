@@ -33,9 +33,19 @@ WHAT IS DIFFERENT FROM DREAMRACK'S, which is the same module:
     own strip, with the summing done by the rack. Here polyphony is channels on one cable, so one
     module holds every strip and does its own summing.
   - KNOBS AND JACKS RATHER THAN A knАck. There the CV arrives in the knob; Rack has no such
-    control, so each stage is a knob and a jack beside it, and the knob is the offset exactly as
-    it was — nothing patched with the knob at the top is unity, so a module just placed passes
-    audio through untouched.
+    control, so each stage is a knob and a jack beside it. Nothing patched with the knob at the
+    top is unity, so a module just placed passes audio through untouched.
+
+    AND THE KNOB ATTENUATES THE CABLE RATHER THAN BEING ADDED TO IT. It was an offset first,
+    which is what DreamRack's knАck did, and it reads well with nothing patched. It is a trap the
+    moment an envelope is patched, which is the entire point of the module: with the knob at the
+    top the stage runs from unity to double and can never close, so the envelope makes no audible
+    difference at all and the sound plays continuously. The only setting where a patched envelope
+    worked was the knob at zero, which is the last place anybody looks.
+
+    Multiplied, there is no such setting. The knob is an attenuator over what arrives, the top is
+    still unity, and turning it down turns the part down whether or not anything is patched —
+    which is what a level control does, and what Rack's own amplifier does.
   - A PAN LAW HAD TO BE CHOSEN. Equal power, so a voice swept across keeps its loudness rather
     than dipping in the middle.
   - MONO FOLDS DOWN. With only the left output patched it carries the sum, because a patch being
@@ -95,12 +105,20 @@ struct PolyStereoModule : Module {
 		const float knobB = params[P_B].getValue();
 		const float knobPan = params[P_PAN].getValue();
 
+		// Asked once rather than per voice: whether a cable is there does not change across the
+		// channels of the cable that is or is not there.
+		const bool hasA = inputs[I_A].isConnected();
+		const bool hasB = inputs[I_B].isConnected();
+
 		float left = 0.f, right = 0.f;
 		for (int c = 0; c < n; c++) {
-			// THE KNOB IS THE OFFSET AND THE CABLE ADDS TO IT. Ten volts is unity, which is what
-			// an envelope and a velocity both come out at.
-			const float a = clamp(knobA + inputs[I_A].getPolyVoltage(c) / 10.f, 0.f, 2.f);
-			const float b = clamp(knobB + inputs[I_B].getPolyVoltage(c) / 10.f, 0.f, 2.f);
+			// THE KNOB ATTENUATES WHAT ARRIVES. Ten volts is unity, which is what an envelope and
+			// a velocity both come out at; with nothing patched the stage is simply the knob, so
+			// the top is still unity and a module just placed passes audio through.
+			const float a = knobA * (hasA
+				? clamp(inputs[I_A].getPolyVoltage(c) / 10.f, 0.f, 2.f) : 1.f);
+			const float b = knobB * (hasB
+				? clamp(inputs[I_B].getPolyVoltage(c) / 10.f, 0.f, 2.f) : 1.f);
 			// PAN SUMS RATHER THAN REPLACES, so a lane carrying where each note was played can
 			// be patched here and the knob still moves the whole part.
 			const float pan = clamp(knobPan + inputs[I_PAN].getPolyVoltage(c) / 5.f, -1.f, 1.f);
