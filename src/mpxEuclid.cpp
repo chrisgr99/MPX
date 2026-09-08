@@ -134,7 +134,7 @@ struct EuclidModule : Module, NoteSource {
 
 		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
-		configOutput(O_VOICE, "MPX note out");
+		configOutput(O_VOICE, "MPX note out \u2014 goes to an MPX input only");
 
 		slot = busClaim(&generation);
 	}
@@ -388,7 +388,7 @@ static Layout euclidLayout() {
 	jack("in.clock", Item::PORT_IN, G[0], JACK_Y, EuclidModule::I_CLOCK, "clock", SIG_GATE);
 	jack("in.reset", Item::PORT_IN, G[1], JACK_Y, EuclidModule::I_RESET, "reset", SIG_GATE);
 	knob("p.tempo", G[2], JACK_Y, EuclidModule::P_TEMPO, "tempo");
-	jack("out.voice", Item::PORT_OUT, G[5], JACK_Y, EuclidModule::O_VOICE, "mpxOut",
+	jack("out.voice", Item::PORT_OUT, G[5], JACK_Y, EuclidModule::O_VOICE, "mpx\nOUT",
 		NOTE_CABLE, 12.f);
 
 	L.bindOffsets();

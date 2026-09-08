@@ -299,7 +299,7 @@ struct ChartModule : Module, NoteSource {
 		configButton(P_OPEN, "Open the chart");
 		configInput(I_CLOCK, "Clock, which overrides the tempo knob");
 		configInput(I_RESET, "Reset");
-		configOutput(O_MPX, "MPX note out");
+		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
 		configOutput(O_CHORD, "Chord tones as polyphonic V/Oct");
 		configOutput(O_ROOT, "Root as V/Oct");
 		configOutput(O_BASS, "Bass line as V/Oct, below the chord");
@@ -2344,7 +2344,7 @@ static Layout chartLayout() {
 	// bundle, since those two are the same harmony said in two ways. Under the chord are the
 	// two single notes taken from it — the bass to play, the root to quantize with.
 	jack("out.chord", Item::PORT_OUT, 27.5f, 89.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
-	jack("out.mpx", Item::PORT_OUT, 42.5f, 89.f, ChartModule::O_MPX, "mpxOut", NOTE_CABLE, 8.f);
+	jack("out.mpx", Item::PORT_OUT, 42.5f, 89.f, ChartModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 8.f);
 
 	jack("in.clock", Item::PORT_IN, 12.5f, 102.f, ChartModule::I_CLOCK, "clock", SIG_GATE);
 	jack("out.bass", Item::PORT_OUT, 27.5f, 102.f, ChartModule::O_BASS, "bass", SIG_PITCH);

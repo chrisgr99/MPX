@@ -98,6 +98,39 @@ void Panel::draw(const DrawArgs& args) {
 		nvgStroke(args.vg);
 	}
 
+	// THE MARKS ROUND A KNOB, drawn under the knob itself since the panel is painted first.
+	//
+	// THE SWEEP IS 0.83 PI EITHER WAY, which is what RoundKnob sets minAngle and maxAngle to —
+	// two hundred and ninety-nine degrees, not the two hundred and seventy a knob looks like it
+	// turns. Marks that disagree with the pointer are worse than no marks at all, so this number
+	// is read from componentlibrary.hpp rather than assumed.
+	for (const Scale& sc : scales) {
+		const int n = std::max(2, sc.count);
+		for (int i = 0; i < n; i++) {
+			const float t = (float) i / (float) (n - 1);
+			const float a = (-0.83f + 1.66f * t) * M_PI;
+			const float dx = std::sin(a);
+			const float dy = -std::cos(a);
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, sc.x + dx * sc.radius, sc.y + dy * sc.radius);
+			nvgLineTo(args.vg, sc.x + dx * (sc.radius + sc.length),
+				sc.y + dy * (sc.radius + sc.length));
+			nvgStrokeColor(args.vg, PANEL_DIM);
+			nvgStrokeWidth(args.vg, 1.2f);
+			nvgLineCap(args.vg, NVG_ROUND);
+			nvgStroke(args.vg);
+
+			if (i < (int) sc.marks.size() && font && font->handle >= 0) {
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, sc.textSize);
+				nvgFillColor(args.vg, PANEL_INK);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+				nvgText(args.vg, sc.x + dx * sc.textRadius, sc.y + dy * sc.textRadius,
+					sc.marks[i].c_str(), NULL);
+			}
+		}
+	}
+
 	for (const Label& label : labels) {
 		// A deleted label is gone, in the editor as well as out of it. A ghost of it was
 		// meant to make the deletion reversible and instead made the panel impossible to
@@ -112,7 +145,25 @@ void Panel::draw(const DrawArgs& args) {
 		// hardest thing on it to read. A name is a name.
 		nvgFillColor(args.vg, PANEL_INK);
 		nvgTextAlign(args.vg, alignFlag(label.align) | NVG_ALIGN_MIDDLE);
-		nvgText(args.vg, label.x, label.y, label.text.c_str(), NULL);
+		// A NAME MAY BE SEVERAL LINES, split on the newlines the properties menu writes when a
+		// slash is typed. Set about the point it is placed at rather than downward from it, so
+		// that turning one line into two grows the name in both directions and leaves it still
+		// looking centred on whatever it names.
+		const float size = label.size > 0.f ? label.size : (label.heading ? 10.f : 8.f);
+		const float step = panelLineStep(size);
+		std::vector<std::string> lines;
+		size_t start = 0;
+		while (true) {
+			const size_t brk = label.text.find('\n', start);
+			lines.push_back(label.text.substr(start,
+				brk == std::string::npos ? std::string::npos : brk - start));
+			if (brk == std::string::npos)
+				break;
+			start = brk + 1;
+		}
+		const float top = label.y - step * (float) (lines.size() - 1) / 2.f;
+		for (size_t i = 0; i < lines.size(); i++)
+			nvgText(args.vg, label.x, top + step * (float) i, lines[i].c_str(), NULL);
 	}
 
 	// Drawn last so nothing sits on top of it.
@@ -189,7 +240,7 @@ static const float LAMP_R = 6.5f;
 
 /** Room for the longest name, estimated from its characters: a text width wants a font and a
 drawing context, and a target that is a little generous costs nothing. */
-static float lampsNamesWidth(const std::vector<std::string>& names) {
+static float lampsNamesWidth(const std::vector<std::string>& names, float size) {
 	size_t longest = 0;
 	for (const std::string& name : names) {
 		size_t start = 0;
@@ -202,7 +253,9 @@ static float lampsNamesWidth(const std::vector<std::string>& names) {
 			start = brk + 1;
 		}
 	}
-	return longest ? (LAMP_R + 5.f + longest * 4.6f) : LAMP_R;
+	// 0.575 of the size is a character's width in this face; at the old fixed size of eight
+	// that came to the 4.6 this used to say, so nothing moves until a size is changed.
+	return longest ? (LAMP_R + 5.f + longest * 0.575f * size) : LAMP_R;
 }
 
 void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on) {
@@ -332,6 +385,272 @@ void DreamerRewind::draw(const DrawArgs& args) {
 	drawRewindGlyph(args.vg, box.size);
 }
 
+DreamerKnob::DreamerKnob() {
+	// THE SWEEP RACK'S OWN KNOBS USE, so that a panel mixing this with anything else reads the
+	// same, and so that a scale drawn round it lands where the pointer does.
+	minAngle = -0.83f * M_PI;
+	maxAngle = 0.83f * M_PI;
+	setDiameter(9.6f);
+}
+
+void DreamerKnob::setDiameter(float mm) {
+	diameter = std::fmax(3.f, mm);
+	box.size = mm2px(math::Vec(diameter, diameter));
+}
+
+void DreamerKnob::draw(const DrawArgs& args) {
+	const float w = box.size.x, h = box.size.y;
+	const float cx = w / 2.f, cy = h / 2.f;
+	const float r = std::fmin(w, h) / 2.f;
+
+	// The shadow under it, which is most of what says the knob stands off the panel.
+	nvgBeginPath(args.vg);
+	nvgCircle(args.vg, cx, cy + r * 0.06f, r * 0.98f);
+	nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 0x88));
+	nvgFill(args.vg);
+
+	// The body, lit from above.
+	nvgBeginPath(args.vg);
+	nvgCircle(args.vg, cx, cy, r * 0.94f);
+	nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, cy - r, 0.f, cy + r,
+		nvgRGB(0x3d, 0x44, 0x50), nvgRGB(0x1b, 0x1f, 0x26)));
+	nvgFill(args.vg);
+
+	// A bright rim along the top and a dark one along the bottom: an edge catching the light.
+	nvgBeginPath(args.vg);
+	nvgCircle(args.vg, cx, cy, r * 0.94f);
+	nvgStrokeWidth(args.vg, std::fmax(1.f, r * 0.06f));
+	nvgStrokePaint(args.vg, nvgLinearGradient(args.vg, 0.f, cy - r, 0.f, cy + r,
+		nvgRGBA(0xff, 0xff, 0xff, 0x66), nvgRGBA(0, 0, 0, 0xaa)));
+	nvgStroke(args.vg);
+
+	// THE POINTER, which is the whole reason anybody looks at a knob. A wedge rather than a
+	// hairline, because a hairline on a small knob at a small zoom disappears.
+	float t = 0.5f;
+	if (ParamQuantity* pq = getParamQuantity()) {
+		const float lo = pq->getMinValue(), hi = pq->getMaxValue();
+		if (hi > lo)
+			t = math::clamp((pq->getValue() - lo) / (hi - lo), 0.f, 1.f);
+	}
+	const float a = minAngle + (maxAngle - minAngle) * t;
+	const float dx = std::sin(a), dy = -std::cos(a);
+	nvgBeginPath(args.vg);
+	nvgMoveTo(args.vg, cx + dx * r * 0.78f, cy + dy * r * 0.78f);
+	nvgLineTo(args.vg, cx + dx * r * 0.22f - dy * r * 0.12f,
+		cy + dy * r * 0.22f + dx * r * 0.12f);
+	nvgLineTo(args.vg, cx + dx * r * 0.22f + dy * r * 0.12f,
+		cy + dy * r * 0.22f - dx * r * 0.12f);
+	nvgClosePath(args.vg);
+	nvgFillColor(args.vg, nvgRGB(0xe8, 0xee, 0xf6));
+	nvgFill(args.vg);
+}
+
+bool mpxCompatible(engine::Module* outModule, int outId, engine::Module* inModule, int inId) {
+	const bool outIsMPX = (noteBusOf(outModule, outId, NULL) >= 0);
+	const bool inIsMPX = isMPXInput(inModule, inId);
+	// Both, or neither. One of each is a cable that would look right and do nothing.
+	return outIsMPX == inIsMPX;
+}
+
+/** The far end of a cable, whichever end this port is. */
+static bool cableIsGood(engine::Cable* cable) {
+	return cable && mpxCompatible(cable->outputModule, cable->outputId,
+		cable->inputModule, cable->inputId);
+}
+
+void MPXPort::step() {
+	PJ301MPort::step();
+	if (!module)
+		return;
+	// TAKEN AWAY ON THE NEXT FRAME. A cable dropped onto somebody else's jack is made before we
+	// are asked anything, and a patch loaded from disk makes its cables without going near a
+	// widget at all; both arrive here, and both go the same way.
+	for (CableWidget* cw : APP->scene->rack->getCompleteCablesOnPort(this)) {
+		if (cableIsGood(cw->getCable()))
+			continue;
+		APP->scene->rack->removeCable(cw);
+		delete cw;
+		break;   // the list is now stale; whatever is left is caught next frame
+	}
+}
+
+void MPXPort::onDragDrop(const DragDropEvent& e) {
+	// WHAT IS BEING DRAGGED, and what it would become if this drop were allowed. Refusing here
+	// rather than undoing it afterwards means there is nothing to undo and nothing flickers.
+	if (module) {
+		for (CableWidget* cw : APP->scene->rack->getIncompleteCables()) {
+			engine::Cable* cable = cw->getCable();
+			if (!cable)
+				continue;
+			engine::Module* outModule = cable->outputModule;
+			int outId = cable->outputId;
+			engine::Module* inModule = cable->inputModule;
+			int inId = cable->inputId;
+			// Whichever end is loose is the end this jack would fill.
+			if (type == engine::Port::INPUT) {
+				inModule = module;
+				inId = portId;
+			}
+			else {
+				outModule = module;
+				outId = portId;
+			}
+			if (outModule && inModule
+				&& !mpxCompatible(outModule, outId, inModule, inId))
+				return;   // not consumed, and no cable made
+		}
+	}
+	PJ301MPort::onDragDrop(e);
+}
+
+Readout::Readout() {
+	setFigures(2, 2.8f);
+}
+
+/** ASKED OF THE PARAMETER, over every value it can take. Bounded, because a continuous parameter
+has no list to walk — for one of those the two ends are what decides the width. */
+int Readout::widestValue() {
+	ParamQuantity* pq = getParamQuantity();
+	if (!pq)
+		return 2;
+	const float lo = pq->getMinValue(), hi = pq->getMaxValue();
+	const float was = pq->getValue();
+	size_t longest = 1;
+	const int steps = (int) std::round(hi - lo);
+	if (steps >= 1 && steps <= 128) {
+		for (int i = 0; i <= steps; i++) {
+			pq->setValue(lo + (float) i);
+			longest = std::max(longest, (pq->getDisplayValueString() + pq->getUnit()).size());
+		}
+	}
+	else {
+		for (int i = 0; i < 2; i++) {
+			pq->setValue(i ? hi : lo);
+			longest = std::max(longest, (pq->getDisplayValueString() + pq->getUnit()).size());
+		}
+	}
+	pq->setValue(was);
+	return (int) longest;
+}
+
+void Readout::step() {
+	// Worked out once the parameter is there to ask, and again only if the answer changes.
+	if (chars <= 0) {
+		const int want = widestValue();
+		if (want != autoChars) {
+			autoChars = want;
+			setFigures(chars, figureMM);
+		}
+	}
+	ParamWidget::step();
+}
+
+void Readout::setFigures(int n, float fig) {
+	chars = std::max(0, n);
+	figureMM = std::fmax(1.f, fig);
+	// THE PLATE HUGS THE FIGURES: as tall as one and a millimetre, as wide as all of them and a
+	// millimetre. A figure of a given height needs a font size larger than itself, since a
+	// capital is only 0.7041 of the size it is set at, and a digit is 0.6011 of that size across.
+	const float perFigure = figureMM * FIGURE_ADVANCE / FIGURE_CAP;
+	const int wide = (chars > 0) ? chars : std::max(1, autoChars);
+	box.size = mm2px(math::Vec((float) wide * perFigure + FIGURE_SURROUND,
+		figureMM + FIGURE_SURROUND));
+}
+
+void Readout::draw(const DrawArgs& args) {
+	const float w = box.size.x, h = box.size.y;
+	const float r = std::fmin(w, h) * 0.18f;
+
+	// SUNK RATHER THAN RAISED, which is what says a thing is read rather than pressed — the
+	// opposite of the buttons, and the same cue a recessed window gives on any panel.
+	nvgBeginPath(args.vg);
+	nvgRoundedRect(args.vg, 0.f, 0.f, w, h, r);
+	nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, h,
+		nvgRGB(0x0d, 0x10, 0x14), nvgRGB(0x17, 0x1c, 0x23)));
+	nvgFill(args.vg);
+	nvgBeginPath(args.vg);
+	nvgRoundedRect(args.vg, 0.5f, 0.5f, w - 1.f, h - 1.f, r);
+	nvgStrokeWidth(args.vg, 1.f);
+	nvgStrokePaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, h,
+		nvgRGBA(0, 0, 0, 0xcc), nvgRGBA(0xff, 0xff, 0xff, 0x3a)));
+	nvgStroke(args.vg);
+
+	// THE SAME FIGURES THE CHART SHOWS: the title face, this green, at 0.72 of the plate. One
+	// readout in the plugin should look like every other readout in the plugin.
+	std::shared_ptr<window::Font> face = titleFont();
+	if (!face || face->handle < 0)
+		return;
+	std::string text = "--";
+	if (ParamQuantity* pq = getParamQuantity())
+		text = pq->getDisplayValueString() + pq->getUnit();
+	nvgFontFaceId(args.vg, face->handle);
+	// The size that makes a capital exactly as tall as the figure height asked for.
+	nvgFontSize(args.vg, mm2px(math::Vec(0, figureMM)).y / FIGURE_CAP);
+	nvgFillColor(args.vg, nvgRGB(0x3d, 0xe0, 0x7a));
+	nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+	nvgText(args.vg, w / 2.f, h / 2.f, text.c_str(), NULL);
+}
+
+void Readout::openList() {
+	ParamQuantity* pq = getParamQuantity();
+	if (!pq)
+		return;
+	const int lo = (int) std::round(pq->getMinValue());
+	const int hi = (int) std::round(pq->getMaxValue());
+	// A LIST, NOT A RANGE. Anything with more steps than a menu can hold is not a thing to
+	// choose from a list, and a knob is the right control for it.
+	if (hi - lo > 128)
+		return;
+	const int now = (int) std::round(pq->getValue());
+	ui::Menu* menu = createMenu();
+	menu->addChild(createMenuLabel(pq->getLabel()));
+	for (int v = lo; v <= hi; v++) {
+		// Asked of the parameter rather than printed here, so a switch lists its names and a
+		// count lists its counts, each with whatever unit the module gave it.
+		const float was = pq->getValue();
+		pq->setValue((float) v);
+		const std::string text = pq->getDisplayValueString() + pq->getUnit();
+		pq->setValue(was);
+		ParamQuantity* q = pq;
+		menu->addChild(createCheckMenuItem(text, "", [=]() { return v == now; },
+			[=]() { q->setValue((float) v); }));
+	}
+}
+
+void Readout::onButton(const ButtonEvent& e) {
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		openList();
+		e.consume(this);
+		return;
+	}
+	ParamWidget::onButton(e);
+}
+
+void Readout::onHoverScroll(const HoverScrollEvent& e) {
+	// THE WHEEL STEPS IT, because the next value along is what is usually wanted and opening a
+	// list to get there would be three actions for one step. Gathered rather than counted: the
+	// movement is added up and a value spent each time it passes the threshold, so a trackpad's
+	// many small movements and a wheel's few large ones come to the same rate.
+	ParamQuantity* pq = getParamQuantity();
+	if (!pq) {
+		ParamWidget::onHoverScroll(e);
+		return;
+	}
+	// GATHERED IN VALUES, not in wheel units. The same arithmetic a Rack knob does — the wheel
+	// times the host's sensitivity times the parameter's range — and then a quarter of it, so a
+	// readout moves at a quarter the rate of the knob it replaced.
+	const float range = pq->getMaxValue() - pq->getMinValue();
+	scrolled += e.scrollDelta.y * settings::knobScrollSensitivity * range
+		/ READOUT_SCROLL_DIVISOR;
+	while (std::fabs(scrolled) >= 1.f) {
+		const float step = (scrolled > 0.f) ? 1.f : -1.f;
+		scrolled -= step;
+		pq->setValue(math::clamp(std::round(pq->getValue()) + step,
+			pq->getMinValue(), pq->getMaxValue()));
+	}
+	e.consume(this);
+}
+
 math::Vec Lamps::lampPos(int i) {
 	// ANCHORED TO THE CORNER, not to the middle of the box. The box grows to cover the names,
 	// and lamps measured from its centre would slide as it grew.
@@ -340,7 +659,7 @@ math::Vec Lamps::lampPos(int i) {
 	// box and come first. Before this they were drawn outside it: off the widget, so a click on
 	// a name chose nothing and a lamp column placed against another control overlapped it.
 	const float lead = (!horizontal && labelSide == Panel::LEFT)
-		? lampsNamesWidth(names) : 0.f;
+		? lampsNamesWidth(names, nameSize) : 0.f;
 	return horizontal ? math::Vec(LAMP_R + i * pitch, LAMP_R)
 		: math::Vec(lead + LAMP_R, LAMP_R + i * pitch);
 }
@@ -348,7 +667,7 @@ math::Vec Lamps::lampPos(int i) {
 void Lamps::fit() {
 	const int n = std::max(1, (int) names.size());
 	const float along = 2.f * LAMP_R + (n - 1) * pitch;
-	const float names_w = lampsNamesWidth(names);
+	const float names_w = lampsNamesWidth(names, nameSize);
 	const bool sided = (labelSide == Panel::RIGHT)
 		|| (!horizontal && labelSide == Panel::LEFT);
 	const float across = 2.f * LAMP_R + (sided ? names_w : 0.f);
@@ -416,23 +735,28 @@ void Lamps::draw(const DrawArgs& args) {
 		if (!font || font->handle < 0)
 			continue;
 		nvgFontFaceId(args.vg, font->handle);
-		nvgFontSize(args.vg, 8.f);
+		nvgFontSize(args.vg, nameSize);
 		nvgFillColor(args.vg, on ? PANEL_INK : PANEL_DIM);
-		// A NAME MAY BE TWO LINES, split on a newline and set either side of the lamp's own
-		// line. Two short lines beside a lamp read better than one long one that pushes the
-		// panel wider than it needs to be.
+		// A NAME MAY BE SEVERAL LINES, split on the newlines the slash rule writes, and set
+		// about the lamp's own line rather than downward from it. Short lines beside a lamp
+		// read better than one long one that pushes the panel wider than it needs to be.
 		const bool onLeft = labelsOutward ? (i == 0) : (labelSide == Panel::LEFT);
 		const float tx = onLeft ? c.x - LAMP_R - 5.f : c.x + LAMP_R + 5.f;
 		nvgTextAlign(args.vg, (onLeft ? NVG_ALIGN_RIGHT : NVG_ALIGN_LEFT) | NVG_ALIGN_MIDDLE);
-		const std::string& name = names[i];
-		const size_t brk = name.find('\n');
-		if (brk == std::string::npos) {
-			nvgText(args.vg, tx, c.y, name.c_str(), NULL);
+		std::vector<std::string> lines;
+		size_t start = 0;
+		while (true) {
+			const size_t brk = names[i].find('\n', start);
+			lines.push_back(names[i].substr(start,
+				brk == std::string::npos ? std::string::npos : brk - start));
+			if (brk == std::string::npos)
+				break;
+			start = brk + 1;
 		}
-		else {
-			nvgText(args.vg, tx, c.y - 4.5f, name.substr(0, brk).c_str(), NULL);
-			nvgText(args.vg, tx, c.y + 4.5f, name.substr(brk + 1).c_str(), NULL);
-		}
+		const float step = panelLineStep(nameSize);
+		const float top = c.y - step * (float) (lines.size() - 1) / 2.f;
+		for (size_t k = 0; k < lines.size(); k++)
+			nvgText(args.vg, tx, top + step * (float) k, lines[k].c_str(), NULL);
 	}
 }
 

@@ -67,6 +67,34 @@ int chordRootPitchClass(const Chord& chord, const Key& key);
 which is three or four. */
 int chordPitchClasses(const Chord& chord, const Key& key, int* out);
 
+/** How many tones a voicing may be handed. Enough for a thirteenth chord written out. */
+static const int MAX_CHORD_TONES = 7;
+
+/** A tone of a chord, and how badly a player wants it.
+
+WHY A RANK. A part with fewer voices than the chord has tones is the normal case, not an edge
+case: three voices under a thirteenth chord is what a pianist plays all evening. Which three is
+not a matter of taking the first three. The third and the seventh say what the chord IS, the
+extensions say what colour it is, the root is usually somewhere else in the texture, and the
+plain fifth says almost nothing and goes first. The rank is that order, so choosing which tones
+to play is taking the lowest ranks and nothing more. */
+struct ChordTone {
+	/** The pitch class, 0 to 11. */
+	int8_t pc = 0;
+	/** Which degree it is — 1 root, 3 third, 5 fifth, 7 seventh, 9, 11, 13, or 6 for a sixth.
+	Written for the tooltip and for anything that wants to reason about the tone. */
+	int8_t degree = 1;
+	/** Nought first. Ties are kept in the order written, which is upward from the root. */
+	int8_t rank = 0;
+};
+
+/** THE CHORD WRITTEN OUT FOR A PLAYER, extensions included and each tone ranked.
+
+Different from chordPitchClasses, which is the chord as a quantizer needs it: three or four
+tones, no extensions, every one equal. A ninth chord quantizes as a dominant seventh and voices
+as five notes, and both are right for what asks. Returns how many tones were written. */
+int chordVoicingTones(const Chord& chord, const Key& key, ChordTone* out);
+
 /** The key's scale as pitch classes, ascending from the tonic. Seven of them. */
 void scalePitchClasses(const Key& key, int* out);
 

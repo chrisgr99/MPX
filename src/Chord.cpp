@@ -112,6 +112,73 @@ int chordPitchClasses(const Chord& chord, const Key& key, int* out) {
 	return n;
 }
 
+/** THE VOICING TABLE: each quality written out as it is played, tone by tone, with the semitone
+above the root, which degree the tone is, and how badly it is wanted.
+
+The ranks are the ordinary rules of comping. Nought is the tone that says which quality this is
+and is never dropped. One is the seventh, or whatever stands in its place — an altered fifth, a
+sixth, the second note of a diminished seventh. Two is colour: the ninths and thirteenths that
+make a chart sound like the chart. Three is the root, which a bass usually has anyway. Four is
+the plain perfect fifth, which carries no information at all and is the first thing to go. Five
+means the tone is wrong here and is only played if there is nothing else to play: the third of
+an eleventh chord, which grinds against the eleventh, is the standing example. */
+struct VoicingTone {
+	int8_t semitone;
+	int8_t degree;
+	int8_t rank;
+};
+
+static const VoicingTone V_MAJOR[]     = {{0,1,3}, {4,3,0}, {7,5,4}};
+static const VoicingTone V_MINOR[]     = {{0,1,3}, {3,3,0}, {7,5,4}};
+static const VoicingTone V_DOM7[]      = {{0,1,3}, {4,3,0}, {7,5,4}, {10,7,1}};
+static const VoicingTone V_MAJ7[]      = {{0,1,3}, {4,3,0}, {7,5,4}, {11,7,1}};
+static const VoicingTone V_MIN7[]      = {{0,1,3}, {3,3,0}, {7,5,4}, {10,7,1}};
+static const VoicingTone V_DIM[]       = {{0,1,3}, {3,3,0}, {6,5,1}};
+static const VoicingTone V_HALFDIM[]   = {{0,1,3}, {3,3,0}, {6,5,1}, {10,7,1}};
+static const VoicingTone V_AUG[]       = {{0,1,3}, {4,3,0}, {8,5,1}};
+static const VoicingTone V_SUS4[]      = {{0,1,3}, {5,4,0}, {7,5,2}};
+static const VoicingTone V_SIX[]       = {{0,1,3}, {4,3,0}, {7,5,4}, {9,6,1}};
+static const VoicingTone V_MIN6[]      = {{0,1,3}, {3,3,0}, {7,5,4}, {9,6,1}};
+static const VoicingTone V_DIM7[]      = {{0,1,3}, {3,3,0}, {6,5,1}, {9,7,1}};
+static const VoicingTone V_MINMAJ7[]   = {{0,1,3}, {3,3,0}, {7,5,4}, {11,7,1}};
+static const VoicingTone V_NINE[]      = {{0,1,3}, {4,3,0}, {7,5,4}, {10,7,1}, {2,9,2}};
+static const VoicingTone V_MIN9[]      = {{0,1,3}, {3,3,0}, {7,5,4}, {10,7,1}, {2,9,2}};
+static const VoicingTone V_MAJ9[]      = {{0,1,3}, {4,3,0}, {7,5,4}, {11,7,1}, {2,9,2}};
+// THE ELEVENTH IS PLAYED WITHOUT ITS THIRD. A perfect eleventh a semitone above the major third
+// is the one interval a comping voicing never contains, so the eleventh takes the third's place
+// and the third is ranked last.
+static const VoicingTone V_ELEVEN[]    = {{0,1,3}, {4,3,5}, {7,5,4}, {10,7,1}, {2,9,2}, {5,11,0}};
+static const VoicingTone V_THIRTEEN[]  = {{0,1,3}, {4,3,0}, {7,5,4}, {10,7,1}, {2,9,2}, {9,13,2}};
+// AN ALTERED DOMINANT HAS NO PERFECT FIFTH: the alterations are what the name means, and a
+// natural fifth beside a flat thirteenth is the sound the chord was written to avoid.
+static const VoicingTone V_DOM7ALT[]   = {{0,1,3}, {4,3,0}, {10,7,1}, {8,13,2}, {3,9,2}};
+static const VoicingTone V_SUS2[]      = {{0,1,3}, {2,9,0}, {7,5,2}};
+static const VoicingTone V_DOM7SUS4[]  = {{0,1,3}, {5,4,0}, {7,5,2}, {10,7,1}};
+static const VoicingTone V_FIVE[]      = {{0,1,0}, {7,5,0}};
+
+#define VOICING(a) {a, (int) (sizeof(a) / sizeof(a[0]))}
+static const struct { const VoicingTone* tones; int count; } QUALITY_VOICING[NUM_QUALITIES] = {
+	VOICING(V_MAJOR), VOICING(V_MINOR), VOICING(V_DOM7), VOICING(V_MAJ7), VOICING(V_MIN7),
+	VOICING(V_DIM), VOICING(V_HALFDIM), VOICING(V_AUG), VOICING(V_SUS4), VOICING(V_SIX),
+	VOICING(V_MIN6), VOICING(V_DIM7), VOICING(V_MINMAJ7), VOICING(V_NINE), VOICING(V_MIN9),
+	VOICING(V_MAJ9), VOICING(V_ELEVEN), VOICING(V_THIRTEEN), VOICING(V_DOM7ALT),
+	VOICING(V_SUS2), VOICING(V_DOM7SUS4), VOICING(V_FIVE),
+};
+#undef VOICING
+
+int chordVoicingTones(const Chord& chord, const Key& key, ChordTone* out) {
+	const int root = chordRootPitchClass(chord, key);
+	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
+	const int n = std::min(QUALITY_VOICING[q].count, MAX_CHORD_TONES);
+	for (int i = 0; i < n; i++) {
+		const VoicingTone& t = QUALITY_VOICING[q].tones[i];
+		out[i].pc = (int8_t) ((root + t.semitone) % 12);
+		out[i].degree = t.degree;
+		out[i].rank = t.rank;
+	}
+	return n;
+}
+
 std::string chordRoman(const Chord& chord) {
 	const int d = clamp((int) chord.degree, 1, 7) - 1;
 	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);

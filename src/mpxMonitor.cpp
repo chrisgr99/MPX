@@ -36,7 +36,6 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 		NUM_OUTPUTS
 	};
 	enum LightId {
-		L_LINKED,
 		L_ACTIVE,
 		NUM_LIGHTS
 	};
@@ -74,8 +73,8 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 		// HOLD STOPS THE DISPLAY, NOT THE CABLE. Notes go on through either way: a monitor
 		// that could silence a patch by being read would be a trap.
 		configSwitch(P_HOLD, 0.f, 1.f, 0.f, "Display", {"Running", "Held"});
-		configInput(I_MPX, "MPX note in");
-		configOutput(O_MPX, "MPX note out");
+		configInput(I_MPX, "MPX note in \u2014 takes an MPX output only");
+		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);
@@ -177,7 +176,6 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 			seenValid.store(false);
 		}
 
-		lights[L_LINKED].setBrightness(reader.attached() ? 1.f : 0.f);
 		lights[L_ACTIVE].setBrightnessSmooth(any ? 1.f : 0.f, args.sampleTime);
 	}
 };
@@ -328,8 +326,8 @@ static Layout monitorLayout() {
 		label(key + ".label", x, y + 8.f, name, Panel::CENTRE, true, size, key);
 	};
 
-	jack("in.mpx", Item::PORT_IN, 12.f, 116.f, MonitorModule::I_MPX, "mpxIn", 12.f);
-	jack("out.mpx", Item::PORT_OUT, 59.f, 116.f, MonitorModule::O_MPX, "mpxOut", 12.f);
+	jack("in.mpx", Item::PORT_IN, 12.f, 116.f, MonitorModule::I_MPX, "mpx\nIN", 12.f);
+	jack("out.mpx", Item::PORT_OUT, 59.f, 116.f, MonitorModule::O_MPX, "mpx\nOUT", 12.f);
 
 	Item hold;
 	hold.key = "p.hold"; hold.kind = Item::PARAM; hold.id = MonitorModule::P_HOLD;
@@ -338,11 +336,6 @@ static Layout monitorLayout() {
 	hold.labelSide = Panel::RIGHT;
 	L.items.push_back(hold);
 
-	Item linked;
-	linked.key = "lamp.linked"; linked.kind = Item::LIGHT;
-	linked.id = MonitorModule::L_LINKED; linked.x = 20.f; linked.y = 111.f;
-	linked.owner = "in.mpx";
-	L.items.push_back(linked);
 	Item active;
 	active.key = "lamp.active"; active.kind = Item::LIGHT;
 	active.id = MonitorModule::L_ACTIVE; active.x = 51.f; active.y = 111.f;

@@ -11,6 +11,7 @@ extern Model* modelProgression;
 extern Model* modelMonitor;
 extern Model* modelChart;
 extern Model* modelMpxComp;
+extern Model* modelPolyToStereo;
 
 namespace px {
 
@@ -40,6 +41,18 @@ extern const NVGcolor SIG_PITCH;
 extern const NVGcolor NOTE_CABLE;
 
 /** The panel both modules are drawn with. No artwork ships with the plugin. */
+/** WHERE THE NEXT LINE OF A NAME SITS, as a multiple of the text's own size.
+
+Uppercase text stands about 0.72 of its size tall, so the whole of the rest is the space between
+one line and the next. It was 1.15, which left a gap three fifths of a letter's height and read
+as two names rather than one in two lines; this leaves half that. Panel text is one or two short
+words and wants setting tight.
+
+In one place because two files need it: the panel draws by it and the layout measures by it, and
+a name whose measured height disagrees with its drawn height sits at the wrong distance from
+whatever it names. */
+inline float panelLineStep(float size) { return size * 0.935f; }
+
 struct Panel : widget::Widget {
 	std::string titleAbove;
 	std::string title;
@@ -69,10 +82,126 @@ struct Panel : widget::Widget {
 	std::vector<Bracket> brackets;
 
 
+	/** THE MARKS ROUND A KNOB that say what its positions are.
+
+	A knob with detents and nothing drawn round it is a knob you have to turn while watching a
+	tooltip. Ticks say how many positions there are and where they fall; numbers beside them say
+	which is which, and then the knob can be set by looking at it. */
+	struct Scale {
+		float x = 0.f, y = 0.f;    /**< The centre of the knob it belongs to. */
+		float radius = 0.f;        /**< Where the inner end of each tick sits. */
+		float length = 0.f;        /**< How far each tick reaches outward. */
+		int count = 2;             /**< Two draws the ends of the sweep and nothing between. */
+		float textRadius = 0.f;    /**< Where the numbers sit, if there are any. */
+		float textSize = 6.f;
+		std::vector<std::string> marks;
+	};
+	std::vector<Scale> scales;
+
 	/** Rules across the panel, separating one group from the next. */
 	std::vector<float> rules;
 
 	void draw(const DrawArgs& args) override;
+};
+
+/** A KNOB DRAWN RATHER THAN LOADED, so that it can be any size.
+
+Rack ships five knobs and they are five fixed widths, which is fine until the width you want is
+between two of them. Drawing it means the diameter is a number in millimetres like everything
+else on the panel, and it means the sweep is ours: the marks round a knob have to agree with its
+pointer exactly, and a knob whose angles are its own cannot drift from them.
+
+It is also the same hand as the buttons and the lamps, which are drawn here too. */
+struct DreamerKnob : app::Knob {
+	/** Across, in millimetres. */
+	float diameter = 9.6f;
+
+	DreamerKnob();
+	void setDiameter(float mm);
+	void draw(const DrawArgs& args) override;
+};
+
+/** A NUMBER YOU CAN READ, AND A LIST YOU CAN CHOOSE FROM.
+
+A knob with sixteen detents is a poor way to set a count: you cannot see what it says without a
+tooltip, and you cannot get from four to twelve without dragging through everything between. A
+readout shows the value in figures, and a click opens the whole list so any value is one press
+away. The wheel still steps it, for the times when the next one along is what you want.
+
+Its text is the parameter's own display string, so a switch shows its name and a number shows its
+number, with whatever unit the module gave it. */
+/** A JACK THAT WILL NOT TAKE A CABLE IT CANNOT USE.
+
+An MPX cable is an ordinary Rack cable carrying nothing — the notes travel on a bus the two ends
+find by looking at what is patched — so a cable between an MPX jack and an ordinary one is
+accepted, looks entirely normal, and does nothing whatever. That is the worst kind of fault:
+everything appears right and nothing happens.
+
+So the connection is simply not made. Dropping onto one of these refuses outright; and a cable
+made the other way round, onto some other maker's jack where we have no say over the drop, is
+taken away on the next frame, which is soon enough to look like it never landed. A cable in a
+saved patch goes the same way, since it never worked either.
+
+REFUSING IS KINDER THAN ALLOWING. A connection that cannot work is more confusing once it is made
+than it is by never appearing, because then the question becomes why the patch is silent. */
+struct MPXPort : PJ301MPort {
+	void step() override;
+	void onDragDrop(const DragDropEvent& e) override;
+};
+
+/** Whether these two ends could carry notes to each other: one an MPX output, the other an MPX
+input, or neither of them MPX at all. Anything mixed is refused. */
+bool mpxCompatible(engine::Module* outModule, int outId, engine::Module* inModule, int inId);
+
+/** MEASURED FROM Nunito-Bold ITSELF rather than estimated: a capital stands 0.7041 of the font
+size and a digit advances 0.6011 of it. Everything a readout's size depends on comes from these
+two, so a plate is exactly as big as what is written on it. */
+static const float FIGURE_CAP = 0.7041f;
+static const float FIGURE_ADVANCE = 0.6011f;
+/** The surround, in millimetres, top to bottom and side to side together. */
+static const float FIGURE_SURROUND = 1.f;
+/** HOW MUCH SLOWER THAN A KNOB the wheel moves a readout.
+
+MEASURED AGAINST RACK'S OWN SCALE rather than against the raw wheel. A scroll event's size
+depends on the mouse, the platform and the host's own sensitivity setting, so a threshold in
+those units means nothing — it was set to four of them and made no difference anybody could see,
+because a single notch is worth many. Taking Rack's knob sensitivity and dividing gives a rate
+that matches the knobs the user is already used to, in whatever units their wheel speaks.
+
+Half rather than the quarter it was first set to: a quarter was slow enough to feel stuck. */
+static const float READOUT_SCROLL_DIVISOR = 2.f;
+
+struct Readout : ParamWidget {
+	/** HOW MANY FIGURES IT HAS TO HOLD, which is what sets its width — a plate wide enough for
+	four when it will only ever show two is a hole in the panel.
+
+	NOUGHT WORKS IT OUT, and that is the ordinary case. The parameter knows its own range, so it
+	knows the longest thing it will ever be asked to show; asking a person to count the figures
+	is asking them to get it wrong, and a number typed here too large puts a plate through the
+	side of the module. Set it only to hold a width that would otherwise change as the value
+	does. */
+	int chars = 0;
+	/** What the range turned out to need, so the width is worked out once rather than every
+	frame. */
+	int autoChars = 0;
+	/** Wheel gathered but not yet spent. A trackpad sends a great many small movements where a
+	wheel sends one large one, and adding them up rather than counting them means both behave
+	the same. */
+	float scrolled = 0.f;
+	/** HOW TALL A FIGURE IS, in millimetres — the figure itself, not the plate it sits on. The
+	plate is that and a millimetre, so it hugs what it shows. */
+	float figureMM = 2.8f;
+
+	Readout();
+	void setFigures(int chars, float figureMM);
+	/** The longest display string the parameter can produce, in characters. */
+	int widestValue();
+	void step() override;
+	void draw(const DrawArgs& args) override;
+	void onButton(const ButtonEvent& e) override;
+	void onHoverScroll(const HoverScrollEvent& e) override;
+	/** The values it offers, which is every step between the parameter's ends. */
+	void openList();
 };
 
 /** A column or row of lamps, one per value of a stepped parameter, each with its name beside
@@ -131,6 +260,8 @@ struct Lamps : ParamWidget {
 	bool horizontal = false;
 	/** Distance from one lamp to the next. */
 	float pitch = 18.f;
+	/** The size the names are set at. */
+	float nameSize = 8.f;
 	/** Where the names sit relative to the lamps. */
 	Panel::Align labelSide = Panel::LEFT;
 	/** A horizontal pair with its names on the outside: the first to the left of its lamp, the

@@ -16,6 +16,10 @@ not an edge. Without this the note is replaced under a gate that stays up, nothi
 strikes again, and what you hear is the first note decaying while its successors pass silently
 through. */
 static const float RETRIG_MS = 1.f;
+/** Below this, in volts, an envelope coming back counts as finished. Half a percent of a
+ten-volt envelope — low enough that a long tail is respected, high enough that the last
+thousandth of an exponential release does not hold a voice for ever. */
+static const float SOUNDING_FLOOR = 0.05f;
 /** THE LEVEL NEVER STEPS, at any note, in any mode, and neither does the pan. In glide and
 legato one voice sounds continuously while the note changes under it, so a level that jumps from
 one note's velocity to the next is a jump in a signal you are listening to. On a fresh voice it
@@ -83,6 +87,19 @@ struct VoiceModule : Module, NoteSink {
 	};
 	enum InputId {
 		I_NOTE,
+		/** THE ENVELOPE COMING BACK, so that a voice is not handed to a new note while the last
+		one is still sounding.
+
+		A voice whose note has ended is not silent: its gate has fallen and whatever envelope is
+		downstream is in its release. Reusing it cuts that release off and moves it to a new
+		pitch part way through, and no envelope, however clever, can fix a pitch that has already
+		moved — the fact that matters lives in the allocator and the allocator cannot see it.
+
+		Patching the envelope back in is the whole fix. The channels line up by construction,
+		since the gate that drove that envelope came from here; it works with any envelope at all,
+		because it watches the actual signal rather than modelling one; and with nothing patched
+		the module behaves as it did. */
+		I_SOUNDING,
 		NUM_INPUTS
 	};
 	enum OutputId {
@@ -90,15 +107,12 @@ struct VoiceModule : Module, NoteSink {
 		O_PITCH,
 		O_LEVEL,
 		O_BEND,
-		O_BENDV,
 		O_PRESSURE,
 		O_TIMBRE,
 		O_PAN,
-		O_DURATION,
 		NUM_OUTPUTS
 	};
 	enum LightId {
-		L_LINKED,
 		NUM_LIGHTS
 	};
 
@@ -123,6 +137,18 @@ struct VoiceModule : Module, NoteSink {
 		/** Held after the note ends: a voice in its release still reads the note it is
 		releasing, which is what a downstream envelope and filter need. */
 		int64_t started = 0;
+		/** WHEN THIS VOICE FELL SILENT, on the same counter as `started`.
+
+		A voice that has just ended is still sounding: its gate has fallen and whatever envelope
+		is downstream is in its release. Handing the next note to it cuts that release off and
+		moves it to a new pitch part way through, which is the one thing a polyphonic patch must
+		not do — and taking the first free slot each time did exactly that, since the slot that
+		just ended is the first one found.
+
+		So a free voice is chosen by how long it has been free. Nothing here can know how long
+		the release downstream actually is, and it does not need to: the voice that has been
+		silent longest is the one whose release is furthest along, whatever its length. */
+		int64_t ended = 0;
 		int remaining = 0;
 		int gateLow = 0;
 	};
@@ -145,16 +171,15 @@ struct VoiceModule : Module, NoteSink {
 			 "Glide — one voice", "Legato — two voices"});
 		configParam(P_GLIDE, 0.f, 2.f, 0.06f, "Glide time", " s");
 
-		configInput(I_NOTE, "MPX note in");
+		configInput(I_NOTE, "MPX note in \u2014 takes an MPX output only");
+		configInput(I_SOUNDING, "Envelope back in, so a releasing voice is not reused");
 		configOutput(O_GATE, "Gate");
-		configOutput(O_PITCH, "1V/oct");
+		configOutput(O_PITCH, "1V/oct, bend included");
 		configOutput(O_LEVEL, "Level");
 		configOutput(O_BEND, "Bend");
-		configOutput(O_BENDV, "Bend 1V/oct");
 		configOutput(O_PRESSURE, "Pressure");
 		configOutput(O_TIMBRE, "Timbre");
 		configOutput(O_PAN, "Pan");
-		configOutput(O_DURATION, "Duration");
 	}
 
 	void onReset() override {
@@ -204,6 +229,21 @@ struct VoiceModule : Module, NoteSink {
 			}
 		}
 
+		// NOTHING PATCHED IN, SO NOTHING DRIVEN OUT. One channel at nought volts rather than the
+		// polyphony count at nought volts, which is not the same thing at all: a VCO handed four
+		// channels runs four oscillators, and four oscillators at one pitch with four phases
+		// beat against each other and sound like a hum that moves. Changing POLY then changed
+		// the channel count under whatever was listening, which is a click.
+		//
+		// A module with no cable in it should be silent in every sense, including this one.
+		if (!reader.attached()) {
+			for (int o = 0; o < NUM_OUTPUTS; o++) {
+				outputs[o].setChannels(1);
+				outputs[o].setVoltage(0.f);
+			}
+			return;
+		}
+
 		const int voices = voiceCount();
 		const int rollover = (int) std::round(params[P_ROLLOVER].getValue());
 		const int retrig = std::max(1, (int) (RETRIG_MS * 0.001f * args.sampleRate));
@@ -229,12 +269,16 @@ struct VoiceModule : Module, NoteSink {
 			if (s.gateLow > 0)
 				s.gateLow--;
 			// The voice being left ends when its fade does, not before.
-			if (s.fading > 0 && --s.fading == 0)
+			if (s.fading > 0 && --s.fading == 0) {
 				s.active = false;
+				s.ended = ordinal++;
+			}
 			// A lost note-off cannot leave a voice sounding: the duration came with the
 			// note-on, so this end can finish it on its own.
-			if (s.active && s.remaining > 0 && --s.remaining == 0)
+			if (s.active && s.remaining > 0 && --s.remaining == 0) {
 				s.active = false;
+				s.ended = ordinal++;
+			}
 
 			const float pitch = s.pitch.tick();
 			const float bend = s.bend.tick();
@@ -242,24 +286,20 @@ struct VoiceModule : Module, NoteSink {
 			const float timbre = s.timbre.tick();
 
 			outputs[O_GATE].setVoltage((s.active && s.gateLow == 0) ? 10.f : 0.f, i);
-			outputs[O_PITCH].setVoltage(pitch, i);
+			// PITCH INCLUDES THE BEND, because where the note is now is what an oscillator wants
+			// and summing the two outside was a cable everybody had to remember. A guitar note
+			// bent up a semitone after it starts is one signal, not a note plus a correction.
+			outputs[O_PITCH].setVoltage(pitch + bend, i);
 			outputs[O_LEVEL].setVoltage(s.level.tick() * 10.f, i);
 			// The control voltage runs to five volts at full deflection, scaled by the bend
 			// range the note was sent with, and clamped there as a wheel at its stop is.
 			const float full = std::max(1e-4f, s.bendRange / 12.f);
 			outputs[O_BEND].setVoltage(clamp(bend / full, -1.f, 1.f) * 5.f, i);
-			// And this one carries the pitch's real movement, unscaled and unclamped, so that
-			// held pitch plus it is exactly where the source has gone. The range knob does not
-			// touch it: a range describes a control signal, not a pitch.
-			outputs[O_BENDV].setVoltage(bend, i);
 			outputs[O_PRESSURE].setVoltage(pressure * 10.f, i);
 			outputs[O_TIMBRE].setVoltage(timbre * 10.f, i);
 			outputs[O_PAN].setVoltage(s.pan.tick() * 5.f, i);
-			// One volt is one second, which is how the source's duration cable reads too.
-			outputs[O_DURATION].setVoltage(clamp(s.duration, 0.f, 10.f), i);
 		}
 
-		lights[L_LINKED].setBrightness(reader.attached() ? 1.f : 0.f);
 	}
 
 	void noteOn(const Event& e, int voices, int rollover, int retrig, const ProcessArgs& args) {
@@ -279,11 +319,48 @@ struct VoiceModule : Module, NoteSink {
 			return;
 		}
 
+		// A FREE VOICE THAT IS ACTUALLY SILENT, first choice and by a long way. Where the
+		// envelope is patched back in, silent means silent; where it is not, the longest free is
+		// the best guess available.
 		int take = -1;
+		int64_t quietestSince = 0;
 		for (int i = 0; i < voices; i++) {
-			if (!slots[i].active) {
+			if (slots[i].active || stillSounding(i))
+				continue;
+			if (take < 0 || slots[i].ended < quietestSince) {
+				quietestSince = slots[i].ended;
 				take = i;
-				break;
+			}
+		}
+		// FAILING THAT, THE QUIETEST OF THE RELEASING ONES rather than the oldest of them.
+		//
+		// Where the envelope is patched back in, how far a release has got is a number we can
+		// read rather than infer, and the quietest is by definition the one least missed — a
+		// tail at a twentieth of its level is nearly gone whether it started a moment ago or a
+		// long time back. Age is only a stand-in for that, and a poor one under an envelope
+		// whose releases differ in length.
+		//
+		// This is not the ROLLOVER setting. That decides what gives when every voice is still
+		// PLAYING, and its "quietest" means the quietest note — the level it was struck at —
+		// which is the right measure there and the wrong one here. This is about voices whose
+		// notes have already ended, where the only question is which sound is furthest gone.
+		if (take < 0) {
+			const bool watching = inputs[I_SOUNDING].isConnected();
+			float faintest = 0.f;
+			for (int i = 0; i < voices; i++) {
+				if (slots[i].active)
+					continue;
+				if (watching) {
+					const float now = std::fabs(inputs[I_SOUNDING].getPolyVoltage(i));
+					if (take < 0 || now < faintest) {
+						faintest = now;
+						take = i;
+					}
+				}
+				else if (take < 0 || slots[i].ended < quietestSince) {
+					quietestSince = slots[i].ended;
+					take = i;
+				}
 			}
 		}
 
@@ -323,6 +400,7 @@ struct VoiceModule : Module, NoteSink {
 					// No time set: the notes butt, the old one ending exactly as the new one
 					// begins. The closest a pair can come to a slur without a crossfade.
 					slots[i].active = false;
+					slots[i].ended = ordinal++;
 				}
 			}
 			Slot& s = slots[take];
@@ -396,10 +474,19 @@ struct VoiceModule : Module, NoteSink {
 		s.bend.set(0.f);
 	}
 
+	/** Whether this voice is still making a sound although its note has ended — which only the
+	envelope can say, so it is only known where the envelope is patched back in. */
+	bool stillSounding(int i) {
+		if (!inputs[I_SOUNDING].isConnected())
+			return false;
+		return std::fabs(inputs[I_SOUNDING].getPolyVoltage(i)) > SOUNDING_FLOOR;
+	}
+
 	void noteOff(int64_t handle) {
 		for (Slot& s : slots) {
 			if (s.active && s.handle == handle) {
 				s.active = false;
+				s.ended = ordinal++;
 				// Pitch, level and pan are left where they are, so a voice in its release
 				// still reads the note it is releasing.
 				return;
@@ -443,18 +530,24 @@ bool isMPXInput(engine::Module* module, int inputId) {
 // that the control column now agrees on one x rather than four within a millimetre of each
 // other, the jack column steps by exactly its pitch, and every value is on a half millimetre.
 
-static const float CTRL_X = 13.f;        /**< The note jack and both knobs, on one axis. */
-static const float LAMP_X = 5.f;         /**< The rollover track's left edge, names to its right. */
-static const float JACK_X = 49.f;        /**< The lanes, one column. */
-static const float JACK_LABEL_DX = -7.f; /**< Their names, ending just short of them. */
-static const float JACK_TOP = 25.f;
+/** EIGHT HP, and every number below is one that was arrived at by moving the thing on the panel
+and then written back here. The column of nine lanes and the column of controls sit as close as
+their names allow, and a name that would have set the panel wider — the two that read 1V/oct —
+is set over two lines instead. */
+/** THE CONTROL COLUMN. Not quite one axis: the jack, the readout and the knob are different
+widths, and each was placed by eye until it looked centred against the others rather than by
+sharing a number with them. */
+static const float CTRL_X = 11.5f;       /**< The transition knob; the others carry their own. */
+static const float LAMP_X = 4.f;         /**< The rollover track's left edge, names to its right. */
+static const float JACK_X = 34.f;        /**< The lanes, one column. */
+static const float JACK_LABEL_DX = -5.5f;/**< Their names, ending just short of them. */
+static const float JACK_LABEL_SIZE = 7.f;
+static const float JACK_TOP = 21.5f;
 static const float JACK_PITCH = 11.3f;
-/** The counts ringed round POLYPHONY, outside the knob rather than on it. */
-static const float POLY_RING = 10.2f;
 
 static Layout fromMPXLayout() {
 	Layout L;
-	L.hp = 12.f;
+	L.hp = 8.f;
 	L.title = "fromMPX";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -471,42 +564,45 @@ static Layout fromMPXLayout() {
 		i.key = key; i.kind = Item::PORT_OUT; i.id = id; i.x = JACK_X; i.y = y; i.ring = color;
 		L.items.push_back(i);
 		label((std::string(key) + ".label").c_str(), JACK_X + JACK_LABEL_DX, y, name,
-			Panel::RIGHT, false, 0.f, key);
+			Panel::RIGHT, false, JACK_LABEL_SIZE, key);
 	};
+
+	// THE ENVELOPE COMING BACK, at the foot of the lane column where the two retired jacks used
+	// to be — an input among outputs, which is why it is the only one there and why it sits
+	// below the gap rather than continuing the list.
+	Item back;
+	back.key = "in.sounding"; back.kind = Item::PORT_IN; back.id = VoiceModule::I_SOUNDING;
+	back.x = JACK_X; back.y = 111.9f; back.ring = SIG_CV;
+	L.items.push_back(back);
+	label("in.sounding.label", JACK_X + JACK_LABEL_DX, 111.9f, "env\nback", Panel::RIGHT,
+		false, JACK_LABEL_SIZE, "in.sounding");
 
 	// The cable in at the top of the control column, above everything it feeds.
 	Item note;
 	note.key = "in.voice"; note.kind = Item::PORT_IN; note.id = VoiceModule::I_NOTE;
-	note.x = CTRL_X; note.y = 24.5f; note.ring = NOTE_CABLE;
+	note.x = 13.f; note.y = 19.5f; note.ring = NOTE_CABLE;
 	L.items.push_back(note);
-	label("in.voice.label", CTRL_X, 32.f, "mpxIn", Panel::CENTRE, true, 12.f, "in.voice");
-	Item lamp;
-	lamp.key = "lamp.linked"; lamp.kind = Item::LIGHT; lamp.id = VoiceModule::L_LINKED;
-	lamp.x = CTRL_X; lamp.y = 13.f; lamp.owner = "in.voice";
-	L.items.push_back(lamp);
+	label("in.voice.label", 13.f, 28.5f, "mpx\nIN", Panel::CENTRE, true, 12.f, "in.voice");
 
-	// How many notes this instrument can hold at once, with the count printed round the knob so
-	// the setting can be read without a tooltip.
+	// HOW MANY NOTES THIS INSTRUMENT CAN HOLD AT ONCE, as a figure rather than a pointer.
+	//
+	// It was a knob with sixteen detents ringed by eight of the counts, which took the width of
+	// the panel to say what two figures say exactly. A knob is also the wrong control for this:
+	// you cannot see what it is set to without a tooltip, and getting from four to twelve means
+	// dragging through everything between. A click opens the list of sixteen and the wheel steps
+	// it for the times when the next one along is what is wanted.
 	Item poly;
 	poly.key = "p.poly"; poly.kind = Item::PARAM; poly.id = VoiceModule::P_POLY;
-	poly.style = "knob.large"; poly.x = CTRL_X; poly.y = 49.f;
+	poly.style = "readout"; poly.x = 12.5f; poly.y = 42.5f; poly.chars = 0; poly.h = 8.f;
 	L.items.push_back(poly);
-	label("p.poly.label", CTRL_X, 62.f, "POLYPHONY", Panel::CENTRE, true, 0.f, "p.poly");
-	for (int i = 1; i <= 8; i++) {
-		// Eight of the sixteen are marked; marking all sixteen would be a ring of numbers too
-		// small to read and too close together to tell apart.
-		const float a = (-0.78f + (i - 1) / 7.f * 1.56f) * (float) M_PI;
-		label(("p.poly.n" + std::to_string(i)).c_str(),
-			CTRL_X + std::sin(a) * POLY_RING, 49.f - std::cos(a) * POLY_RING,
-			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.poly");
-	}
+	label("p.poly.label", 12.5f, 50.2f, "POLYPHONY", Panel::CENTRE, true, 0.f, "p.poly");
 
 	// What gives when a note arrives and nothing is free. Five names, because a knob with five
 	// detents says nothing about what the five are.
 	Item roll;
 	roll.key = "p.rollover"; roll.kind = Item::PARAM; roll.id = VoiceModule::P_ROLLOVER;
-	roll.style = "lamps"; roll.x = LAMP_X; roll.y = 66.f;
-	roll.w = 6.f; roll.h = 34.f; roll.pitch = 7.8f;
+	roll.style = "lamps"; roll.x = LAMP_X; roll.y = 57.8f; roll.nameSize = 7.f;
+	roll.w = 6.f; roll.h = 34.f; roll.pitch = 6.5f;
 	roll.names = {"OLDEST", "QUIETEST", "IGNORE\nNEWEST", "GLIDE", "LEGATO"};
 	roll.labelSide = Panel::RIGHT;
 	L.items.push_back(roll);
@@ -516,28 +612,39 @@ static Layout fromMPXLayout() {
 	// list its owners.
 	Item brace;
 	brace.key = "brace.time"; brace.kind = Item::BRACKET;
-	// Measured, not guessed. The IGNORE NEWEST lamp is at 83.8mm but its second line sits at
-	// 85.3, and that word is what the top of the bracket was crowding; halfway between it and
-	// the GLIDE lamp at 91.6 is 88.5. The bottom passes a little below the knob's centre at
-	// 113, so the bracket reads as reaching the knob rather than stopping short of it.
-	brace.x = 2.5f; brace.y = 88.5f; brace.w = 2.5f; brace.h = 27.f;
+	// Measured, not guessed, and measured again each time the lamps or the knob move. With the
+	// column starting at 57.8 its lamps fall at 60, 66.5, 73, 79.5 and 86; the two it belongs to
+	// are GLIDE and LEGATO, so it has to start ABOVE the GLIDE lamp rather than between the two
+	// of them. IGNORE NEWEST is two lines and its lower one sits at 74.1; GLIDE's word begins at
+	// 78.6; halfway between is 76.4. The bottom passes 2.5 below the knob's centre at 96.3.
+	// SHORT ARMS, AND CLOSE IN. The bracket is the leftmost thing on the panel and its arms only
+	// have to read as reaching the lamps beside them; every millimetre they were given was a
+	// millimetre of panel width, and shortening them is most of what took this from ten HP to
+	// nine.
+	brace.x = 2.2f; brace.y = 76.4f; brace.w = 1.6f; brace.h = 22.4f;
 	L.items.push_back(brace);
 
 	Item glide;
 	glide.key = "p.glide"; glide.kind = Item::PARAM; glide.id = VoiceModule::P_GLIDE;
-	glide.style = "knob"; glide.x = CTRL_X; glide.y = 113.f;
+	glide.style = "knob"; glide.x = CTRL_X; glide.y = 96.3f;
 	L.items.push_back(glide);
-	label("p.glide.label", CTRL_X, 121.f, "TIME", Panel::CENTRE, true, 0.f, "p.glide");
+	label("p.glide.label", CTRL_X, 105.f, "TRANSITION\nTIME", Panel::CENTRE, true, 7.f,
+		"p.glide");
 
-	// The nine lanes, in the order a voice is built: what starts it, what pitches it, how far
-	// it has moved, how hard it was struck, then what changes while it sounds.
+	// THE SEVEN LANES, in the order a voice is built: what starts it, what pitches it, how far it
+	// has moved, how hard it was struck, then what changes while it sounds.
+	//
+	// TWO ARE GONE. Duration went because the gate already says the whole of it — the gate falls
+	// at whichever came first, the duration expiring or the note ending, so an ordinary envelope
+	// keyed on it releases at the right moment with nothing else patched. Bend 1V/oct went
+	// because pitch now carries the bend, which is what an oscillator wants; the Bend output
+	// stays, because a scaled deflection is what an effect wants and a pitch in volts per octave
+	// is far too small a number to modulate anything with.
 	float y = JACK_TOP;
 	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);           y += JACK_PITCH;
-	outJack("out.pitch", y, VoiceModule::O_PITCH, "1V/oct", SIG_PITCH);      y += JACK_PITCH;
+	outJack("out.pitch", y, VoiceModule::O_PITCH, "Pitch\nV/oct", SIG_PITCH); y += JACK_PITCH;
 	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);             y += JACK_PITCH;
-	outJack("out.bendv", y, VoiceModule::O_BENDV, "bend 1V/oct", SIG_PITCH); y += JACK_PITCH;
 	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);          y += JACK_PITCH;
-	outJack("out.dur", y, VoiceModule::O_DURATION, "duration", SIG_CV);      y += JACK_PITCH;
 	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);                y += JACK_PITCH;
 	outJack("out.press", y, VoiceModule::O_PRESSURE, "pressure", SIG_CV);    y += JACK_PITCH;
 	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timbre", SIG_CV);

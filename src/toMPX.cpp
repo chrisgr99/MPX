@@ -96,7 +96,7 @@ struct NoteModule : Module, NoteSource {
 		configInput(I_PAN, "Pan");
 		configInput(I_PRESSURE, "Pressure");
 		configInput(I_TIMBRE, "Timbre");
-		configOutput(O_VOICE, "MPX note out");
+		configOutput(O_VOICE, "MPX note out \u2014 goes to an MPX input only");
 
 		slot = busClaim(&generation);
 	}
@@ -249,6 +249,7 @@ struct NoteModule : Module, NoteSource {
 		}
 
 		lights[L_ACTIVE].setBrightnessSmooth(anyOn ? 1.f : 0.f, args.sampleTime);
+
 	}
 
 	void sendOff(const Channel& ch) {
@@ -389,7 +390,7 @@ static Layout toMPXLayout() {
 
 	// One cable out. A polyphonic cable in Rack carries one instrument's voices, so a module
 	// looking at one has one instrument to hand on.
-	label("h.out", OUT_X, 105.f, "mpxOut", Panel::CENTRE, true, 12.f);
+	label("h.out", OUT_X, 105.f, "mpx\nOUT", Panel::CENTRE, true, 12.f);
 	Item out;
 	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
 	out.x = OUT_X; out.y = row(5); out.ring = NOTE_CABLE;
@@ -398,6 +399,7 @@ static Layout toMPXLayout() {
 	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
 	lamp.x = OUT_X - 8.f; lamp.y = row(5); lamp.owner = "out.voice";
 	L.items.push_back(lamp);
+
 
 	L.bindOffsets();
 	return L;

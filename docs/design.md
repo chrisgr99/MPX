@@ -74,11 +74,11 @@ Bend is a deviation, not an absolute pitch. That is what a wheel, a wind control
 
 It is sent in volts, unscaled. toMPX computes it as the pitch input minus the value held at the gate's edge, so it is zero at every note-on by construction and the source patches one ordinary moving voltage.
 
-It leaves fromMPX on two jacks, which are not two views of one number.
+**fromMPX's pitch output carries the bend already.** Where the note is now is what an oscillator wants, and a note bent up a semitone after it starts is one signal rather than a note plus a correction somebody has to remember to sum. A guitar line works without a second cable.
 
-The **Bend** output runs to five volts at full deflection, scaled by the bend range knob — how many semitones count as full deflection — and clamped there, as a wheel at its stop is.
+It also leaves on its own jack. The **Bend** output runs to five volts at full deflection, scaled by the bend range knob — how many semitones count as full deflection — and clamped there, as a wheel at its stop is. That is for the effects that should respond to a note being bent rather than to the pitch it is now producing.
 
-The **Bend 1V/oct** output carries the pitch's real movement, unscaled and unclamped, so that held pitch plus it is exactly where the source has gone. The range knob does not touch it: a range describes a control signal, not a pitch.
+The two are not two views of one number, which is why both exist. Bend in volts per octave is the truthful quantity — a semitone is a semitone whatever anybody's range knob says — but a semitone is 0.083 volts, which is far too small to modulate anything with. The scaled output is the convenient one and the pitch output is the truthful one, and each is used for the thing it is good at.
 
 The range is in semitones but not whole ones, from a tenth of a semitone to two octaves. A quarter-tone bend, a scale that is not twelve-tone, and a range set by ear are all ordinary things to want.
 
@@ -87,6 +87,22 @@ The range is in semitones but not whole ones, from a tenth of a semitone to two 
 Level is the note's velocity, taken at the gate's edge. Pressure is how the note behaves after that. Neither is derived from the other.
 
 A source that wants a velocity out of a continuous signal does that on its own face, where it is visible, rather than invisibly at the boundary.
+
+### Breath makes the note, and toMPX does not know that yet
+
+On a wind controller there is no key and no strike. Pressure rising through a threshold is the note starting, and pressure falling below a lower one is the note ending — the gap between the two thresholds being what stops a player breathing quietly at the edge from stuttering the note on and off. So on that instrument pressure IS the gate, as well as being the expression the note is played with.
+
+Nothing at the far end changes for this. fromMPX's gate already carries the note's life whatever produced it, and pressure remains its own output because the effects a wind player expects — a filter opening as they push — respond to the pressure itself and not to the fact that a note is sounding.
+
+What is missing is at the near end. toMPX takes a gate on one jack and pressure on another, so a wind controller needs the player to build the threshold and its hysteresis out of a comparator and a latch, which is fiddly to get right and belongs in the module that already knows what a note is.
+
+Three things go together when it is built:
+
+**The two thresholds.** Rising through the upper one starts the note, falling through the lower one ends it. Both adjustable, because the gap differs between instruments and between players.
+
+**Where the velocity comes from.** A breath note has no strike, so the usual answers are the pressure at the moment of crossing, or how fast it rose through the threshold. The second is closer to what a player feels as attack and is what the better wind controllers do. Either way it is one number captured at onset, since level is fixed for the note's life while pressure goes on separately.
+
+**Duration stops being a minimum.** A breath note ends when the breath ends and its length is not known when it starts, so toMPX's "at its duration, whatever the gate does" setting would cut notes off in the middle of a phrase. In breath mode the duration is a maximum or it is ignored.
 
 ### What does not ride on the cable
 
@@ -135,6 +151,18 @@ Legato uses two because only one note is ever giving way to one other, so a thir
 A voice taken while it is still sounding has its gate held low for one millisecond first. A gate that never falls is not an edge, so without that the note is replaced under a gate that stays up, nothing downstream strikes again, and what is heard is the first note decaying while its successors pass silently through.
 
 The amplitude is not faded here. In this rack the envelope and the amplifier are separate modules, and fading the level output would fight the envelope rather than help it.
+
+### A voice is not free until its sound has finished
+
+A voice whose note has ended is not silent. Its gate has fallen and whatever envelope the patch put after it is in its release, so handing that voice to a new note cuts the release off and moves it to a new pitch part way through. No envelope can repair that, however note-aware it is: the pitch has already moved, and the fact that would have prevented it — how long this release lasts — is in a different module from the allocator.
+
+**fromMPX takes the envelope back on a jack.** Patch the envelope that the gate drove into it, and a voice counts as busy while its own channel is above a floor of 0.05 volts, whether or not its note has ended. The channels line up by construction, since the gate that drove that envelope came from here. It works with any envelope — exponential, multi-stage, a low pass gate, a ten-second tail — because it watches the signal rather than modelling it.
+
+With nothing patched the module falls back to the best guess available: among free voices it takes the one that has been free longest, since that is the one whose release is furthest along whatever its length. That is a heuristic and is meant to be; the jack is how it becomes exact.
+
+Where every voice is either playing or releasing, a releasing one is taken before a playing one — and the quietest of them, read straight off the envelope. A tail at a twentieth of its level is nearly gone whether it started a moment ago or long since, so how far a release has got is the measure, not how long ago it began. With nothing patched, age is the stand-in.
+
+That is not the ROLLOVER setting, which decides what gives when every voice is still playing. Its "quietest" means the quietest note — the level it was struck at — which is the right measure there and the wrong one here, where the notes have already ended and the only question is which sound is furthest gone.
 
 ### After a note ends
 

@@ -103,7 +103,7 @@ struct ProgressionModule : Module, NoteSource {
 
 		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
-		configOutput(O_MPX, "MPX note out");
+		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
 
 		slot = busClaim(&generation);
 	}
@@ -345,7 +345,7 @@ static Layout progressionLayout() {
 
 	jack("in.clock", Item::PORT_IN, 12.f, 116.f, ProgressionModule::I_CLOCK, "clock", SIG_GATE);
 	jack("in.reset", Item::PORT_IN, 28.f, 116.f, ProgressionModule::I_RESET, "reset", SIG_GATE);
-	jack("out.mpx", Item::PORT_OUT, 68.f, 116.f, ProgressionModule::O_MPX, "mpxOut",
+	jack("out.mpx", Item::PORT_OUT, 68.f, 116.f, ProgressionModule::O_MPX, "mpx\nOUT",
 		NOTE_CABLE, 12.f);
 
 	Item lamp;

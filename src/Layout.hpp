@@ -18,6 +18,10 @@ it. Replacing the layout wholesale would have made every saved file a time bomb.
 */
 #include "plugin.hpp"
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include <string>
 #include <vector>
 
@@ -65,8 +69,41 @@ struct Item {
 	position in a Rack panel means, and what a person means when they say where a knob is. */
 	float x = 0.f, y = 0.f;
 
-	/** PARAM: which control to make. knob, knob.large, knob.huge, lamps. */
+	/** PARAM: which control to make. knob, knob.large, knob.huge, lamps, readout.
+	LIGHT: light for a plain green one, light.greenred for one that can also go red. */
 	std::string style = "knob";
+
+	/** PARAM, style readout: how many figures it has to hold, and how tall the plate is. The
+	width follows from those rather than being given, so a readout is never wider than what it
+	shows. */
+	int chars = 2;
+
+	/** PARAM, style knob: how many marks to draw round it, or nought for none. Two draws the
+	ends of the sweep and nothing between, which is what a continuous knob wants; a knob with
+	detents wants one per detent. */
+	int ticks = 0;
+	/** One per tick, or empty for ticks with no numbers beside them. */
+	std::vector<std::string> tickMarks;
+
+	/** PARAM, style knob: across, in millimetres. Nought takes the standard 9.6, so a layout
+	that never mentions a size gets the size it always had. Any number is allowed, because the
+	width a panel wants is often not one of the five Rack happens to ship. */
+	float diameter = 0.f;
+
+	/** PARAM: the size of the text the control draws for itself — the names beside a lamp
+	column, the numbers round a knob. Nought takes each one's own default. Kept apart from the
+	LABEL size because a control's own text and the name underneath it are different things and
+	are set at different sizes on purpose. */
+	float nameSize = 0.f;
+
+	/** WHICH OF THESE PROPERTIES THE USER SET, and so which of them a saved file carries.
+
+	Saving everything would freeze the module's own defaults the first time anybody moved a
+	knob: every later improvement to a name, a size or a set of marks would be invisible to
+	them, which is exactly the fault the wording rule was written to fix. Saving only what was
+	deliberately changed leaves the rest free to improve. */
+	std::set<std::string> userProps;
+	bool userSet(const std::string& prop) const { return userProps.count(prop) > 0; }
 
 	/** PARAM, style lamps. */
 	std::vector<std::string> names;
@@ -117,7 +154,17 @@ struct Layout {
 void layoutApplyUser(const std::string& slug, Layout& layout);
 void layoutSaveUser(const std::string& slug, const Layout& layout);
 void layoutResetUser(const std::string& slug);
+/** The folder saved panels live in, under the host's user folder. Set it once from a
+plugin's init if these files are reused somewhere other than MPX. */
+extern std::string layoutFolder;
+
 std::string layoutUserPath(const std::string& slug);
+
+/** THE SLASH RULE. A slash in text typed into the properties menu breaks the line there; two
+slashes together are one slash. Every piece of text on a panel obeys it — a knob's name, a
+heading, the name beside a lamp — so that there is one rule rather than one per kind of thing. */
+std::string layoutTextFromUser(const std::string& typed);
+std::string layoutTextToUser(const std::string& text);
 bool layoutHasUser(const std::string& slug);
 
 /** Creates every param, port and light, fills the panel's labels, and adds the widget that
