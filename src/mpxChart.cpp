@@ -170,6 +170,12 @@ struct ChartModule : Module, NoteSource {
 		is plainly part of the patch rather than a preference hidden in a window. */
 		P_CHORD_MODE,
 		P_OPEN,
+		/** APPENDED, NEVER INSERTED — a patch stores a parameter by its position here.
+		THE SEED, 0 to 999. Three figures because it is a number to be read aloud, written on a
+		set list and typed in again tomorrow, and a thousand of them is more than anyone will
+		work through. It is a parameter rather than a setting so it is saved with the patch,
+		appears in Rack's own menu, and can be mapped. */
+		P_SEED,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -187,8 +193,6 @@ struct ChartModule : Module, NoteSource {
 		has two well-worn ways of carrying the notes, and this speaks both. */
 		O_CHORD,      /**< The chord's tones as polyphonic V/Oct. */
 		O_ROOT,       /**< Its root, on its own. */
-		O_PES_CHORD,  /**< The chord as a Poly External Scale. */
-		O_PES_SCALE,  /**< The key as a Poly External Scale. */
 		/** THE ROOT AS SOMETHING TO PLAY, which is not the same as the root.
 
 		O_ROOT is a pitch class, which is the right answer for a quantizer and the wrong one for
@@ -288,7 +292,10 @@ struct ChartModule : Module, NoteSource {
 		// being turned, and a caveat in brackets is clutter there — at that moment the reader
 		// wants the number, not a note about a case that may not even apply. That the clock
 		// input overrides this belongs in the manual and in the clock port's own name.
+		configParam(P_SEED, 0.f, 999.f, 1.f, "Seed");
+		paramQuantities[P_SEED]->snapEnabled = true;
 		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo", " bpm");
+		paramQuantities[P_TEMPO]->snapEnabled = true;
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		configButton(P_REWIND, "Rewind to the start");
 		// LETTER NAMES is the term, not "chord symbols": a Roman numeral IS a chord symbol,
@@ -296,15 +303,13 @@ struct ChartModule : Module, NoteSource {
 		// uses is letter names against Roman numerals — C minor seven against two minor seven.
 		configSwitch(P_CHORD_MODE, 0.f, 1.f, 0.f, "Chord symbols",
 			{"Letter names", "Roman numerals"});
-		configButton(P_OPEN, "Open the chart");
+		configButton(P_OPEN, "Open chart window");
 		configInput(I_CLOCK, "Clock, which overrides the tempo knob");
 		configInput(I_RESET, "Reset");
 		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
 		configOutput(O_CHORD, "Chord tones as polyphonic V/Oct");
 		configOutput(O_ROOT, "Root as V/Oct");
 		configOutput(O_BASS, "Bass line as V/Oct, below the chord");
-		configOutput(O_PES_CHORD, "Notes of the current chord, as a Poly External Scale");
-		configOutput(O_PES_SCALE, "Notes of the key, as a Poly External Scale");
 		slot = busClaim(&generation);
 	}
 
@@ -366,7 +371,15 @@ struct ChartModule : Module, NoteSource {
 
 	/** Back to the top. Safe from the drawing thread: the audio thread reads these each block
 	and a beat count set to nought part way through one is a beat count set to nought. */
+	/** HOW MANY TIMES WE HAVE GONE BACK TO THE TOP. Published with the harmony, so everything
+	downstream that carries a random process can start again in step with the music. */
+	uint32_t epoch = 0;
+	/** Where the playing position was last seen, so the wrap at the end of the chart can be
+	told from ordinary forward motion. */
+	double lastPos = 0.0;
+
 	void rewind() {
+		epoch++;
 		beats = 0.0;
 		playingIndex = 0;
 		// The bass line starts again too, or the same chart played twice gives two different
@@ -546,19 +559,18 @@ struct ChartModule : Module, NoteSource {
 		(void) noChord;
 	}
 
-	/** A Poly External Scale: twelve channels, one per semitone from C, nought volts for a
-	semitone that is out and eight for one that is in, with ten on the tonic if it is known.
-	Aria Salvatrice's format, which several quantizers read. */
-	void writePES(int outputId, const int* pitchClasses, int count, int tonic) {
-		Output& out = outputs[outputId];
-		out.setChannels(12);
-		for (int i = 0; i < 12; i++)
-			out.setVoltage(0.f, i);
-		for (int i = 0; i < count; i++)
-			out.setVoltage(8.f, ((pitchClasses[i] % 12) + 12) % 12);
-		if (tonic >= 0)
-			out.setVoltage(10.f, ((tonic % 12) + 12) % 12);
-	}
+	/** THE TWO POLY EXTERNAL SCALE OUTPUTS ARE GONE, and this is where they were.
+
+	They wrote Aria Salvatrice's format — twelve channels, one per semitone, eight volts for a
+	note that is in and ten on the tonic — one for the current chord and one for the key. Useful,
+	and read by several quantizers, but they were two of the six jacks on a ten HP panel and the
+	panel had more pressing things to say. If they are wanted again they belong in a converter
+	module reading the MPX cable, which is where anything that translates the chart for somebody
+	else's format belongs: the chart says what the harmony is, and turning that into one house's
+	notation is a separate job.
+
+	Removed rather than hidden, and safe to remove, because nothing had shipped: the plugin has
+	never been tagged or released, so no patch outside this machine can hold a cable on them. */
 
 	/** THE ROOT, AN OCTAVE UNDER THE CHORD, HELD FOR AS LONG AS THE CHORD LASTS.
 
@@ -631,12 +643,6 @@ struct ChartModule : Module, NoteSource {
 		outputs[O_ROOT].setChannels(1);
 		outputs[O_ROOT].setVoltage((float) root / 12.f);
 		writeBass(root, count > 0 ? outputs[O_CHORD].getVoltage(0) : (float) root / 12.f);
-
-		writePES(O_PES_CHORD, classes, count, root);
-
-		int scale[7];
-		scalePitchClasses(key, scale);
-		writePES(O_PES_SCALE, scale, 7, key.tonic);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -693,6 +699,12 @@ struct ChartModule : Module, NoteSource {
 
 		const double length = pb.totalBeats;
 		const double pos = std::fmod(std::fmod(beats, length) + length, length);
+		// THE CHART LOOPING IS A REWIND THAT NOBODY PRESSED. The position runs forward and then
+		// starts again, so a step BACKWARDS is the top of the form coming round — which is the
+		// moment a repeating pattern downstream has to repeat with it.
+		if (pos < lastPos)
+			epoch++;
+		lastPos = pos;
 
 		// Which played bar the music is in. A walk rather than a search: the position moves by
 		// a fraction of a beat between frames, so the answer is almost always where it was.
@@ -726,6 +738,8 @@ struct ChartModule : Module, NoteSource {
 		h.barUnit = (uint8_t) (L.song.unit > 0 ? L.song.unit : 4);
 		h.bar = at;
 		h.beatInBar = within;
+		h.seed = (uint32_t) std::lround(params[P_SEED].getValue());
+		h.epoch = epoch;
 		busPublishHarmony(slot, h);
 		// The same chord, for anything that is not an MPX module.
 		writeChord(h.current, h.key);
@@ -766,9 +780,11 @@ struct ChartDisplay : widget::OpaqueWidget {
 	full width of the display, since a wider target is a better one — the whole line is
 	clickable, not only the button beside it.
 
-	AND EACH HAS A BUTTON, at the left edge. The lines were clickable before and looked exactly
-	like the two below them that are not; a control has to say it is one. */
-	static const int BTN = 13;
+	NO BUTTONS ON THEM ANY MORE. Each line used to carry a small raised button at its left edge,
+	to say that it was a control — but the whole strip was always what answered the click, so the
+	button was a picture of a control rather than the control, and it cost twenty-two pixels of
+	indent from every line of the display. The hover shading says the same thing and costs
+	nothing. */
 
 	math::Rect titleBox() {
 		return math::Rect(math::Vec(2.f, 2.f), math::Vec(box.size.x - 4.f, 30.f));
@@ -778,32 +794,69 @@ struct ChartDisplay : widget::OpaqueWidget {
 		return math::Rect(math::Vec(2.f, 33.f), math::Vec(box.size.x - 4.f, 14.f));
 	}
 
-	math::Rect titleButton() {
-		return math::Rect(math::Vec(4.f, 10.f), math::Vec(BTN, BTN));
+	/** EVERYTHING BELOW THE KEY OPENS THE CHART, not only the button in the corner.
+
+	The button says where the gesture is and is worth keeping for that, but the rest of the plate
+	is what you are looking at when you want the chart — the section, the measure, the chord —
+	and none of it did anything when pressed. A large target costs nothing here because there is
+	nothing else down there to hit. */
+	math::Rect openBox() {
+		const float top = keyBox().pos.y + keyBox().size.y;
+		return math::Rect(math::Vec(2.f, top), math::Vec(box.size.x - 4.f,
+			std::fmax(0.f, box.size.y - top - 2.f)));
 	}
 
-	math::Rect keyButton() {
-		return math::Rect(math::Vec(4.f, 33.f), math::Vec(BTN, BTN));
+	/** WHERE THE POINTER IS, for the highlight.
+
+	THERE WERE TOOLTIPS HERE and they are gone. Three strips that all look like text and all do
+	something different is a real problem, and words on hover were one answer to it — but the
+	marks and the highlight are a better one, because they are on the face all the time rather
+	than only for whoever waits half a second with the pointer still. Once every strip lights up
+	and wears a triangle, a tooltip is a second explanation of something already explained. */
+	bool hovering = false;
+	math::Vec hoverPos;
+
+	void onHover(const HoverEvent& e) override {
+		hovering = true;
+		hoverPos = e.pos;
+		OpaqueWidget::onHover(e);
 	}
 
-	void drawButton(const DrawArgs& args, const math::Rect& r) {
-		nvgSave(args.vg);
-		nvgTranslate(args.vg, r.pos.x, r.pos.y);
-		drawRaisedButton(args.vg, r.size, false, false);
-		nvgRestore(args.vg);
+	void onLeave(const LeaveEvent& e) override {
+		hovering = false;
+		OpaqueWidget::onLeave(e);
 	}
 
 	void onButton(const ButtonEvent& e) override;
 
-	/** Faint under the pointer, so the two lines that can be pressed look different from the
-	three that cannot. */
+	/** Faint under the pointer, so a strip that can be pressed looks different from one that
+	cannot.
+
+	THE POINTER IS TAKEN FROM THE HOVER EVENT, not worked out from the scene. It used to subtract
+	this widget's absolute offset from the scene's mouse position, which forgets the zoom — so at
+	anything but a hundred per cent the lit rectangle sat away from the pointer, and the strip
+	appeared to respond over its background and not over its own words. Rack hands us the
+	position in our own coordinates and it is right at every zoom. */
 	void drawHover(const DrawArgs& args, const math::Rect& r) {
-		if (!r.contains(APP->scene->mousePos.minus(getAbsoluteOffset(math::Vec()))))
+		if (!hovering || !r.contains(hoverPos))
 			return;
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, r.pos.x, r.pos.y, r.size.x, r.size.y, 2.f);
 		nvgFillColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 0x16));
 		nvgFill(args.vg);
+	}
+
+	/** THE MARK THAT SAYS A LINE OPENS SOMETHING. The key has worn one all along — a small
+	triangle after its words — and it is the clearest thing on the plate, so the title and the
+	chord have one too. Drawn in the text face rather than the display face, because that is
+	where the glyph lives and because all three should be the same mark. */
+	void drawCaret(const DrawArgs& args, std::shared_ptr<window::Font> body, float x, float y) {
+		if (!body || body->handle < 0)
+			return;
+		nvgFontFaceId(args.vg, body->handle);
+		nvgFontSize(args.vg, 9.f);
+		nvgFillColor(args.vg, PANEL_INK);
+		nvgText(args.vg, x, y, "\u25be", NULL);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -822,12 +875,14 @@ struct ChartDisplay : widget::OpaqueWidget {
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
+		// ALL THREE STRIPS LIGHT UNDER THE POINTER, which is the display saying what can be
+		// pressed without anything having to be written on it. It is also what made the chart
+		// button unnecessary: a button is a picture of a control, and the plate below the key
+		// is the control.
 		drawHover(args, titleBox());
-		if (module && module->haveSong.load()) {
+		if (module && module->haveSong.load())
 			drawHover(args, keyBox());
-			drawButton(args, keyButton());
-		}
-		drawButton(args, titleButton());
+		drawHover(args, openBox());
 
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 		if (!module || !module->haveSong.load()) {
@@ -835,7 +890,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 			nvgFontSize(args.vg, 11.f);
 			nvgFillColor(args.vg, PANEL_INK);
 			nvgFontSize(args.vg, 9.f);
-			nvgText(args.vg, 22.f, 16.f, "No chart loaded.", NULL);
+			nvgText(args.vg, 6.f, 16.f, "No chart loaded.", NULL);
 			nvgText(args.vg, 6.f, 36.f, "Press the button to choose", NULL);
 			nvgText(args.vg, 6.f, 48.f, "a chart, or import a playlist.", NULL);
 			return;
@@ -853,8 +908,12 @@ struct ChartDisplay : widget::OpaqueWidget {
 		{
 			const std::string& title = L.song.title;
 			const float room = box.size.x - 28.f;
-			if (nvgTextBounds(args.vg, 0, 0, title.c_str(), NULL, NULL) <= room)
-				nvgText(args.vg, 22.f, 13.f, title.c_str(), NULL);
+			// Where the mark goes: after the last line of the title, whichever line that is.
+			float caretX = 6.f, caretY = 13.f;
+			if (nvgTextBounds(args.vg, 0, 0, title.c_str(), NULL, NULL) <= room) {
+				nvgText(args.vg, 6.f, 13.f, title.c_str(), NULL);
+				caretX = 6.f + nvgTextBounds(args.vg, 0, 0, title.c_str(), NULL, NULL) + 4.f;
+			}
 			else {
 				// The last space that still fits, so the break falls between words.
 				size_t at = std::string::npos;
@@ -869,9 +928,13 @@ struct ChartDisplay : widget::OpaqueWidget {
 				}
 				if (at == std::string::npos)
 					at = title.size() / 2;
-				nvgText(args.vg, 22.f, 13.f, title.substr(0, at).c_str(), NULL);
-				nvgText(args.vg, 22.f, 27.f, title.substr(at + 1).c_str(), NULL);
+				nvgText(args.vg, 6.f, 13.f, title.substr(0, at).c_str(), NULL);
+				const std::string tail = title.substr(at + 1);
+				nvgText(args.vg, 6.f, 27.f, tail.c_str(), NULL);
+				caretX = 6.f + nvgTextBounds(args.vg, 0, 0, tail.c_str(), NULL, NULL) + 4.f;
+				caretY = 27.f;
 			}
+			drawCaret(args, body, caretX, caretY);
 		}
 
 		nvgFontFaceId(args.vg, body->handle);
@@ -882,34 +945,56 @@ struct ChartDisplay : widget::OpaqueWidget {
 			std::snprintf(head, sizeof(head), "%s %s  \u25be    %d/%d",
 				pitchClassNameIn(key.tonic, key), key.minor ? "minor" : "major",
 				L.song.beats, L.song.unit);
-			nvgText(args.vg, 22.f, 41.f, head, NULL);
+			nvgText(args.vg, 6.f, 41.f, head, NULL);
+		}
+
+		// THE NOTATION SWITCH'S CAPTION, drawn here rather than as a panel label: labels are
+		// painted before the displays and would be buried under this plate. The switch itself
+		// is a control placed by the layout and drawn on top, at the right of this same line.
+		{
+			nvgFontFaceId(args.vg, body->handle);
+			nvgFontSize(args.vg, 8.f);
+			nvgFillColor(args.vg, PANEL_INK);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+			// ONE LINE, TO THE RIGHT OF THE BUTTON, which sits in the plate's lower left. Two
+			// lines under it put the words where the button was.
+			nvgText(args.vg, 26.f, 94.f, "ROMAN NUMERALS", NULL);
 		}
 
 		const int at = module->playingBar.load();
 		if (at < 0 || at >= (int) L.chartBars.size())
 			return;
 
-		// What is playing, over TWO LINES: what is chosen, then where inside it. On one line
-		// it ran off the edge of the display as soon as a pass number appeared, and a line that
-		// only sometimes fits is a line that does not fit.
+		// WHAT IS PLAYING, ON ONE LINE. It was two — what is chosen, then where inside it —
+		// because on one line it ran off the edge as soon as a pass number appeared, and a line
+		// that only sometimes fits is a line that does not fit.
+		//
+		// The answer was not a second line but shorter words and a measured one. The section is
+		// its letter, the pass is a multiplication sign and a number, and if the result is still
+		// too wide for the plate it is set a size smaller rather than allowed to run off. That
+		// gives the line back to the chord underneath, which is what the display is for.
 		{
 			const int pass = module->playingPass.load();
-			nvgFontSize(args.vg, 9.5f);
-			nvgFillColor(args.vg, PANEL_INK);
-			if (module->section != 0) {
-				char line[32];
-				std::snprintf(line, sizeof(line), "section %c", module->section);
-				nvgText(args.vg, 6.f, 53.f, line, NULL);
-			}
+			char line[64];
+			// THE LETTER, A COLON, THE MEASURE. No words: "section" and "measure" are the only
+			// two things this line could be saying, and a colon says which is which. A whole
+			// chart has no letter, so it is the measure alone.
+			char where[8];
+			if (module->section != 0)
+				std::snprintf(where, sizeof(where), "%c:", module->section);
 			else
-				nvgText(args.vg, 6.f, 53.f, "whole chart", NULL);
-
-			char line[48];
+				where[0] = '\0';
 			if (pass > 1)
-				std::snprintf(line, sizeof(line), "measure %d   pass %d", at + 1, pass);
+				std::snprintf(line, sizeof(line), "%s%d \u00d7%d", where, at + 1, pass);
 			else
-				std::snprintf(line, sizeof(line), "measure %d", at + 1);
-			nvgText(args.vg, 6.f, 65.f, line, NULL);
+				std::snprintf(line, sizeof(line), "%s%d", where, at + 1);
+
+			nvgFillColor(args.vg, PANEL_INK);
+			nvgFontSize(args.vg, 9.5f);
+			const float room = box.size.x - 12.f;
+			if (nvgTextBounds(args.vg, 0, 0, line, NULL, NULL) > room)
+				nvgFontSize(args.vg, 8.f);
+			nvgText(args.vg, 6.f, 53.f, line, NULL);
 		}
 
 		// The chord sounding now, large — TAKEN FROM THE PLAYER, not from the bar. A measure
@@ -928,10 +1013,17 @@ struct ChartDisplay : widget::OpaqueWidget {
 			if (!text.empty()) {
 				nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle
 					: body->handle);
-				// A shade smaller than it was, to pay for the second line above it.
-				nvgFontSize(args.vg, 25.f);
+				// BACK TO ITS FULL SIZE, and higher up. It had been shrunk to pay for a second
+				// line that is no longer there, and then it hung off the bottom of a plate that
+				// had itself been made shorter. Down two millimetres net: three up, then one
+				// back, at the seventy-five pixels to the inch Rack draws at.
+				nvgFontSize(args.vg, 28.f);
 				nvgFillColor(args.vg, PANEL_INK);
-				nvgText(args.vg, 6.f, 88.f, text.c_str(), NULL);
+				nvgText(args.vg, 6.f, 72.f, text.c_str(), NULL);
+				// The same mark as the other two, at its own size rather than at the chord's —
+				// a triangle set in twenty-eight point would be a shape rather than a hint.
+				drawCaret(args, body,
+					6.f + nvgTextBounds(args.vg, 0, 0, text.c_str(), NULL, NULL) + 6.f, 72.f);
 			}
 		}
 	}
@@ -2147,6 +2239,15 @@ void ChartDisplay::onButton(const ButtonEvent& e) {
 			e.stopPropagating();
 			return;
 		}
+		// The whole of the plate below the key, which is the same gesture as the button sitting
+		// in its corner. The button is not reached here: it is a widget of its own, added after
+		// this one, so it takes the press before this ever sees it.
+		if (openBox().contains(e.pos)) {
+			chartWindowShow(module);
+			e.consume(this);
+			e.stopPropagating();
+			return;
+		}
 	}
 	OpaqueWidget::onButton(e);
 }
@@ -2258,17 +2359,9 @@ static Layout chartLayout() {
 		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
-	auto knob = [&](const std::string& key, float x, float y, int id,
-			const std::string& name, const char* style = "knob") {
-		Item i;
-		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = style;
-		L.items.push_back(i);
-		// CLOSE UNDER THE CONTROL. A knob is about ten millimetres across, so its edge is five
-		// below its centre; a name set nine below sat four clear of it and read as a caption
-		// for the panel rather than for the knob. Two millimetres is a label; four is a gap.
-		label(key + ".label", x, y + (std::string(style) == "knob.large" ? 9.5f : 7.f),
-			name, Panel::CENTRE, true, 0.f, key);
-	};
+	// NO KNOB HELPER ANY MORE. This panel has no knobs on it: the tempo was the last one and it
+	// is a readout now. Kept out rather than kept unused, so the next person does not wonder
+	// which control it belongs to.
 	auto jack = [&](const std::string& key, Item::Kind kind, float x, float y, int id,
 			const std::string& name, NVGcolor color, float size = 0.f) {
 		Item i;
@@ -2280,20 +2373,29 @@ static Layout chartLayout() {
 	// SIDE BY SIDE, the button on the left and the choice on the right, both in the same band
 	// of the panel. Two small controls stacked one above the other wasted the width the module
 	// had just been given.
-	Item open;
-	open.key = "p.open"; open.kind = Item::PARAM; open.id = ChartModule::P_OPEN;
-	open.style = "button"; open.x = 11.f; open.y = 54.f;
-	L.items.push_back(open);
-	label("p.open.label", 11.f, 60.f, "CHART", Panel::CENTRE, true, 0.f, "p.open");
+	// NO CHART BUTTON. It moved onto the display's corner and then stopped being needed at all:
+	// the whole plate below the key opens the window, and it lights under the pointer to say so.
+	// A button sitting on top of a larger target that does the same thing is a smaller target
+	// for the same job.
+	//
+	// P_OPEN IS STILL THERE, with no control on the panel. It costs nothing, it keeps the action
+	// in Rack's own module menu, and it stays mappable — which is worth more than the six
+	// millimetres the button occupied.
 
 	// How the chords are written: a vertical pair, names to the left, which is the shape a
 	// radio choice has everywhere else and reads down rather than across.
 	Item mode;
 	mode.key = "p.mode"; mode.kind = Item::PARAM; mode.id = ChartModule::P_CHORD_MODE;
-	mode.style = "lamps"; mode.x = 24.f; mode.y = 50.f;
-	mode.pitch = 8.f; mode.names = {"LETTER", "ROMAN"};
-	mode.horizontal = false;
-	mode.labelSide = Panel::LEFT;
+	// ONE BUTTON RATHER THAN TWO LAMPS. The choice is not between two equal things: letters are
+	// what a chart is written in and Roman numerals are the other way of reading it, so it is a
+	// state to turn on rather than a pair to choose between. Up is letters, down and lit is
+	// numerals.
+	//
+	// AT THE FOOT OF THE DISPLAY, on the LEFT, with its caption drawn by the display itself on
+	// one line beside it — panel labels are painted before the displays and would be buried
+	// under the plate, and two lines under the button put the words where the button was.
+	mode.style = "latch"; mode.diameter = 6.6f;
+	mode.x = 6.8f; mode.y = 42.2f;
 	L.items.push_back(mode);
 
 	// THE TWO DISPLAYS, in the layout rather than placed in code, so the editor can move them
@@ -2304,36 +2406,51 @@ static Layout chartLayout() {
 		i.x = x; i.y = y; i.w = w; i.h = h;
 		L.items.push_back(i);
 	};
-	display("d.readout", 2.5f, 13.f, 46.f, 35.f);
-	// NARROW, because it holds five characters at most — "300.0" — and eighteen millimetres of
-	// plate around eleven of number is a frame looking for something to hold.
-	// CENTRED ON THE KNOB IT BELONGS TO. Thirteen wide about a centre of 12.5, so its corner
-	// is at 6 — a display is placed by its corner, which is the arithmetic worth writing down
-	// rather than working out again next time.
-	display("d.bpm", 6.f, 67.75f, 13.f, 6.5f);
+	// TALLER, TO TAKE THE NOTATION SWITCH IN. The plate now runs to 49 millimetres, which is the
+	// chord with room under it for the two lamps — so the switch that decides how a chord is
+	// spelled sits under the chord it spells, and the whole band below the display is free for
+	// the transport.
+	display("d.readout", 2.5f, 10.5f, 46.f, 36.f);
 
-	// LARGER, AND LOWER. Tempo is the knob on this panel that gets turned, and it had the same
-	// body as everything else; it is the large one now, with the reading it sets written above
-	// it. Moved down to make that room.
-	knob("p.tempo", 12.5f, 83.5f, ChartModule::P_TEMPO, "TEMPO", "knob.large");
+	// A READOUT RATHER THAN A KNOB, like the seed. A tempo is a number people say out loud —
+	// "ninety-six" — and a knob is the wrong instrument for setting one: it takes a large
+	// control and a plate above it to show what the large control did, where the readout is
+	// both at once and a third of the size. Clicking it opens the list, so a tempo can be
+	// chosen rather than hunted for.
+	Item tempo;
+	tempo.key = "p.tempo"; tempo.kind = Item::PARAM; tempo.id = ChartModule::P_TEMPO;
+	tempo.style = "readout"; tempo.x = 37.5f; tempo.y = 53.5f; tempo.chars = 3; tempo.h = 6.5f;
+	L.items.push_back(tempo);
+	// BPM RATHER THAN TEMPO, because the plate shows a bare number and the caption is now the
+	// only thing saying what unit it is in.
+	label("p.tempo.label", 37.5f, 59.5f, "BPM", Panel::CENTRE, true, 0.f, "p.tempo");
 
 	Item play;
 	play.key = "p.play"; play.kind = Item::PARAM; play.id = ChartModule::P_PLAY;
-	play.style = "transport.play"; play.x = 30.f; play.y = 71.5f;
+	play.style = "transport.play"; play.x = 10.f; play.y = 53.5f;
 	L.items.push_back(play);
-	label("p.play.label", 30.f, 78.5f, "PLAY", Panel::CENTRE, true, 0.f, "p.play");
+	label("p.play.label", 10.f, 59.5f, "PLAY", Panel::CENTRE, true, 0.f, "p.play");
 
 	Item rewind;
 	rewind.key = "p.rewind"; rewind.kind = Item::PARAM; rewind.id = ChartModule::P_REWIND;
-	rewind.style = "transport.rewind"; rewind.x = 41.f; rewind.y = 71.5f;
+	rewind.style = "transport.rewind"; rewind.x = 20.5f; rewind.y = 53.5f;
 	L.items.push_back(rewind);
-	label("p.rewind.label", 41.f, 78.5f, "REWIND", Panel::CENTRE, true, 0.f, "p.rewind");
+	label("p.rewind.label", 20.5f, 59.5f, "REWIND", Panel::CENTRE, true, 0.f, "p.rewind");
+
+	// THE SEED, under the transport, because it belongs to the transport: it is what "play"
+	// means to everything downstream that rolls a die. Three figures, and a click opens the
+	// list so a number can be chosen rather than wound to.
+	Item seed;
+	seed.key = "p.seed"; seed.kind = Item::PARAM; seed.id = ChartModule::P_SEED;
+	seed.style = "readout"; seed.x = 13.f; seed.y = 90.5f; seed.chars = 3; seed.h = 4.f;
+	L.items.push_back(seed);
+	label("p.seed.label", 33.5f, 103.f, "SEED", Panel::CENTRE, true, 7.f, "p.seed");
 
 	Item lamp;
 	lamp.key = "lamp.beat"; lamp.kind = Item::LIGHT; lamp.id = ChartModule::L_BEAT;
 	// Beside the reading rather than out on its own: the number says the tempo and the lamp
 	// beats it.
-	lamp.x = 23.f; lamp.y = 71.f;
+	lamp.x = 3.5f; lamp.y = 53.f;
 	L.items.push_back(lamp);
 
 	// THREE ROWS. The inputs, then the chart as pitches, then the chart as scales — grouped so
@@ -2343,18 +2460,14 @@ static Layout chartLayout() {
 	// editor and squared up here: the two inputs down the left, and the chord beside the MPX
 	// bundle, since those two are the same harmony said in two ways. Under the chord are the
 	// two single notes taken from it — the bass to play, the root to quantize with.
-	jack("out.chord", Item::PORT_OUT, 27.5f, 89.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
-	jack("out.mpx", Item::PORT_OUT, 42.5f, 89.f, ChartModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 8.f);
+	jack("out.chord", Item::PORT_OUT, 26.f, 102.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
+	jack("out.mpx", Item::PORT_OUT, 41.f, 102.f, ChartModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 8.f);
 
 	jack("in.clock", Item::PORT_IN, 12.5f, 102.f, ChartModule::I_CLOCK, "clock", SIG_GATE);
-	jack("out.bass", Item::PORT_OUT, 27.5f, 102.f, ChartModule::O_BASS, "bass", SIG_PITCH);
-	jack("out.root", Item::PORT_OUT, 42.5f, 102.f, ChartModule::O_ROOT, "root", SIG_PITCH);
+	jack("out.bass", Item::PORT_OUT, 26.f, 115.f, ChartModule::O_BASS, "bass", SIG_PITCH);
+	jack("out.root", Item::PORT_OUT, 41.f, 115.f, ChartModule::O_ROOT, "root", SIG_PITCH);
 
 	jack("in.reset", Item::PORT_IN, 12.5f, 114.f, ChartModule::I_RESET, "reset", SIG_GATE);
-	jack("out.pesChord", Item::PORT_OUT, 27.5f, 114.f, ChartModule::O_PES_CHORD,
-		"PES chord", SIG_CV);
-	jack("out.pesScale", Item::PORT_OUT, 42.5f, 114.f, ChartModule::O_PES_SCALE,
-		"PES scale", SIG_CV);
 
 	L.bindOffsets();
 	return L;
@@ -2382,17 +2495,20 @@ struct ChartWidget : ModuleWidget {
 		layoutApplyUser("mpxChart", layout);
 		panel = new Panel;
 		addChild(panel);
-		layoutBuild(this, panel, layout);
 
-		// Made here, placed by the layout — so where they sit is one answer, in one file, and
-		// the editor can change it.
+		// THE DISPLAYS GO ON BEFORE THE CONTROLS, and the order is the whole reason they are
+		// here rather than after. Children are drawn in the order they were added, so a display
+		// added last is a plate laid over everything — which is fine until a control is meant to
+		// sit ON one, as the chart button does in the readout's corner. It was being drawn, and
+		// buried.
+		//
+		// Made here and placed by the layout, so where they sit is one answer in one file and
+		// the editor can move them like anything else.
 		ChartDisplay* display = new ChartDisplay;
 		display->module = module;
 		layoutPlaceDisplay(this, layout, "d.readout", display);
 
-		ChartTempoDisplay* bpm = new ChartTempoDisplay;
-		bpm->module = module;
-		layoutPlaceDisplay(this, layout, "d.bpm", bpm);
+		layoutBuild(this, panel, layout);
 	}
 
 	/** The songs of one playlist, behind a letter each, because a menu of fourteen hundred is

@@ -509,6 +509,9 @@ Readout::Readout() {
 
 /** ASKED OF THE PARAMETER, over every value it can take. Bounded, because a continuous parameter
 has no list to walk — for one of those the two ends are what decides the width. */
+/** The longest the parameter can print, in characters. Nothing uses it to SET a width any more —
+that is a layout's business — but it is the right answer when you want to choose one, so it stays
+for the panel editor to offer. */
 int Readout::widestValue() {
 	ParamQuantity* pq = getParamQuantity();
 	if (!pq)
@@ -520,41 +523,48 @@ int Readout::widestValue() {
 	if (steps >= 1 && steps <= 128) {
 		for (int i = 0; i <= steps; i++) {
 			pq->setValue(lo + (float) i);
-			longest = std::max(longest, (pq->getDisplayValueString() + pq->getUnit()).size());
+			longest = std::max(longest, pq->getDisplayValueString().size());
 		}
 	}
 	else {
 		for (int i = 0; i < 2; i++) {
 			pq->setValue(i ? hi : lo);
-			longest = std::max(longest, (pq->getDisplayValueString() + pq->getUnit()).size());
+			longest = std::max(longest, pq->getDisplayValueString().size());
 		}
 	}
 	pq->setValue(was);
 	return (int) longest;
 }
 
-void Readout::step() {
-	// Worked out once the parameter is there to ask, and again only if the answer changes.
-	if (chars <= 0) {
-		const int want = widestValue();
-		if (want != autoChars) {
-			autoChars = want;
-			setFigures(chars, figureMM);
-		}
-	}
-	ParamWidget::step();
-}
+/** NO STEP. A readout used to work its own width out here, once the parameter was there to ask
+about its range — which sounds helpful and is not. It meant the plate changed size AFTER it had
+been placed, so it never sat where the layout put it and a caption centred underneath came out
+crooked; and it meant a panel's arrangement depended on a parameter's range, so widening a range
+from 99 to 100 quietly moved a plate.
+
+A width is now a number in the layout, set once when the widget is made and never touched again.
+Predictable is worth more than clever here. */
 
 void Readout::setFigures(int n, float fig) {
+	// WHERE IT IS CENTRED IS KEPT, and this is the whole of a bug that looked like a caption
+	// problem. A plate grows from its top-left corner, and one asked to work its own width out
+	// cannot do that until the parameter is there to ask — which is after it has been placed. So
+	// it was placed centred at one figure wide and then widened to three, and its middle walked
+	// half a figure to the right of where the layout put it. The caption underneath, centred
+	// correctly all along, then looked offset to the left.
+	const math::Vec centre = box.pos.plus(box.size.div(2.f));
+
 	chars = std::max(0, n);
 	figureMM = std::fmax(1.f, fig);
 	// THE PLATE HUGS THE FIGURES: as tall as one and a millimetre, as wide as all of them and a
 	// millimetre. A figure of a given height needs a font size larger than itself, since a
 	// capital is only 0.7041 of the size it is set at, and a digit is 0.6011 of that size across.
 	const float perFigure = figureMM * FIGURE_ADVANCE / FIGURE_CAP;
-	const int wide = (chars > 0) ? chars : std::max(1, autoChars);
+	// Two if nobody said, which holds anything up to 99 and is the commonest case by far.
+	const int wide = (chars > 0) ? chars : 2;
 	box.size = mm2px(math::Vec((float) wide * perFigure + FIGURE_SURROUND,
 		figureMM + FIGURE_SURROUND));
+	box.pos = centre.minus(box.size.div(2.f));
 }
 
 void Readout::draw(const DrawArgs& args) {
@@ -580,9 +590,12 @@ void Readout::draw(const DrawArgs& args) {
 	std::shared_ptr<window::Font> face = titleFont();
 	if (!face || face->handle < 0)
 		return;
+	// THE NUMBER, WITHOUT ITS UNIT. The parameter keeps the unit — it belongs in the tooltip and
+	// in Rack's own menu, where "120" alone means nothing — but on a plate an inch wide the unit
+	// takes room from the figures and repeats what the caption underneath already says.
 	std::string text = "--";
 	if (ParamQuantity* pq = getParamQuantity())
-		text = pq->getDisplayValueString() + pq->getUnit();
+		text = pq->getDisplayValueString();
 	nvgFontFaceId(args.vg, face->handle);
 	// The size that makes a capital exactly as tall as the figure height asked for.
 	nvgFontSize(args.vg, mm2px(math::Vec(0, figureMM)).y / FIGURE_CAP);

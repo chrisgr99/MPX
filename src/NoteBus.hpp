@@ -91,6 +91,21 @@ struct Harmony {
 	uint8_t barUnit = 4;
 	int bar = 0;
 	float beatInBar = 0.f;
+
+	/** THE NUMBER EVERY RANDOM PROCESS DOWNSTREAM STARTS FROM.
+
+	A patch full of scatter and chance is unrepeatable unless everything in it agrees where its
+	randomness came from. This is that agreement: one number, set on the chart, carried by the
+	same cable as the beat, so a module has to be told nothing and asked nothing. */
+	uint32_t seed = 0;
+
+	/** HOW MANY TIMES THE MUSIC HAS GONE BACK TO THE TOP.
+
+	Counted rather than signalled, because this is state and not an event: a module that starts
+	listening halfway through a chorus can still tell which time round it is, where a pulse it
+	was not there to hear would have told it nothing. It changes on a rewind and on the chart
+	looping, and a module that wants each pass to differ folds it into the seed. */
+	uint32_t epoch = 0;
 };
 
 struct Bus {

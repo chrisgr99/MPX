@@ -406,14 +406,23 @@ static ParamWidget* makeParam(engine::Module* module, Item& item) {
 		r->box.pos = pos.minus(r->box.size.div(2.f));
 		return r;
 	}
-	if (item.style == "button")
-		return createParamCentered<DreamerButton>(pos, module, item.id);
+	if (item.style == "button" || item.style == "latch") {
+		ParamWidget* w = (item.style == "latch")
+			? (ParamWidget*) createParamCentered<DreamerLatch>(pos, module, item.id)
+			: (ParamWidget*) createParamCentered<DreamerButton>(pos, module, item.id);
+		// SIZED LIKE A KNOB IS. A button was one size for ever, which is fine until one of them
+		// has to sit in a corner of a display and be found there.
+		if (item.diameter > 0.f) {
+			const float px = mm2px(item.diameter);
+			w->box.pos = pos.minus(math::Vec(px, px).div(2.f));
+			w->box.size = math::Vec(px, px);
+		}
+		return w;
+	}
 	if (item.style == "transport.play")
 		return createParamCentered<DreamerPlay>(pos, module, item.id);
 	if (item.style == "transport.rewind")
 		return createParamCentered<DreamerRewind>(pos, module, item.id);
-	if (item.style == "latch")
-		return createParamCentered<DreamerLatch>(pos, module, item.id);
 	// A KNOB IS DRAWN RATHER THAN LOADED, so that its diameter is a number rather than a choice
 	// between the five widths Rack ships. The old style names still mean their old widths, so a
 	// layout written before this reads the same.
@@ -594,25 +603,30 @@ static math::Rect itemVisual(const Item& item) {
 			if (item.style == "readout") {
 				// The same arithmetic the widget uses, so the outline is the plate.
 				const float fig = item.h > 0.f ? item.h : 2.8f;
-				// Nought means the widget works its own width out from the parameter's range,
-				// which the layout has no way to ask about — so the widget's own box is the
-				// answer once there is one, and two figures until then.
-				if (item.chars <= 0 && item.widget) {
-					w = mm(item.widget->box.size.x);
-				}
-				else {
-					const int wide = item.chars > 0 ? item.chars : 2;
-					w = (float) wide * fig * FIGURE_ADVANCE / FIGURE_CAP + FIGURE_SURROUND;
-				}
+				// Worked out here rather than read off the widget, because the width is a number
+				// in the layout now and no longer changes once the plate exists. Nought means
+				// two, as it does in the widget.
+				const int wide = item.chars > 0 ? item.chars : 2;
+				w = (float) wide * fig * FIGURE_ADVANCE / FIGURE_CAP + FIGURE_SURROUND;
 				h = fig + FIGURE_SURROUND;
 				return math::Rect(math::Vec(item.x - w / 2.f, item.y - h / 2.f),
 					math::Vec(w, h));
 			}
 			if (item.style == "button" || item.style == "latch"
 				|| item.style == "transport.play" || item.style == "transport.rewind")
-				w = h = 6.6f;
-			else
+				w = h = item.diameter > 0.f ? item.diameter : 6.6f;
+			else {
 				w = h = item.diameter > 0.f ? item.diameter : knobWidthMM(item.style);
+				// A KNOB WEARING A SCALE IS BIGGER THAN ITS METAL, and the scale is part of the
+				// control rather than decoration near it — you line a knob up by where its
+				// numbers fall. The same arithmetic layoutRefreshPanel lays the scale out with:
+				// the numbers are centred 2.6 mm past the metal's edge, and a number reaches
+				// half its own height beyond that.
+				if (item.ticks > 0) {
+					const float textSize = item.nameSize > 0.f ? item.nameSize : 6.f;
+					w = h = w + 2.f * (2.6f + textHeightMM(textSize) / 2.f);
+				}
+			}
 			break;
 		case Item::PORT_IN:
 		case Item::PORT_OUT:
@@ -686,15 +700,23 @@ static void placeLabel(const Item& owner, Item& lab, int place, float gap) {
 }
 
 
-/** How big each kind of thing is, for hit-testing. Labels are measured from their text, the
-rest are the size of the graphic Rack draws. */
+/** How big each kind of thing is, FOR HIT-TESTING, which is a different question from how big
+it looks.
+
+A target wants a little air round it — a control you have to hit exactly is a control you miss —
+but only a little. This used to round every button up to nine millimetres whatever its real size,
+and to give a knob with a scale six millimetres of margin, which was a target half as wide again
+as the thing inside it: two controls near each other and the wrong one answered.
+
+A millimetre and a bit, measured from the METAL rather than from the scale around it. The scale
+belongs to the outline, which is about seeing; a hand reaching for a knob reaches for the knob. */
 static math::Rect itemRect(const Item& item) {
 	float w = 8.f, h = 8.f;
 	switch (item.kind) {
 		case Item::PARAM:
 			if (item.style == "button" || item.style == "latch"
 				|| item.style == "transport.play" || item.style == "transport.rewind") {
-				w = h = 9.f;
+				w = h = (item.diameter > 0.f ? item.diameter : 6.6f) + 1.2f;
 			}
 			else if (item.style == "lamps") {
 				// Exactly what the widget gives itself, so what can be clicked is what can be
@@ -703,9 +725,10 @@ static math::Rect itemRect(const Item& item) {
 				return v;
 			}
 			else {
-				// The metal, and its marks where it has them, with a little air to grab by.
-				const math::Rect v = itemVisual(item);
-				w = h = v.size.x + (item.ticks > 0 ? 6.f : 1.6f);
+				// The metal with a little air to grab by, and NOT the scale: itemVisual now
+				// includes a knob's numbers, and grabbing at where a number falls is grabbing
+				// several millimetres from anything you can see to press.
+				w = h = (item.diameter > 0.f ? item.diameter : knobWidthMM(item.style)) + 1.6f;
 			}
 			break;
 		case Item::PORT_IN:
@@ -1216,8 +1239,17 @@ struct PanelEditor : widget::OpaqueWidget {
 		widget::OpaqueWidget::draw(args);
 
 		// Every item outlined, so what can be moved is visible rather than discovered.
+		//
+		// THE VISIBLE SIZE, NOT THE GRABBABLE ONE. These were drawn from the hit rectangle,
+		// which is deliberately bigger than the thing it belongs to — a knob with marks carries
+		// six millimetres of air, a jack more than a millimetre — because a generous target is
+		// easier to catch. Drawn, that padding reads as the item being that size, and lining a
+		// control up against a box that is not its edge is guesswork.
+		//
+		// So the outline is the item and the target is still the target. Only the drawing
+		// changes here; what answers a click is untouched.
 		for (int i = 0; i < (int) layout->items.size(); i++) {
-			const math::Rect r = itemRect(layout->items[i]);
+			const math::Rect r = itemVisual(layout->items[i]);
 			const math::Vec p = mm2px(r.pos);
 			const math::Vec s = mm2px(r.size);
 			nvgBeginPath(args.vg);

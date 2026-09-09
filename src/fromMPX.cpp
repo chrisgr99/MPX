@@ -593,7 +593,7 @@ static Layout fromMPXLayout() {
 	// it for the times when the next one along is what is wanted.
 	Item poly;
 	poly.key = "p.poly"; poly.kind = Item::PARAM; poly.id = VoiceModule::P_POLY;
-	poly.style = "readout"; poly.x = 12.5f; poly.y = 42.5f; poly.chars = 0; poly.h = 8.f;
+	poly.style = "readout"; poly.x = 12.5f; poly.y = 42.5f; poly.chars = 2; poly.h = 8.f;
 	L.items.push_back(poly);
 	label("p.poly.label", 12.5f, 50.2f, "POLYPHONY", Panel::CENTRE, true, 0.f, "p.poly");
 

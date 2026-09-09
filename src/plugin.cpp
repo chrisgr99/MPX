@@ -13,4 +13,6 @@ void init(Plugin* p) {
 	p->addModel(modelChart);
 	p->addModel(modelMpxComp);
 	p->addModel(modelPolyToStereo);
+	p->addModel(modelMpxArp);
+	p->addModel(modelMpxScatter);
 }

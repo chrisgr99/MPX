@@ -12,6 +12,8 @@ extern Model* modelMonitor;
 extern Model* modelChart;
 extern Model* modelMpxComp;
 extern Model* modelPolyToStereo;
+extern Model* modelMpxArp;
+extern Model* modelMpxScatter;
 
 namespace px {
 
@@ -175,15 +177,11 @@ struct Readout : ParamWidget {
 	/** HOW MANY FIGURES IT HAS TO HOLD, which is what sets its width — a plate wide enough for
 	four when it will only ever show two is a hole in the panel.
 
-	NOUGHT WORKS IT OUT, and that is the ordinary case. The parameter knows its own range, so it
-	knows the longest thing it will ever be asked to show; asking a person to count the figures
-	is asking them to get it wrong, and a number typed here too large puts a plate through the
-	side of the module. Set it only to hold a width that would otherwise change as the value
-	does. */
+	SET IT. Nought means two, which holds anything up to 99. It used to mean "work it out from the
+	parameter's range", which had to happen after the widget was placed and therefore moved it —
+	and it tied a panel's arrangement to a parameter's range, so widening a range from 99 to 100
+	shifted a plate. A width is a decision about the panel, so the panel makes it. */
 	int chars = 0;
-	/** What the range turned out to need, so the width is worked out once rather than every
-	frame. */
-	int autoChars = 0;
 	/** Wheel gathered but not yet spent. A trackpad sends a great many small movements where a
 	wheel sends one large one, and adding them up rather than counting them means both behave
 	the same. */
@@ -196,7 +194,12 @@ struct Readout : ParamWidget {
 	void setFigures(int chars, float figureMM);
 	/** The longest display string the parameter can produce, in characters. */
 	int widestValue();
-	void step() override;
+	/** NO step(). It had one, to work its width out from the parameter's range once the
+	parameter existed; the width is a number in the layout now and never changes after the plate
+	is made. Declaring it here without defining it anywhere is what stopped the whole plugin
+	loading: the vtable is emitted beside the first virtual function that has a body, so a
+	declaration with nothing behind it left px::Readout with no vtable at all, and Rack refused
+	the library with "symbol not found". The compiler says nothing — the link is done by dlopen. */
 	void draw(const DrawArgs& args) override;
 	void onButton(const ButtonEvent& e) override;
 	void onHoverScroll(const HoverScrollEvent& e) override;
