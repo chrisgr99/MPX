@@ -358,15 +358,14 @@ struct ChartModule : Module, NoteSource {
 		playingIndex = best;
 	}
 
-	/** Back to the top AND STOPPED, which is what pressing rewind means on any transport: you
-	are not asking to hear the first bar go by, you are putting the tape back to the start.
+	/** Back to the top AND PLAYING, which is what loading a chart should do.
 
-	The reset JACK is a different thing and does not stop. It is a sync signal — something in
-	the patch saying "here is the top of the form" — and a clock that reset the music and then
-	silenced it would be useless. */
-	void rewindAndStop() {
-		params[P_PLAY].setValue(0.f);
+	A chart is loaded in order to hear it. It used to arrive stopped, on the reasoning that
+	loading is the start of reading rather than of playing — true of a score on a stand and not
+	true here, where the reason you chose a song is that you want it. */
+	void rewindAndPlay() {
 		rewind();
+		params[P_PLAY].setValue(1.f);
 	}
 
 	/** Back to the top. Safe from the drawing thread: the audio thread reads these each block
@@ -417,11 +416,11 @@ struct ChartModule : Module, NoteSource {
 		haveSong.store(!loaded[spare].playback.timeline.empty());
 		// A new song knows nothing of the old one's sections.
 		section = 0;
-		// AND IT ARRIVES STOPPED, AT THE TOP. A chart swapped under a running transport
-		// carries on from wherever the beat count happened to be, in the middle of a piece
-		// nobody has looked at yet — and the harmony it publishes changes key and chord in the
-		// same instant. Loading a chart is the start of reading it, not of playing it.
-		rewindAndStop();
+		// AND IT ARRIVES AT THE TOP AND PLAYING. A chart swapped under a running transport would
+		// otherwise carry on from wherever the beat count happened to be, in the middle of a
+		// piece nobody has looked at yet, so the rewind is not optional. What is optional is
+		// stopping, and stopping was wrong: you chose the song because you want to hear it.
+		rewindAndPlay();
 	}
 
 	const Loaded& current() {
@@ -653,8 +652,15 @@ struct ChartModule : Module, NoteSource {
 
 		if (resetTrigger.process(inputs[I_RESET].getVoltage(), 0.1f, 1.f))
 			rewind();
+		// REWIND REWINDS, AND NOTHING ELSE. It used to stop as well, on the model of a tape
+		// machine — but a chart is not a tape, and what you want from the top of the form while
+		// a band is playing is the top of the form, not silence. Playing carries on from there;
+		// stopped stays stopped, at the top, ready.
+		//
+		// And "the top" is the top of whatever is CHOSEN: with a section selected the timeline
+		// holds only that section, so beat nought is its first bar rather than the chart's.
 		if (rewindTrigger.process(params[P_REWIND].getValue(), 0.1f, 1.f))
-			rewindAndStop();
+			rewind();
 
 		// STOPPED MEANS STOPPED, whatever the clock is doing. It is a transport rather than a
 		// mute: nothing advances while it is off.
@@ -1173,35 +1179,30 @@ struct ChartWindow : widget::OpaqueWidget {
 		box.pos = math::Vec(120.f, 80.f);
 	}
 
-	/** OPENED CLEAR OF THE MODULE THAT OPENED IT.
+	/** OPENED BESIDE THE MODULE THAT OPENED IT: its left edge on the module's right edge, its
+	top on the module's top.
 
-	The window is a child of the scene and therefore over the rack, and at a comfortable zoom a
-	ten HP module is wide enough that a window in the default place lands on top of it. Then the
-	button you just pressed is underneath the thing it opened, and pressing it again — to close
-	the chart, to choose another song, to stop the transport — reaches the window instead.
+	It used to try a list of berths — a corner, then another corner, then the middle — and take
+	the first that did not overlap the module. That leaves the module visible, which was the
+	point, but it puts the window a long way from the thing it belongs to and in a different
+	place depending on where the module happens to sit. Next to it is where a window belongs and
+	is the same answer every time.
 
-	So the first time it opens it takes the first of a few berths that leaves the module visible.
 	Once you have dragged it somewhere yourself, that is where it opens: a position you chose is
 	worth more than one that was worked out. */
-	void placeClearOf(math::Rect avoid) {
+	void placeBeside(math::Rect module) {
 		const math::Vec scene = APP->scene->box.size;
-		const float m = 40.f;
-		const math::Vec spots[5] = {
-			math::Vec(120.f, 80.f),
-			math::Vec(scene.x - box.size.x - m, 80.f),
-			math::Vec(120.f, scene.y - box.size.y - m),
-			math::Vec(scene.x - box.size.x - m, scene.y - box.size.y - m),
-			math::Vec((scene.x - box.size.x) / 2.f, (scene.y - box.size.y) / 2.f),
-		};
-		for (int i = 0; i < 5; i++) {
-			const math::Rect there(spots[i], box.size);
-			if (avoid.size.x <= 0.f || !there.intersects(avoid)) {
-				box.pos = spots[i];
-				return;
-			}
-		}
-		// Nowhere is clear — a very small window, or a module filling it. The default will do;
-		// the window can be dragged.
+		math::Vec at(module.pos.x + module.size.x, module.pos.y);
+
+		// KEPT ON SCREEN. A module near the right edge would otherwise open its window off it,
+		// and a window you have to find is worse than one that is not quite where the rule says.
+		// Put on the other side if it does not fit, and pulled back from the edge if it fits
+		// nowhere.
+		if (at.x + box.size.x > scene.x)
+			at.x = module.pos.x - box.size.x;
+		at.x = math::clamp(at.x, 0.f, std::fmax(0.f, scene.x - box.size.x));
+		at.y = math::clamp(at.y, 0.f, std::fmax(0.f, scene.y - box.size.y));
+		box.pos = at;
 	}
 
 	/** THE CHART'S GEOMETRY, worked out in one place.
@@ -1289,6 +1290,17 @@ struct ChartWindow : widget::OpaqueWidget {
 
 	float headTop() {
 		return body().pos.y + (headHeight() - TBTN) / 2.f;
+	}
+
+	/** THE BAND ALONG THE TOP that holds the transport, and nothing below it.
+
+	The transport's buttons are tested before the music is, so anything of theirs that reaches
+	past the head takes a press meant for the chart. That is not hypothetical: the chart scrolls
+	UNDER the head, so the first section letter slides beneath the play button and could not be
+	pressed at all. Asking which side of the line the press fell on settles it once, for every
+	control on either side, rather than by trimming boxes until they happen not to meet. */
+	bool inHead(math::Vec pos) {
+		return pos.y < body().pos.y + headHeight();
 	}
 
 	math::Rect playBox() {
@@ -1440,14 +1452,14 @@ struct ChartWindow : widget::OpaqueWidget {
 				claim(e, this);
 				return;
 			}
-			if (module && playBox().contains(e.pos)) {
+			if (module && inHead(e.pos) && playBox().contains(e.pos)) {
 				Param& play = module->params[ChartModule::P_PLAY];
 				play.setValue(play.getValue() > 0.5f ? 0.f : 1.f);
 				claim(e, this);
 				return;
 			}
-			if (module && rewindBox().contains(e.pos)) {
-				module->rewindAndStop();
+			if (module && inHead(e.pos) && rewindBox().contains(e.pos)) {
+				module->rewind();
 				claim(e, this);
 				return;
 			}
@@ -1456,6 +1468,12 @@ struct ChartWindow : widget::OpaqueWidget {
 				claim(e, this);
 				return;
 			}
+			// Below the head from here on: the music, and nothing the transport can claim.
+			if (inHead(e.pos)) {
+				claim(e, this);
+				return;
+			}
+
 			// A section letter chooses that section, and choosing the one already chosen puts
 			// the whole chart back.
 			const char letter = letterAt(e.pos);
@@ -2298,7 +2316,7 @@ void chartWindowShow(ChartModule* module) {
 		gChartWindow->box.pos = gChartWhere;
 	}
 	else if (app::ModuleWidget* mw = APP->scene->rack->getModule(module->id)) {
-		gChartWindow->placeClearOf(math::Rect(mw->getAbsoluteOffset(math::Vec()),
+		gChartWindow->placeBeside(math::Rect(mw->getAbsoluteOffset(math::Vec()),
 			mw->box.size.mult(mw->getAbsoluteZoom())));
 	}
 	APP->scene->addChild(gChartWindow);

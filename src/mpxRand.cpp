@@ -1,18 +1,18 @@
-/** mpxScatter — one lane of an MPX cable, made to vary.
+/** mpxRand — one attribute of an MPX cable's notes, made to vary.
 
 WHAT IT IS. Notes go in, the same notes come out with one thing about them changed by a random
 process you choose. It is not a humaniser, though it will do that at low settings: a scatter at
 full depth on duration turns an even arpeggio into something between a stutter and a drone, and
 that is the point of it as much as realism is.
 
-ONE LANE PER INSTANCE, AND THAT IS THE DESIGN RATHER THAN A LIMITATION. A single module doing
-four lanes at once would drive them from one generator, so the level would rise exactly as the
+ONE ATTRIBUTE PER INSTANCE, AND THAT IS THE DESIGN RATHER THAN A LIMITATION. A single module doing
+four attributes at once would drive them from one generator, so the level would rise exactly as the
 duration lengthened and every note would be long-and-loud or short-and-quiet. Four narrow modules
-in a row have four generators, and the lanes drift against each other, which is what makes it
+in a row have four generators, and the attributes drift against each other, which is what makes it
 sound like several things happening rather than one.
 
-CHAINED, because every MPX module already forwards what it does not touch. A scatter passes the
-harmony and every lane but its own straight through, so a row of them is a patch.
+CHAINED, because every MPX module already forwards what it does not touch. It passes the
+harmony and every attribute but its own straight through, so a row of them is a patch.
 
 THE GENERATOR RUNS ON THE MUSIC, NOT ON THE CLOCK. It is a function of the seed on the cable and
 the beat the chart has reached, sampled when a note starts — so a drift measured in beats gives
@@ -23,8 +23,8 @@ randomness never depended on anything else.
 DURATION IS THE ONE THAT NEEDS MACHINERY. A note ends twice over — the duration it was sent with,
 and the note-off that follows it — and whichever comes first wins. Rewriting the duration alone
 could therefore only ever make notes SHORTER; the source's note-off would still cut a lengthened
-one at its original end. So for that lane this module takes ownership of the note's end: it
-swallows the source's note-off and sends its own when its own clock says so. Every other lane is
+one at its original end. So for that attribute this module takes ownership of the note's end: it
+swallows the source's note-off and sends its own when its own clock says so. Every other attribute is
 a rewrite on the note-on with no state at all.
 */
 #include "plugin.hpp"
@@ -37,20 +37,20 @@ a rewrite on the note-on with no state at all.
 namespace px {
 
 
-/** WHICH LANE, ordered by how often you would reach for it.
+/** WHICH ATTRIBUTE, ordered by how often you would reach for it.
 
-NAMED APART FROM NoteBus's OWN Lane, which is the bend, pressure and timbre a note carries.
-Two different ideas were both called Lane and the compiler said so. */
-enum ScatterLane {
-	SCAT_DURATION,
-	SCAT_LEVEL,
-	SCAT_PAN,
-	SCAT_TIMING,
-	SCAT_DETUNE,
-	NUM_SCATTER_LANES,
+NAMED FOR WHAT IT IS. The bus calls bend, pressure and timbre "lanes" internally; that word is
+too general to put in front of anybody, and these are attributes of a note. */
+enum NoteAttribute {
+	ATTR_DURATION,
+	ATTR_LEVEL,
+	ATTR_PAN,
+	ATTR_TIMING,
+	ATTR_DETUNE,
+	NUM_ATTRIBUTES,
 };
 
-static const char* SCAT_LANE_NAMES[NUM_SCATTER_LANES] =
+static const char* ATTRIBUTE_NAMES[NUM_ATTRIBUTES] =
 	{"Duration", "Level", "Pan", "Timing", "Detune"};
 
 /** THE SHAPE OF THE RANDOMNESS, which is really a question about how much each note resembles
@@ -95,9 +95,9 @@ static const int MAX_HELD = 32;
 static const int MAX_PENDING = 64;
 
 
-struct ScatterModule : Module, NoteSource, NoteSink {
+struct RandModule : Module, NoteSource, NoteSink {
 	enum ParamId {
-		P_LANE,
+		P_ATTRIBUTE,
 		P_SHAPE,
 		P_AMOUNT,
 		P_RATE,
@@ -120,11 +120,11 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 		NUM_LIGHTS
 	};
 
-	ScatterModule() {
+	RandModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configSwitch(P_LANE, 0.f, (float) (NUM_SCATTER_LANES - 1), 0.f, "Lane",
-			{SCAT_LANE_NAMES[0], SCAT_LANE_NAMES[1], SCAT_LANE_NAMES[2],
-			SCAT_LANE_NAMES[3], SCAT_LANE_NAMES[4]});
+		configSwitch(P_ATTRIBUTE, 0.f, (float) (NUM_ATTRIBUTES - 1), 0.f, "Attribute",
+			{ATTRIBUTE_NAMES[0], ATTRIBUTE_NAMES[1], ATTRIBUTE_NAMES[2],
+			ATTRIBUTE_NAMES[3], ATTRIBUTE_NAMES[4]});
 		configSwitch(P_SHAPE, 0.f, (float) (NUM_SHAPES - 1), 0.f, "Shape",
 			{SHAPE_NAMES[0], SHAPE_NAMES[1], SHAPE_NAMES[2]});
 		// NOUGHT IS A BYPASS, exactly. Not nearly: at nought the events that come out are the
@@ -145,7 +145,7 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 		slot = busClaim(&generation);
 	}
 
-	~ScatterModule() {
+	~RandModule() {
 		busRelease(slot);
 	}
 
@@ -387,7 +387,7 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 	}
 
 	/** ONE EVENT, on its way through. */
-	void pass(Event e, int lane, float amount, float r) {
+	void pass(Event e, int attribute, float amount, float r) {
 		const bool isOn = (e.kind == Event::ON);
 
 		// A DEPTH OF NOUGHT IS A WIRE. Nothing is sampled, nothing is adopted, nothing is held —
@@ -397,8 +397,8 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 			return;
 		}
 
-		switch (lane) {
-			case SCAT_DURATION: {
+		switch (attribute) {
+			case ATTR_DURATION: {
 				if (isOn) {
 					e.duration = math::clamp(
 						e.duration * std::pow(2.f, r * amount * DURATION_OCTAVES),
@@ -417,7 +417,7 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 				send(e);
 				return;
 			}
-			case SCAT_TIMING: {
+			case ATTR_TIMING: {
 				if (isOn) {
 					// LATE ONLY. Half of the generator's range would be early, and nothing can
 					// be sent before it happens, so the range is folded rather than clipped —
@@ -441,11 +441,11 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 					send(e);
 					return;
 				}
-				if (lane == SCAT_LEVEL)
+				if (attribute == ATTR_LEVEL)
 					e.level = math::clamp(e.level * (1.f + r * amount * LEVEL_DEPTH), 0.f, 1.f);
-				else if (lane == SCAT_PAN)
+				else if (attribute == ATTR_PAN)
 					e.pan = math::clamp(e.pan + r * amount * PAN_DEPTH, -1.f, 1.f);
-				else if (lane == SCAT_DETUNE)
+				else if (attribute == ATTR_DETUNE)
 					e.pitch += r * amount * DETUNE_SEMITONES / 12.f;
 				send(e);
 				lightFade = 1.f;
@@ -465,7 +465,7 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 		outputs[O_MPX].setChannels(1);
 		outputs[O_MPX].setVoltage(0.f);
 
-		const int lane = (int) std::round(params[P_LANE].getValue());
+		const int attribute = (int) std::round(params[P_ATTRIBUTE].getValue());
 		const int shape = (int) std::round(params[P_SHAPE].getValue());
 		const float amount = params[P_AMOUNT].getValue();
 		const float rate = params[P_RATE].getValue();
@@ -490,13 +490,13 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 		Event e;
 		while (reader.next(e)) {
 			// SAMPLED ONCE PER NOTE, here, so the note counter advances for every note whether
-			// or not this lane happens to use it.
+			// or not this attribute happens to use it.
 			float r = 0.f;
 			if (e.kind == Event::ON) {
 				r = sample(shape, seed, beat, rate, noteIndex);
 				noteIndex++;
 			}
-			pass(e, lane, amount, r);
+			pass(e, attribute, amount, r);
 		}
 
 		tick(args.sampleTime);
@@ -514,10 +514,10 @@ struct ScatterModule : Module, NoteSource, NoteSink {
 };
 
 
-static Layout scatterLayout() {
+static Layout randLayout() {
 	Layout L;
 	L.hp = 6.f;
-	L.title = "mpxScatter";
+	L.title = "mpxRand";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	static const float NAME_HALF = 1.22f;
@@ -561,24 +561,24 @@ static Layout scatterLayout() {
 
 	// SIX HP IS 30.48 MM. Narrow enough to put four of them in a row without thinking about it,
 	// wide enough that the lane names are words rather than abbreviations.
-	radio("p.lane", 3.f, 24.f, ScatterModule::P_LANE, "LANE",
+	radio("p.attribute", 3.f, 24.f, RandModule::P_ATTRIBUTE, "ATTRIBUTE",
 		{"DUR", "LEVEL", "PAN", "TIME", "TUNE"}, 4.6f);
-	radio("p.shape", 3.f, 54.f, ScatterModule::P_SHAPE, "SHAPE",
+	radio("p.shape", 3.f, 54.f, RandModule::P_SHAPE, "SHAPE",
 		{"WHITE", "WALK", "PERLIN"}, 4.6f);
 	// EACH PASS OF THE FORM: the same again, or different. Beside the shape because it is a
 	// question about the same thing — what the randomness does over time rather than within a
 	// bar — and next to nothing else on the panel.
-	radio("p.evolve", 3.f, 76.f, ScatterModule::P_EVOLVE, "PASS",
+	radio("p.evolve", 3.f, 76.f, RandModule::P_EVOLVE, "PASS",
 		{"REPEAT", "EVOLVE"}, 4.6f);
 
-	knob("p.amount", 15.2f, 94.f, ScatterModule::P_AMOUNT, "DEPTH");
-	knob("p.rate", 15.2f, 108.f, ScatterModule::P_RATE, "RATE");
+	knob("p.amount", 15.2f, 94.f, RandModule::P_AMOUNT, "DEPTH");
+	knob("p.rate", 15.2f, 108.f, RandModule::P_RATE, "RATE");
 
-	jack("in.mpx", Item::PORT_IN, 8.f, 118.f, ScatterModule::I_MPX, "mpx\nIN");
-	jack("out.mpx", Item::PORT_OUT, 22.4f, 118.f, ScatterModule::O_MPX, "mpx\nOUT");
+	jack("in.mpx", Item::PORT_IN, 8.f, 118.f, RandModule::I_MPX, "mpx\nIN");
+	jack("out.mpx", Item::PORT_OUT, 22.4f, 118.f, RandModule::O_MPX, "mpx\nOUT");
 
 	Item lamp;
-	lamp.key = "lamp.act"; lamp.kind = Item::LIGHT; lamp.id = ScatterModule::L_ACT;
+	lamp.key = "lamp.act"; lamp.kind = Item::LIGHT; lamp.id = RandModule::L_ACT;
 	lamp.x = 26.f; lamp.y = 70.f;
 	L.items.push_back(lamp);
 
@@ -587,32 +587,32 @@ static Layout scatterLayout() {
 }
 
 
-struct ScatterWidget : ModuleWidget {
+struct RandWidget : ModuleWidget {
 	Panel* panel = NULL;
 	Layout layout;
 
-	ScatterWidget(ScatterModule* module) {
+	RandWidget(RandModule* module) {
 		setModule(module);
-		layout = scatterLayout();
-		layoutApplyUser("mpxScatter", layout);
+		layout = randLayout();
+		layoutApplyUser("mpxRand", layout);
 		panel = new Panel;
 		addChild(panel);
 		layoutBuild(this, panel, layout);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
-		layoutAppendMenu(menu, this, panel, &layout, "mpxScatter");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxRand");
 	}
 
 	void step() override {
 		ModuleWidget::step();
-		ScatterModule* s = dynamic_cast<ScatterModule*>(module);
+		RandModule* s = dynamic_cast<RandModule*>(module);
 		if (!s)
 			return;
 		int slots[MAX_UPSTREAM];
 		uint32_t generations[MAX_UPSTREAM];
 		int n = 0;
-		if (PortWidget* port = getInput(ScatterModule::I_MPX)) {
+		if (PortWidget* port = getInput(RandModule::I_MPX)) {
 			for (CableWidget* cw : APP->scene->rack->getCompleteCablesOnPort(port)) {
 				if (n >= MAX_UPSTREAM)
 					break;
@@ -631,7 +631,7 @@ struct ScatterWidget : ModuleWidget {
 		}
 		s->link(slots, generations, n);
 
-		if (PortWidget* out = getOutput(ScatterModule::O_MPX)) {
+		if (PortWidget* out = getOutput(RandModule::O_MPX)) {
 			for (CableWidget* cw : APP->scene->rack->getCompleteCablesOnPort(out)) {
 				engine::Cable* cable = cw->getCable();
 				if (cable && isMPXInput(cable->inputModule, cable->inputId))
@@ -645,4 +645,4 @@ struct ScatterWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelMpxScatter = createModel<px::ScatterModule, px::ScatterWidget>("mpxScatter");
+Model* modelMpxRand = createModel<px::RandModule, px::RandWidget>("mpxRand");

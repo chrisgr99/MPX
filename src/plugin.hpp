@@ -13,7 +13,7 @@ extern Model* modelChart;
 extern Model* modelMpxComp;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
-extern Model* modelMpxScatter;
+extern Model* modelMpxRand;
 
 namespace px {
 

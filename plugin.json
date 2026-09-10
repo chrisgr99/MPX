@@ -12,7 +12,7 @@
   "manualUrl": "https://github.com/chrisgr99/MPX#readme",
   "sourceUrl": "https://github.com/chrisgr99/MPX",
   "donateUrl": "",
-  "changelogUrl": "https://github.com/chrisgr99/MPX/releases",
+  "changelogUrl": "https://github.com/chrisgr99/MPX/blob/main/CHANGELOG.md",
   "modules": [
     {
       "slug": "toMPX",
@@ -107,9 +107,9 @@
       ]
     },
     {
-      "slug": "mpxScatter",
-      "name": "mpxScatter",
-      "description": "Varies one lane of an MPX cable — duration, level, pan, timing or tuning — by white, walk or Perlin randomness",
+      "slug": "mpxRand",
+      "name": "mpxRand",
+      "description": "Varies one attribute of an MPX cable's notes — duration, level, pan, timing or tuning — by white, walk or Perlin randomness",
       "tags": [
         "Random",
         "Polyphonic",

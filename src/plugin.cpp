@@ -14,5 +14,5 @@ void init(Plugin* p) {
 	p->addModel(modelMpxComp);
 	p->addModel(modelPolyToStereo);
 	p->addModel(modelMpxArp);
-	p->addModel(modelMpxScatter);
+	p->addModel(modelMpxRand);
 }

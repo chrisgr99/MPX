@@ -1,0 +1,197 @@
+# Builds the plugin for every platform VCV Rack runs on, and attaches the packages to a
+# release when a version tag is pushed.
+#
+# WHY THIS EXISTS. A plugin built on one machine runs on one architecture. This produces all
+# four without owning the hardware.
+#
+# The two Macs build on Mac runners, since there is no container for macOS. Linux and Windows are
+# both cross-compiled inside the VCV plugin toolchain container, which is the process Rack's own
+# library uses — and for Linux it is the only way to produce a plugin that loads on a system
+# older than GitHub's runners.
+#
+# It is also the only test that the source compiles anywhere but macOS.
+#
+#   Push a tag:   git tag v2.0.0 && git push origin v2.0.0
+#   Or run it by hand from the Actions tab, which builds without releasing.
+
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  # Pinned deliberately. An SDK that changes under the build is a variable nobody asked for;
+  # raise this when you have tested against the new one.
+  RACK_SDK_VERSION: 2.6.4
+
+jobs:
+  # The two Macs, each on its own hardware. There is no container for macOS, and no need: a Mac
+  # plugin is loaded by a Rack built against the same system libraries.
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One platform failing should not hide the results of the others.
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: mac-arm64, runner: macos-14 }
+          - { arch: mac-x64, runner: macos-15-intel }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools (macOS)
+        run: brew install jq zstd
+
+      - name: Download the Rack SDK
+        shell: bash
+        run: |
+          curl -fL -o rack-sdk.zip \
+            "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip"
+          unzip -q rack-sdk.zip
+
+      - name: Build
+        run: RACK_DIR=$PWD/Rack-SDK make dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arch }}
+          path: dist/*.vcvplugin
+
+  # ---------------------------------------------------------------------------------------
+  # LINUX AND WINDOWS, BUILT INSIDE THE VCV PLUGIN TOOLCHAIN rather than on runners.
+  #
+  # A shared library records the oldest glibc it can run against, and that is decided by the
+  # glibc it was BUILT against — not by anything we write. Built on GitHub's Ubuntu, a plugin
+  # demands symbols from a glibc newer than a great many people run, and will not load at all.
+  #
+  # The toolchain container links against a deliberately ancient glibc, which is why it is what
+  # the Rack community builds with.
+  #
+  # WE WANT ITS COMPILER AND NOT ITS SDK. The image carries a Rack SDK of its own, older than the
+  # one we develop against. So it is replaced with the one we pin before the build, and
+  # RACK_SDK_VERSION means the same thing on every platform.
+  #
+  # PINNED BY DIGEST, not by tag. It is somebody else's image and a rebuild upstream would
+  # otherwise change what we ship without changing anything we wrote.
+  build-toolchain:
+    name: ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [lin-x64, win-x64]
+    container:
+      image: ghcr.io/qno/rack-plugin-toolchain-win-linux@sha256:fcb1ef432cb646f0c80a1828fbcfa4deb58469e1e188c953740ebdc7c8f93d7d
+      # The image's own user does not own the checkout the runner makes.
+      options: --user root
+    env:
+      TOOLCHAIN_DIR: /home/build/rack-plugin-toolchain
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the SDK we pin, not the one in the image
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL -o sdk.zip \
+            "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip"
+          rm -rf "$TOOLCHAIN_DIR/Rack-SDK-${{ matrix.arch }}"
+          unzip -q sdk.zip -d "$TOOLCHAIN_DIR"
+          mv "$TOOLCHAIN_DIR/Rack-SDK" "$TOOLCHAIN_DIR/Rack-SDK-${{ matrix.arch }}"
+          echo "Building against SDK $RACK_SDK_VERSION"
+
+      - name: Build
+        # THE CONTAINER'S DEFAULT SHELL IS sh, not bash, and dash has no pipefail. Named on every
+        # step in this job rather than fixed once, because a workflow's shell is per step.
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PLUGIN_DIR=$GITHUB_WORKSPACE
+          cd "$TOOLCHAIN_DIR"
+          make plugin-build-${{ matrix.arch }}
+
+      # THE POINT OF THE WHOLE ARRANGEMENT, AS A NUMBER IN THE LOG. Without this we would be
+      # trusting that the container did what it is supposed to; with it, the highest glibc the
+      # library asks for is printed on every run and a regression is visible rather than
+      # reported months later by somebody whose Rack will not start.
+      # Linux only: a Windows library has no glibc to ask about.
+      - name: What glibc does it need
+        if: matrix.arch == 'lin-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          so=$(find "$TOOLCHAIN_DIR/plugin-build" -name '*.vcvplugin' | head -1)
+          echo "Package: $so"
+          work=$(mktemp -d)
+          tar --use-compress-program=unzstd -xf "$so" -C "$work"
+          lib=$(find "$work" -name 'plugin.so' | head -1)
+          echo "Library: $lib"
+          echo "--- glibc versions required ---"
+          objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sort -Vu
+          echo "--- highest ---"
+          objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arch }}
+          # The toolchain writes its packages here rather than into our own dist directory.
+          path: ${{ env.TOOLCHAIN_DIR }}/plugin-build/*.vcvplugin
+
+  release:
+    # Only for a tag. A run started by hand builds and stops, which is what you want while
+    # finding out whether the source compiles at all.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, build-toolchain]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The changelog lives in the repository, so the repository has to be here.
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+
+      # THE NOTES COME FROM CHANGELOG.md, cut out by version.
+      #
+      # One place to write them, and it is the one in the repository — so the file and the
+      # release page cannot disagree, and nothing has to be copied by a person who might forget.
+      #
+      # The tag is v2.0.0 and the heading is "## 2.0.0 — 10 September 2026", so the version is
+      # taken off the tag and matched against the start of a heading. Everything up to the next
+      # heading is the body.
+      - name: Take this version's notes out of the changelog
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          awk -v want="$version" '
+            /^## / {
+              split($0, part, " ")
+              inside = (part[2] == want)
+              next
+            }
+            inside { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No section for $version in CHANGELOG.md — add one before tagging." >&2
+            exit 1
+          fi
+          echo "Notes for $version:"
+          cat notes.md
+
+      - name: Attach the packages to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*/*.vcvplugin
+          # PRE-RELEASE. These modules are a working demonstration of a protocol that is still
+          # being proposed, not a finished plugin, and the label is the honest one until the
+          # cross-plugin part exists.
+          prerelease: true
+          body_path: notes.md
+          generate_release_notes: true

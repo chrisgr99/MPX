@@ -461,8 +461,24 @@ struct VoiceModule : Module, NoteSink {
 		const int rise = std::max(RISE_MIN, std::min(
 			(int) (RISE_MS * 0.001f * sampleRate),
 			(int) (e.duration * sampleRate / 4.f)));
+		// FROM SILENCE, NOT FROM THE LAST NOTE THIS VOICE PLAYED.
+		//
+		// The ramp was right and its starting point was wrong. A slot keeps whatever level the
+		// note before it ended at, so a new note began at that value and slid to its own over ten
+		// milliseconds — audible as a short blip in front of every note, and only when the levels
+		// differ, which is why it appeared the moment the arpeggiator's velocity stopped being
+		// flat. Struck at the same level every time, the ramp had nowhere to travel and there was
+		// nothing to hear.
+		//
+		// A new note has no history. Starting at nothing and rising to its own velocity gives the
+		// same protection against a jump into a bare amplifier, and smears no part of the note
+		// before it into this one.
+		s.level.set(0.f);
 		s.level.to(e.level, rise);
-		s.pan.to(e.pan, rise);
+		// PAN IS SET RATHER THAN TRAVELLED, now that the level starts from nothing: the note is
+		// silent while it would have been sliding, so the slide is inaudible and a pattern that
+		// alternates hard left and hard right is where it says it is from its first sample.
+		s.pan.set(e.pan);
 		s.duration = e.duration;
 		s.bendRange = e.bendRange;
 		s.started = ordinal++;
