@@ -37,4 +37,4 @@ RACK_DIR=/path/to/Rack-SDK make install  # build and copy into the plugins folde
 
 ## Licence
 
-GPL-3.0-or-later. No artwork ships with the plugin — every panel is drawn in code.
+MIT, so that anything here — the protocol in particular — can be adopted by a plugin under any licence. No artwork ships with the plugin: every panel is drawn in code. The two Petaluma fonts in `res` are Steinberg's, under the SIL Open Font Licence, which travels with them.
