@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-The fonts in res/ are not covered by the above. Petaluma and Petaluma Script
-are Steinberg Media Technologies GmbH's, under the SIL Open Font Licence,
-whose terms and font log are in res/PETALUMA-OFL.txt and
-res/PETALUMA-FONTLOG.txt.

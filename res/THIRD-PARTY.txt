@@ -1,0 +1,5 @@
+The fonts in this folder are not covered by the plugin's MIT licence.
+
+Petaluma and Petaluma Script are Steinberg Media Technologies GmbH's, under the
+SIL Open Font Licence, whose terms and font log are in PETALUMA-OFL.txt and
+PETALUMA-FONTLOG.txt beside them.
