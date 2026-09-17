@@ -1,6 +1,7 @@
 #include "ChartLayout.hpp"
 
 #include <algorithm>
+#include <map>
 #include <cctype>
 #include <cstdlib>
 
@@ -861,5 +862,276 @@ std::vector<ChartSection> chartRangesForLabel(const std::vector<ChartBar>& bars,
 	return out;
 }
 
+
+
+
+const char* chartCadenceName(int cadence) {
+	switch (cadence) {
+		case CADENCE_AUTHENTIC: return "authentic";
+		case CADENCE_PLAGAL: return "plagal";
+		case CADENCE_BACKDOOR: return "backdoor";
+		case CADENCE_TRITONE: return "tritone sub";
+		case CADENCE_HALF: return "half";
+		case CADENCE_DECEPTIVE: return "deceptive";
+		default: return "none";
+	}
+}
+
+bool chartChordAt(const std::vector<ChartBar>& bars, const ChartPlayback& pb, int at,
+		float within, Chord& out, float& toNext) {
+	const int n = (int) pb.timeline.size();
+	if (at < 0 || at >= n)
+		return false;
+	int steps = 0;
+	int here = at;
+	float offset = within;
+	while (steps++ < 64) {
+		const ChartBar& bar = bars[pb.timeline[here].bar];
+		const int count = (int) bar.slots.size();
+		bool simile = false;
+		for (const ChartSlot& slot : bar.slots)
+			simile = simile || slot.simile != ChartSlot::SIMILE_NONE;
+
+		if (count > 0 && !simile) {
+			const float share = (float) bar.beats / (float) count;
+			int k = (int) (offset / std::max(0.001f, share));
+			k = std::max(0, std::min(k, count - 1));
+			// A blank slot holds whatever was sounding before it.
+			while (k > 0 && bar.slots[k].empty)
+				k--;
+			if (bar.slots[k].empty || !bar.slots[k].chord.valid)
+				return false;
+			out = bar.slots[k].chord;
+			toNext = share * (float) (k + 1) - offset;
+			return true;
+		}
+		// A simile: ask the bar before it, at the same place within the bar.
+		here = (here - 1 + n) % n;
+		offset = std::min(offset, (float) bars[pb.timeline[here].bar].beats - 0.01f);
+	}
+	return false;
+}
+
+std::vector<ChartChange> chartChanges(const std::vector<ChartBar>& bars,
+		const ChartPlayback& pb) {
+	std::vector<ChartChange> out;
+	std::vector<std::pair<float, Chord>> previous;
+	Chord sounding;
+	for (size_t i = 0; i < pb.timeline.size(); i++) {
+		const ChartBar& bar = bars[pb.timeline[i].bar];
+		bool simile = false;
+		for (const ChartSlot& slot : bar.slots)
+			simile = simile || slot.simile != ChartSlot::SIMILE_NONE;
+
+		std::vector<std::pair<float, Chord>> events;
+		if (simile) {
+			// THE BAR BEFORE, AGAIN — which is what the module plays, so it is what is phrased.
+			events = previous;
+		}
+		else if (!bar.slots.empty()) {
+			const float share = (float) bar.beats / (float) bar.slots.size();
+			for (size_t k = 0; k < bar.slots.size(); k++) {
+				const ChartSlot& slot = bar.slots[k];
+				// A blank slot holds whatever was sounding, so it is not a change.
+				if (slot.empty || slot.noChord || !slot.chord.valid)
+					continue;
+				events.push_back({share * (float) k, slot.chord});
+			}
+		}
+		for (const auto& ev : events) {
+			const Chord& c = ev.second;
+			if (sounding.valid && c.degree == sounding.degree && c.accidental == sounding.accidental
+				&& c.quality == sounding.quality)
+				continue;
+			ChartChange ch;
+			ch.beat = pb.timeline[i].startBeat + ev.first;
+			ch.playedBar = (int) i;
+			ch.chord = c;
+			out.push_back(ch);
+			sounding = c;
+		}
+		previous = events;
+	}
+	return out;
+}
+
+/** Whether a chord functions as a dominant: a major triad or any dominant seventh family. */
+static bool isDominant(const Chord& c) {
+	switch (c.quality) {
+		case Q_MAJOR: case Q_DOM7: case Q_NINE: case Q_ELEVEN: case Q_THIRTEEN:
+		case Q_DOM7ALT: case Q_DOM7SUS4: case Q_SUS4:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static bool isDegree(const Chord& c, int degree, int accidental) {
+	return c.valid && c.degree == degree && c.accidental == accidental;
+}
+
+ChartCadence chartCadenceOf(const Chord& from, const Chord& to, float heldBeats, float barBeats) {
+	if (!from.valid || !to.valid)
+		return CADENCE_NONE;
+	if (isDegree(to, 1, 0)) {
+		if (isDegree(from, 5, 0) && isDominant(from)) return CADENCE_AUTHENTIC;
+		if (isDegree(from, 4, 0)) return CADENCE_PLAGAL;
+		if (isDegree(from, 7, -1) && isDominant(from)) return CADENCE_BACKDOOR;
+		if (isDegree(from, 2, -1) && isDominant(from)) return CADENCE_TRITONE;
+	}
+	if (isDegree(from, 5, 0) && isDominant(from) && (isDegree(to, 6, 0) || isDegree(to, 6, -1)))
+		return CADENCE_DECEPTIVE;
+	// A HALF CADENCE is the dominant arrived at and held. Chords cannot say more than that.
+	if (isDegree(to, 5, 0) && isDominant(to) && heldBeats >= barBeats - 0.01f)
+		return CADENCE_HALF;
+	return CADENCE_NONE;
+}
+
+/** Cuts [from, to) of played bars into phrases of the fallback length, the last ending with
+`cadence`. A remainder shorter than the shortest phrase joins the piece before it rather than
+standing alone. `whole` says whether to cut all the way down, which is what a stretch with no
+cadence wants; otherwise only a span more than twice the fallback is cut. */
+static void cutSpan(std::vector<std::pair<int, ChartCadence>>& ends, int from, int to,
+		ChartCadence cadence, bool whole) {
+	int at = from;
+	while (true) {
+		const int remaining = to - at;
+		const bool cut = whole ? remaining > PHRASE_FALLBACK_BARS
+			: remaining > 2 * PHRASE_FALLBACK_BARS;
+		if (!cut)
+			break;
+		if (remaining - PHRASE_FALLBACK_BARS < PHRASE_MIN_BARS)
+			break;
+		at += PHRASE_FALLBACK_BARS;
+		ends.push_back({at, CADENCE_NONE});
+	}
+	ends.push_back({to, cadence});
+}
+
+std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
+		const ChartPlayback& pb) {
+	std::vector<ChartPhrase> out;
+	const int nBars = (int) pb.timeline.size();
+	if (nBars <= 0)
+		return out;
+
+	const std::vector<ChartChange> changes = chartChanges(chartBars, pb);
+
+	// Which played bar a beat falls in.
+	auto barOf = [&](float beat) {
+		for (int b = 0; b < nBars; b++) {
+			if (beat < pb.timeline[b].endBeat - 0.001f)
+				return b;
+		}
+		return nBars - 1;
+	};
+
+	// Where each section opens. Bar nought always does.
+	std::vector<int> sections;
+	sections.push_back(0);
+	for (int b = 1; b < nBars; b++) {
+		if (chartBars[pb.timeline[b].bar].section != 0)
+			sections.push_back(b);
+	}
+
+	// EVERY CADENCE THAT COULD END A PHRASE, with the bar its arrival stops sounding in.
+	struct Candidate { int arrivalBar; int endBar; bool held; ChartCadence cadence; };
+	std::vector<Candidate> candidates;
+	for (size_t i = 1; i < changes.size(); i++) {
+		const float held = (i + 1 < changes.size())
+			? changes[i + 1].beat - changes[i].beat
+			: pb.totalBeats - changes[i].beat;
+		const float barBeats = (float) chartBars[pb.timeline[changes[i].playedBar].bar].beats;
+		const ChartCadence c = chartCadenceOf(changes[i - 1].chord, changes[i].chord, held,
+			barBeats);
+		if (c == CADENCE_NONE || c == CADENCE_DECEPTIVE)
+			continue;
+		Candidate cand;
+		cand.arrivalBar = changes[i].playedBar;
+		// THE PHRASE ENDS WHEN THE ARRIVAL STOPS SOUNDING, not when it arrives, so a tonic held
+		// or repeated is not cut off a bar early.
+		cand.endBar = barOf(changes[i].beat + held - 0.001f) + 1;
+		cand.held = held >= barBeats - 0.01f;
+		cand.cadence = c;
+		candidates.push_back(cand);
+	}
+
+	std::vector<std::pair<int, ChartCadence>> ends;
+	for (size_t s = 0; s < sections.size(); s++) {
+		const int secStart = sections[s];
+		const int secEnd = (s + 1 < sections.size()) ? sections[s + 1] : nBars;
+		int last = secStart;
+		std::vector<std::pair<int, ChartCadence>> accepted;
+		for (const Candidate& c : candidates) {
+			if (c.arrivalBar < secStart || c.arrivalBar >= secEnd)
+				continue;
+			const int endBar = std::min(c.endBar, secEnd);
+			if (endBar <= last)
+				continue;
+			const bool closesSection = (endBar == secEnd);
+			const bool farEnough = (endBar - last) >= PHRASE_MIN_BARS;
+			// A HELD TONIC DOES NOT BYPASS THE MINIMUM. It did at first, and checked against
+			// seventeen lead sheets it found real breaths no better while making sixteen phrases
+			// in every hundred a single bar long — a held tonic straight after a phrase end, or a
+			// held dominant straight after a tonic. Without the bypass, six in a hundred.
+			if (closesSection || farEnough) {
+				accepted.push_back({endBar, c.cadence});
+				last = endBar;
+			}
+		}
+		// The section's end is always a boundary.
+		if (last < secEnd)
+			accepted.push_back({secEnd, CADENCE_NONE});
+
+		// Spans with no cadence at their end are cut to the fallback length; spans that do end
+		// at a cadence are cut only when they run to more than twice it.
+		int from = secStart;
+		for (const auto& a : accepted) {
+			cutSpan(ends, from, a.first, a.second, a.second == CADENCE_NONE);
+			from = a.first;
+		}
+	}
+
+	int from = 0;
+	for (const auto& e : ends) {
+		if (e.first <= from)
+			continue;
+		ChartPhrase ph;
+		ph.startBar = from;
+		ph.endBar = e.first;
+		ph.startBeat = pb.timeline[from].startBeat;
+		ph.endBeat = pb.timeline[e.first - 1].endBeat;
+		ph.cadence = e.second;
+		for (const ChartChange& c : changes) {
+			if (c.beat >= ph.startBeat - 0.001f && c.beat < ph.endBeat - 0.001f)
+				ph.changes.push_back(c.beat - ph.startBeat);
+		}
+		out.push_back(ph);
+		from = e.first;
+	}
+
+	// WHERE EACH PHRASE SITS IN THE FORM. A section is counted each time a played bar opens it,
+	// so a repeat or an ending that returns to a lettered bar counts as another appearance, which
+	// is what the music does.
+	std::map<char, int> appearances;
+	char section = 0;
+	int appearance = 0, inSection = 0;
+	size_t p = 0;
+	for (int b = 0; b < nBars && p < out.size(); b++) {
+		const char letter = chartBars[pb.timeline[b].bar].section;
+		if (letter != 0) {
+			section = letter;
+			appearance = ++appearances[letter];
+			inSection = 0;
+		}
+		if (out[p].startBar == b) {
+			out[p].section = section;
+			out[p].sectionAppearance = section ? appearance : 0;
+			out[p].phraseInSection = inSection++;
+			p++;
+		}
+	}
+	return out;
+}
 
 } // namespace px

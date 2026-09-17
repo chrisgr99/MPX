@@ -228,6 +228,11 @@ struct ChartModule : Module, NoteSource {
 		/** The same walk with only one section's bars kept, or a copy of the whole when no
 		section is chosen. This is what is actually played. */
 		ChartPlayback playing;
+
+		/** WHERE THE PHRASES FALL, in beats of the played cycle, back to back and covering the
+		whole of it. Derived from the changes alone — see phrasesFor — and computed once when a
+		chart is loaded rather than every sample, because nothing about it moves. */
+		std::vector<ChartPhrase> phrases;
 	};
 	Loaded loaded[2];
 	std::atomic<int> live{0};
@@ -396,10 +401,20 @@ struct ChartModule : Module, NoteSource {
 		loaded[spare] = loaded[liveNow];
 		loaded[spare].playing = chartPlaybackForLabel(loaded[spare].chartBars,
 			loaded[spare].playback, letter);
+		// A SECTION IS A DIFFERENT PIECE OF MUSIC as far as phrasing goes: a different length,
+		// different cadences, and its own boundaries. So the phrases are worked out again.
+		rephrase(spare);
 		section = letter;
 		live.store(spare);
 		beats = 0.0;
 		playingIndex = 0;
+	}
+
+	/** Works out the phrases for a copy that has just been built, and stores them on it. The rule
+	is in chartPhrases, beside the chart code, so that a census can run it with no rack. */
+	void rephrase(int which) {
+		Loaded& L = loaded[which];
+		L.phrases = chartPhrases(L.chartBars, L.playing);
 	}
 
 	/** Main thread. Parses the chunk into the copy that is not being read, then moves over. */
@@ -410,6 +425,7 @@ struct ChartModule : Module, NoteSource {
 		loaded[spare].chartBars = chartLayout(loaded[spare].song);
 		loaded[spare].playback = chartPlayback(loaded[spare].chartBars);
 		loaded[spare].playing = loaded[spare].playback;
+		rephrase(spare);
 		chunk = newChunk;
 		playlist = fromPlaylist;
 		live.store(spare);
@@ -488,39 +504,10 @@ struct ChartModule : Module, NoteSource {
 	measure. A measure-repeat mark carries no chord of its own, so the answer comes from the bar
 	it stands for — walked back through the PLAYED order rather than the written one, because
 	"the previous bar" means the one you just heard. */
+	/** The chord sounding at a place in the played cycle. The rule lives in chartChordAt, so the
+	census checks the same code this module plays through. */
 	bool chordAt(const Loaded& L, int at, float within, Chord& out, float& toNext) {
-		const ChartPlayback& pb = L.playing;
-		if (at < 0 || at >= (int) pb.timeline.size())
-			return false;
-
-		int steps = 0;
-		int here = at;
-		float offset = within;
-		while (steps++ < 64) {
-			const ChartBar& bar = L.chartBars[pb.timeline[here].bar];
-			const int count = (int) bar.slots.size();
-			bool simile = false;
-			for (const ChartSlot& slot : bar.slots)
-				simile = simile || slot.simile != ChartSlot::SIMILE_NONE;
-
-			if (count > 0 && !simile) {
-				const float share = (float) bar.beats / (float) count;
-				int k = (int) (offset / std::fmax(0.001f, share));
-				k = clamp(k, 0, count - 1);
-				// A blank slot holds whatever was sounding before it.
-				while (k > 0 && bar.slots[k].empty)
-					k--;
-				if (bar.slots[k].empty || !bar.slots[k].chord.valid)
-					return false;
-				out = bar.slots[k].chord;
-				toNext = share * (float) (k + 1) - offset;
-				return true;
-			}
-			// A simile: ask the bar before it, at the same place within the bar.
-			here = (here - 1 + (int) pb.timeline.size()) % (int) pb.timeline.size();
-			offset = std::fmin(offset, (float) L.chartBars[pb.timeline[here].bar].beats - 0.01f);
-		}
-		return false;
+		return chartChordAt(L.chartBars, L.playing, at, within, out, toNext);
 	}
 
 	/** The chord `ahead` changes from now, for the two the harmony carries as what is coming. */
@@ -744,6 +731,29 @@ struct ChartModule : Module, NoteSource {
 		h.barUnit = (uint8_t) (L.song.unit > 0 ? L.song.unit : 4);
 		h.bar = at;
 		h.beatInBar = within;
+		// WHICH PHRASE, AND HOW LONG UNTIL IT ENDS. A linear walk over a handful of spans, once
+		// a sample, on a list that is almost never longer than a dozen: the position moves by a
+		// fraction of a beat between frames, so a search would find the same answer it found
+		// last time and cost more to organise than to repeat.
+		h.phrasesPerPass = (uint16_t) std::min<size_t>(65535, L.phrases.size());
+		for (size_t i = 0; i < L.phrases.size(); i++) {
+			const ChartPhrase& ph = L.phrases[i];
+			if (pos < ph.startBeat || pos >= ph.endBeat)
+				continue;
+			h.phrase = (uint16_t) i;
+			h.phraseBeats = ph.endBeat - ph.startBeat;
+			h.beatsToPhraseEnd = (float) (ph.endBeat - pos);
+			h.phraseCadence = (uint8_t) ph.cadence;
+			h.section = ph.section;
+			h.sectionAppearance = (uint8_t) std::min(255, ph.sectionAppearance);
+			h.phraseInSection = (uint8_t) std::min(255, ph.phraseInSection);
+			h.phraseChangesAll = (uint8_t) std::min<size_t>(255, ph.changes.size());
+			h.phraseChangeCount = (uint8_t) std::min<size_t>(Harmony::MAX_PHRASE_CHANGES,
+				ph.changes.size());
+			for (int k = 0; k < h.phraseChangeCount; k++)
+				h.phraseChanges[k] = ph.changes[k];
+			break;
+		}
 		h.seed = (uint32_t) std::lround(params[P_SEED].getValue());
 		h.epoch = epoch;
 		busPublishHarmony(slot, h);

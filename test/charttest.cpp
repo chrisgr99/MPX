@@ -9,6 +9,7 @@ by looking at one song.
 */
 #include "../src/ChartLayout.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -165,6 +166,38 @@ int main(int argc, char** argv) {
 	const bool play = !want.empty() && want == "--play";
 	if (play)
 		want.clear();
+	// A CENSUS OF THE PHRASING, which is the only way to tell whether the rules ported from GXW
+	// behave over real charts rather than over the two anybody thinks to try. It prints how
+	// many phrases each chart is cut into and how long they are, and counts the ones that came
+	// out at lengths a phrase should not have.
+	// A CENSUS OF CADENCES WITH NO PHRASE-LENGTH PREFERENCE APPLIED: where the harmony
+	// actually arrives, what kind of arrival it is, and how many bars fall between one arrival
+	// and the next. This is the evidence for how long a phrase is in real tunes, rather than
+	// the four and eight bars the phrasing rule assumed.
+	const bool cadences_ = !want.empty() && want == "--cadences";
+	if (cadences_)
+		want.clear();
+	std::map<std::string, int> cadenceKinds;
+	std::map<int, int> closeGaps, anyGaps;
+	std::map<std::string, int> arrivalBeat;
+	int cadenceSongs = 0, songsWithNoClose = 0;
+	// WHAT THE CABLE SAYS ABOUT THE FORM, CHECKED AGAINST WHAT THE CHART PLAYS. The chord changes
+	// published for each phrase are compared with the changes found by walking the playback through
+	// the module's own chord resolver; section appearances and phrase numbers within a section are
+	// checked for being consecutive and restarting where they should.
+	const bool form_ = !want.empty() && want == "--form";
+	if (form_)
+		want.clear();
+	int formSongs = 0, changeMismatchSongs = 0, changeMismatches = 0, changesChecked = 0;
+	int sectionFaults = 0, phrasesOver16 = 0, phrasesChecked = 0;
+	std::map<int, int> perPass;
+	std::map<int, int> appearanceMax;
+	const bool phrases_ = !want.empty() && want == "--phrases";
+	if (phrases_)
+		want.clear();
+	int phraseCount = 0, oddLen = 0, uncovered = 0, phrasedSongs = 0;
+	std::map<int, int> phraseBars;
+	std::map<std::string, int> phraseEnds;
 	bool cells = false;
 	if (want.size() > 8 && want.compare(0, 8, "--cells=") == 0) {
 		cells = true;
@@ -210,6 +243,152 @@ int main(int argc, char** argv) {
 			withSimile += simile;
 			withMeterChange += meter;
 			withPasses += passes;
+
+			if (cadences_ && !bars.empty()) {
+				cadenceSongs++;
+				const ChartPlayback pb = chartPlayback(bars);
+				// THE MODULE'S OWN CHANGES AND ITS OWN CLASSIFIER, so the census and the chart
+				// cannot disagree about what a cadence is.
+				const std::vector<ChartChange> changes = chartChanges(bars, pb);
+				std::vector<double> closes, any;
+				const double beatsPerBar = bars[0].beats > 0 ? bars[0].beats : 4;
+				for (size_t i = 1; i < changes.size(); i++) {
+					const float held = (i + 1 < changes.size())
+						? changes[i + 1].beat - changes[i].beat : pb.totalBeats - changes[i].beat;
+					const float barBeats = (float) bars[pb.timeline[changes[i].playedBar].bar].beats;
+					const ChartCadence c = chartCadenceOf(changes[i - 1].chord, changes[i].chord,
+						held, barBeats);
+					if (c == CADENCE_NONE)
+						continue;
+					cadenceKinds[chartCadenceName(c)]++;
+					const float inBar = changes[i].beat - pb.timeline[changes[i].playedBar].startBeat;
+					arrivalBeat[inBar < 0.01f ? "on beat 1"
+						: (std::fabs(inBar - barBeats / 2.f) < 0.01f ? "mid-bar" : "elsewhere")]++;
+					any.push_back(changes[i].beat);
+					if (c != CADENCE_HALF && c != CADENCE_DECEPTIVE)
+						closes.push_back(changes[i].beat);
+				}
+				if (closes.empty())
+					songsWithNoClose++;
+				for (size_t i = 1; i < closes.size(); i++)
+					closeGaps[(int) std::lround((closes[i] - closes[i - 1]) / beatsPerBar)]++;
+				for (size_t i = 1; i < any.size(); i++)
+					anyGaps[(int) std::lround((any[i] - any[i - 1]) / beatsPerBar)]++;
+			}
+
+			if (form_ && !bars.empty()) {
+				formSongs++;
+				const ChartPlayback pb = chartPlayback(bars);
+				const std::vector<ChartPhrase> ph = chartPhrases(bars, pb);
+				perPass[std::min(64, (int) ph.size())]++;
+
+				// The published changes, as beats from the top of the cycle.
+				std::vector<float> published;
+				for (const ChartPhrase& one : ph) {
+					phrasesChecked++;
+					if (one.changes.size() > 16)
+						phrasesOver16++;
+					for (float c : one.changes)
+						published.push_back(one.startBeat + c);
+				}
+				// The played changes: step through every bar a twelfth of a beat at a time and
+				// note where the resolved chord differs from the one before. A place with nothing
+				// resolved holds what was sounding, as the module does.
+				std::vector<float> played;
+				Chord sounding;
+				for (int b = 0; b < (int) pb.timeline.size(); b++) {
+					const float barBeats = pb.timeline[b].endBeat - pb.timeline[b].startBeat;
+					// ON THE BAR'S OWN SLOT GRID, so a boundary is sampled exactly wherever it falls.
+					// A fixed twelfth of a beat cannot land on a boundary at four fifths of a beat,
+					// and reported the changes in five- and seven-slot bars as disagreements when
+					// every one of them was placed right.
+					const int perBeat = 12 * std::max(1, (int) bars[pb.timeline[b].bar].slots.size());
+					const int samples = (int) std::lround(barBeats * perBeat);
+					for (int k = 0; k < samples; k++) {
+						// COMPUTED, NOT ACCUMULATED, and nudged just past the grid point. Adding a
+						// fraction of a beat over and over lands a hair short of a boundary, which
+						// once reported thousands of changes one step late that the chart placed
+						// exactly right.
+						const float w = (float) k / (float) perBeat + 1e-4f;
+						Chord c;
+						float toNext = 0.f;
+						if (!chartChordAt(bars, pb, b, w, c, toNext))
+							continue;
+						if (!sounding.valid || c.degree != sounding.degree
+							|| c.accidental != sounding.accidental || c.quality != sounding.quality) {
+							played.push_back(pb.timeline[b].startBeat + (float) k / (float) perBeat);
+							sounding = c;
+						}
+					}
+				}
+				bool songBad = false;
+				size_t i = 0, j = 0;
+				while (i < published.size() || j < played.size()) {
+					changesChecked++;
+					if (i < published.size() && j < played.size()
+						&& std::fabs(published[i] - played[j]) < 0.002f) {
+						i++; j++;
+						continue;
+					}
+					songBad = true;
+					changeMismatches++;
+					if (j >= played.size() || (i < published.size() && published[i] < played[j]))
+						i++;
+					else
+						j++;
+				}
+				changeMismatchSongs += songBad;
+
+				// Sections: each letter's appearances run one, two, three in order; the phrase
+				// number within a section starts at nought at every new appearance and counts up.
+				std::map<char, int> lastAppearance;
+				char prevSection = 0;
+				int prevAppearance = 0, prevInSection = -1;
+				for (const ChartPhrase& one : ph) {
+					if (one.section == 0)
+						continue;
+					const bool newAppearance = one.section != prevSection
+						|| one.sectionAppearance != prevAppearance;
+					if (newAppearance) {
+						if (one.sectionAppearance != lastAppearance[one.section] + 1)
+							sectionFaults++;
+						if (one.phraseInSection != 0)
+							sectionFaults++;
+						lastAppearance[one.section] = one.sectionAppearance;
+						appearanceMax[std::min(16, one.sectionAppearance)]++;
+					}
+					else if (one.phraseInSection != prevInSection + 1) {
+						sectionFaults++;
+					}
+					prevSection = one.section;
+					prevAppearance = one.sectionAppearance;
+					prevInSection = one.phraseInSection;
+				}
+			}
+
+			if (phrases_ && !bars.empty()) {
+				const ChartPlayback pb = chartPlayback(bars);
+				const std::vector<ChartPhrase> ph = chartPhrases(bars, pb);
+				if (!ph.empty()) {
+					phrasedSongs++;
+					phraseCount += (int) ph.size();
+					// CONTIGUOUS AND COMPLETE is the property that matters: phrasing says where
+					// phrases begin and end and must never introduce a gap.
+					if (ph.front().startBar != 0 || ph.back().endBar != (int) pb.timeline.size())
+						uncovered++;
+					for (size_t i = 1; i < ph.size(); i++) {
+						if (ph[i].startBar != ph[i - 1].endBar)
+							uncovered++;
+					}
+					for (const ChartPhrase& one : ph) {
+						const int n = one.endBar - one.startBar;
+						phraseBars[n]++;
+						phraseEnds[chartCadenceName(one.cadence)]++;
+						if (n < 1)
+							oddLen++;
+					}
+				}
+			}
 
 			const std::vector<ChartSection> sections = chartSections(bars);
 			sectionCounts[(int) sections.size()]++;
@@ -288,6 +467,71 @@ int main(int argc, char** argv) {
 
 	if (sections_) {
 		std::printf("%d sections checked, %d wrong\n", checkedSections, badSections);
+		return 0;
+	}
+	if (cadences_) {
+		std::printf("%d charts, %d with no closing cadence at all\n\n", cadenceSongs,
+			songsWithNoClose);
+		std::printf("kinds of cadence:\n");
+		for (const auto& kv : cadenceKinds)
+			std::printf("  %-26s %6d\n", kv.first.c_str(), kv.second);
+		std::printf("\nwhere in the bar the arrival falls:\n");
+		for (const auto& kv : arrivalBeat)
+			std::printf("  %-26s %6d\n", kv.first.c_str(), kv.second);
+		auto show = [](const char* title, const std::map<int, int>& gaps) {
+			int total = 0;
+			for (const auto& kv : gaps) total += kv.second;
+			std::printf("\n%s (%d gaps):\n", title, total);
+			int shown = 0;
+			for (const auto& kv : gaps) {
+				if (kv.first > 16) { shown += kv.second; continue; }
+				std::printf("  %2d bars  %6d  %4.1f%%\n", kv.first, kv.second,
+					100.0 * kv.second / std::max(1, total));
+			}
+			if (shown)
+				std::printf("  over 16  %6d  %4.1f%%\n", shown, 100.0 * shown / std::max(1, total));
+		};
+		show("bars between one CLOSING cadence and the next", closeGaps);
+		show("bars between ANY cadence and the next, half and deceptive included", anyGaps);
+		return 0;
+	}
+	if (form_) {
+		std::printf("%d charts\n\n", formSongs);
+		std::printf("chord changes published for phrases, against changes played:\n");
+		std::printf("  %d compared, %d disagreements, in %d charts\n", changesChecked,
+			changeMismatches, changeMismatchSongs);
+		std::printf("\nsection appearances and phrase numbers within sections:\n");
+		std::printf("  %d faults\n", sectionFaults);
+		std::printf("\nphrases with more chord changes than the cable carries (16): %d of %d\n",
+			phrasesOver16, phrasesChecked);
+		std::printf("\nphrases in one pass of the form:\n");
+		for (const auto& kv : perPass)
+			if (kv.second >= 20)
+				std::printf("  %2d%s  %5d charts\n", kv.first, kv.first == 64 ? "+" : " ", kv.second);
+		return 0;
+	}
+	if (phrases_) {
+		std::printf("rule: a cadence ends a phrase if it closes the section or is %d or more "
+			"bars after the last end; fallback %d bars\n\n",
+			PHRASE_MIN_BARS, PHRASE_FALLBACK_BARS);
+		std::printf("%d songs phrased, %d phrases\n", phrasedSongs, phraseCount);
+		std::printf("  empty phrases: %d\n", oddLen);
+		std::printf("  charts whose phrases do not cover the cycle: %d\n", uncovered);
+		int total = 0;
+		for (const auto& kv : phraseBars) total += kv.second;
+		std::printf("\nphrase length:\n");
+		int over = 0;
+		for (const auto& kv : phraseBars) {
+			if (kv.first > 16) { over += kv.second; continue; }
+			std::printf("  %2d bars  %6d  %4.1f%%\n", kv.first, kv.second,
+				100.0 * kv.second / std::max(1, total));
+		}
+		if (over)
+			std::printf("  over 16  %6d  %4.1f%%\n", over, 100.0 * over / std::max(1, total));
+		std::printf("\nhow phrases end:\n");
+		for (const auto& kv : phraseEnds)
+			std::printf("  %-12s %6d  %4.1f%%\n", kv.first.c_str(), kv.second,
+				100.0 * kv.second / std::max(1, total));
 		return 0;
 	}
 	if (tsv || play)

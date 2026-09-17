@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 /** Laying a chart out as it is WRITTEN, rather than as it is played.
 
 Two different things are wanted from one chart. Playing it needs every repeat taken and every
@@ -133,6 +134,96 @@ the right ending chosen on each pass, and the segno, coda, D.C., D.S. and Fine o
 ONE ENGINE FOR BOTH the sound and the cursor. Two walks would drift apart at the first unusual
 chart and the cursor would light a bar the ear was not hearing, which is worse than no cursor. */
 ChartPlayback chartPlayback(const std::vector<ChartBar>& bars);
+
+/** HOW A PHRASE ENDS. Published on the cable, because the kind of ending decides what a line does
+there: a full close thins and holds, a half cadence pauses and expects an answer, an evaded close
+runs on. */
+enum ChartCadence : uint8_t {
+	CADENCE_NONE,           /**< A boundary with no cadence at it: a section end, or the fallback. */
+	CADENCE_AUTHENTIC,      /**< The dominant to the tonic. */
+	CADENCE_PLAGAL,         /**< The four chord to the tonic. */
+	CADENCE_BACKDOOR,       /**< The flat seven dominant to the tonic. */
+	CADENCE_TRITONE,        /**< The flat two dominant to the tonic. */
+	CADENCE_HALF,           /**< Ending on the dominant, held. */
+	CADENCE_DECEPTIVE,      /**< The dominant to the six chord. Never a phrase end: it runs on. */
+	NUM_CADENCES,
+};
+
+/** A short name for a cadence type, for a display or a log. */
+const char* chartCadenceName(int cadence);
+
+/** ONE CHORD CHANGE AS PLAYED: where it falls and what it changes to.
+
+Resolved the way the module resolves harmony — a blank slot holds the chord before it, and a
+simile repeats the bar before — so that what is phrased is exactly what is heard. */
+struct ChartChange {
+	float beat = 0.f;       /**< From the start of the played cycle. */
+	int playedBar = 0;      /**< Index into the playback timeline. */
+	Chord chord;
+};
+
+/** THE CHORD SOUNDING at a place in the played cycle, the way the chart module plays it.
+
+`at` is an index into the playback timeline and `within` is beats into that bar. A blank slot
+holds the chord before it within the bar; a simile, or a bar with no slots, asks the bar before
+it at the same place. Returns false where nothing is sounding, and `toNext` is beats until this
+slot gives way.
+
+SHARED ON PURPOSE. The module plays through this function and the census checks through it, so
+a check that the chart publishes the changes it plays is a check of the code that plays them,
+not of a second copy that happens to agree. */
+bool chartChordAt(const std::vector<ChartBar>& bars, const ChartPlayback& playback, int at,
+	float within, Chord& out, float& toNext);
+
+/** Every chord change in played order. */
+std::vector<ChartChange> chartChanges(const std::vector<ChartBar>& bars,
+	const ChartPlayback& playback);
+
+/** What kind of cadence a change from `from` to `to` makes, given how long `to` then sounds. */
+ChartCadence chartCadenceOf(const Chord& from, const Chord& to, float heldBeats, float barBeats);
+
+/** A PHRASE: from one boundary to the next, on bar lines, and how it ends. */
+struct ChartPhrase {
+	float startBeat = 0.f, endBeat = 0.f;
+	int startBar = 0, endBar = 0;           /**< Played bars; endBar is one past the last. */
+	ChartCadence cadence = CADENCE_NONE;
+
+	/** EVERY CHORD CHANGE INSIDE THE PHRASE, in beats from its start, so that a rhythm can be
+	generated for the whole phrase at once rather than discovering each change as it arrives. */
+	std::vector<float> changes;
+
+	/** WHERE THE PHRASE SITS IN THE FORM. The section letter, or nought before the chart names
+	one; which time that section has begun in this pass, counting from one, so the last A of an
+	A A B A form is the third; and which phrase of that section this is, counting from nought. A
+	returning section's phrases can be matched to its first appearance's by the last two. */
+	char section = 0;
+	int sectionAppearance = 0;
+	int phraseInSection = 0;
+};
+
+/** WHERE THE PHRASES FALL: from cadence to cadence, contiguous, covering the whole played cycle.
+
+A PHRASE ENDS AT A CADENCE, NOT AT A LENGTH. A census of 2,137 charts found closing cadences most
+often two bars apart and one bar apart more than one time in ten, so no length is assumed. Only
+where the harmony has no cadence — a vamp, a groove on one chord, a pedal — is a fixed length used.
+
+NOT EVERY TONIC IS A PHRASE END. The tonic touched in passing, inside a turnaround, is a cadence by
+its chords and not by its function. A cadence ends a phrase only if it closes the section, or it
+comes at least PHRASE_MIN_BARS after the last phrase end. Checked against the breaths in real lead
+sheets by test/phrasecheck.py, which is where a change to that number should be justified.
+
+A HALF CADENCE is a dominant held for a bar or more. It is a melodic fact that chords can only
+suggest, and this is the suggestion.
+
+A DECEPTIVE CADENCE never ends a phrase. It is a close set up and evaded, and the phrase runs on.
+
+SECTIONS ARE HARD BOUNDARIES. A phrase never crosses the start of a section. */
+std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& bars,
+	const ChartPlayback& playback);
+
+/** The rule's constants, so a census can print them beside its figures. */
+static const int PHRASE_MIN_BARS = 2;
+static const int PHRASE_FALLBACK_BARS = 4;
 
 
 /** The same walk, keeping only the bars that belong to one section's label.

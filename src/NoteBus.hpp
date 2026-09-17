@@ -92,6 +92,52 @@ struct Harmony {
 	int bar = 0;
 	float beatInBar = 0.f;
 
+	/** WHERE THE PHRASE ENDS, AND WHICH PHRASE IT IS.
+
+	A PHRASE IS NOT A BAR AND NOT THE FORM. It is the unit a singer breathes between and a
+	writer shapes toward — four bars, or eight, ending where the harmony arrives somewhere. A
+	melody that does not know where its phrases end cannot breathe at their ends, cannot slur
+	within one, and cannot lean toward a cadence it cannot see coming.
+
+	ONLY THE CHART CAN WORK THIS OUT. The three chords of lookahead here are enough to lead into
+	a change and nowhere near enough to know that the change is two bars from the end of an
+	eight-bar phrase. Sections, cadences and the four-and-eight-bar shape are properties of the
+	whole progression, which only the module holding it can see. So it is computed once where
+	the chart is read and carried here like everything else.
+
+	`beatsToPhraseEnd` counts down to the end of the current phrase; `phraseBeats` is how long
+	that phrase is, so a module can tell how far through it is; `phrase` numbers the phrases
+	within one pass of the form, so one can be told from the next. Nought and nought mean
+	nothing is known — an unphrased chart, or a module that has not been told. */
+	float beatsToPhraseEnd = 0.f;
+	float phraseBeats = 0.f;
+	uint16_t phrase = 0;
+	/** HOW THE CURRENT PHRASE ENDS, as a ChartCadence. A full close, a half cadence expecting an
+	answer, or none — a section end or a stretch with no cadence in it. What a line does at the
+	end of a phrase depends on which. */
+	uint8_t phraseCadence = 0;
+
+	/** HOW MANY PHRASES ONE PASS OF THE FORM HOLDS. With the pass counter and the phrase number,
+	this counts phrases from the top of the form across passes, which a cycle measured in phrases
+	depends on. */
+	uint16_t phrasesPerPass = 0;
+
+	/** WHERE THE PHRASE SITS IN THE FORM: the section letter, or nought where the chart names
+	none; which time that section has begun in this pass, from one; and which phrase of the
+	section this is, from nought. A returning section can reuse what was made for its first
+	appearance by matching the last two. */
+	char section = 0;
+	uint8_t sectionAppearance = 0;
+	uint8_t phraseInSection = 0;
+
+	/** EVERY CHORD CHANGE INSIDE THE CURRENT PHRASE, in beats from its start, so a rhythm can be
+	decided for the whole phrase when it begins. At most MAX_PHRASE_CHANGES; a phrase with more is
+	rare, and `phraseChangesAll` says how many there really were so the loss is visible. */
+	static constexpr int MAX_PHRASE_CHANGES = 16;
+	uint8_t phraseChangeCount = 0;
+	uint8_t phraseChangesAll = 0;
+	float phraseChanges[MAX_PHRASE_CHANGES] = {};
+
 	/** THE NUMBER EVERY RANDOM PROCESS DOWNSTREAM STARTS FROM.
 
 	A patch full of scatter and chance is unrepeatable unless everything in it agrees where its

@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "ChartLayout.hpp"
 #include "NoteBus.hpp"
 #include "Layout.hpp"
 
@@ -246,6 +247,36 @@ struct MonitorDisplay : widget::Widget {
 			std::snprintf(buf, sizeof(buf), "%s   bar %d  beat %.1f",
 				chordRoman(h.current).c_str(), h.bar + 1, h.beatInBar + 1.f);
 			nvgText(args.vg, pad, y, buf, NULL);
+			y += 12.f;
+
+			// THE PHRASE, WHICH IS THE ONE THING ON THE CABLE NOTHING COULD SEE. It is computed
+			// in mpxChart from the changes and used by the melody to breathe and to slur; a
+			// line here is the only way to tell whether what it worked out is sensible before
+			// anything is listening.
+			//
+			// A chart with no phrasing says so rather than printing nought, since nought beats
+			// to a phrase end and no phrases at all are different states.
+			if (h.phraseBeats > 0.f) {
+				std::snprintf(buf, sizeof(buf), "phrase %d of %d  %.1f of %.0f  ends %s",
+					h.phrase + 1, h.phrasesPerPass, h.beatsToPhraseEnd, h.phraseBeats,
+					chartCadenceName(h.phraseCadence));
+			}
+			else {
+				std::snprintf(buf, sizeof(buf), "%s", "no phrasing");
+			}
+			nvgText(args.vg, pad, y, buf, NULL);
+			y += 12.f;
+
+			// WHERE IN THE FORM, and how many changes the phrase holds — the rest of what a rhythm
+			// source reads from the cable, shown so it can be checked while a chart plays.
+			if (h.phraseBeats > 0.f) {
+				if (h.section)
+					std::snprintf(buf, sizeof(buf), "section %c, time %d, its phrase %d  %d changes",
+						h.section, h.sectionAppearance, h.phraseInSection + 1, h.phraseChangesAll);
+				else
+					std::snprintf(buf, sizeof(buf), "no section  %d changes", h.phraseChangesAll);
+				nvgText(args.vg, pad, y, buf, NULL);
+			}
 			y += 14.f;
 		}
 		else {
