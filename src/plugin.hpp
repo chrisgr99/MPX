@@ -14,6 +14,8 @@ extern Model* modelMpxComp;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
 extern Model* modelMpxRand;
+extern Model* modelMpxMelody;
+extern Model* modelMpxMelodyVoice;
 
 namespace px {
 
@@ -102,6 +104,15 @@ struct Panel : widget::Widget {
 
 	/** Rules across the panel, separating one group from the next. */
 	std::vector<float> rules;
+
+	/** THE SAME THING AS A LAYOUT ITEM, so that it can be moved, lengthened and made in the
+	panel editor. The bare heights above are the older way and still work; anything a user can
+	take hold of comes through here. */
+	struct Rule {
+		float x = 0.f, y = 0.f, len = 0.f;
+		bool horizontal = true;
+	};
+	std::vector<Rule> lines;
 
 	void draw(const DrawArgs& args) override;
 };

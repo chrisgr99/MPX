@@ -85,6 +85,18 @@ void Panel::draw(const DrawArgs& args) {
 		nvgStroke(args.vg);
 	}
 
+	for (const Rule& r : lines) {
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, r.x, r.y);
+		if (r.horizontal)
+			nvgLineTo(args.vg, r.x + r.len, r.y);
+		else
+			nvgLineTo(args.vg, r.x, r.y + r.len);
+		nvgStrokeColor(args.vg, nvgRGB(0x35, 0x3c, 0x47));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+	}
+
 	for (const Bracket& b : brackets) {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, b.x + b.arm, b.y);

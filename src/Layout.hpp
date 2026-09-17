@@ -36,6 +36,17 @@ struct Item {
 		LABEL,
 		/** A bracket, using w for how far its arms reach and h for how far it spans. */
 		BRACKET,
+		/** A DIVIDING LINE, saying that what is above or left of it is one group and what is
+		below or right of it is another.
+
+		Horizontal when `horizontal`, and then w is its length; vertical otherwise, and then h
+		is. Placed by the end it starts from, so dragging that end moves the whole line and
+		dragging the other end changes its length.
+
+		A MODULE MAY SHIP THEM AND A USER MAY ADD THEM. A line has no parameter behind it and
+		nothing depends on it, so unlike every other item it can be created and destroyed in the
+		panel editor — see `created`. */
+		RULE,
 		/** A DISPLAY: a widget the module makes itself — a readout, a chart, a scope face —
 		given a place in the layout so that it can be moved like everything else.
 
@@ -115,6 +126,14 @@ struct Item {
 
 	/** PORT: the signal-family ring drawn behind it. Fully transparent means none. */
 	NVGcolor ring = nvgRGBA(0, 0, 0, 0);
+
+	/** MADE IN THE EDITOR RATHER THAN BY THE MODULE. Only a RULE can be: everything else stands
+	for a parameter, a port or a light that the module has to have declared.
+
+	It changes what the saved file must carry. An item the code defines needs only whatever was
+	changed about it, because the code supplies the rest; one the code has never heard of has to
+	be written out whole, or it will not exist the next time the patch is opened. */
+	bool created = false;
 
 	/** LABEL: deleted. Kept in the layout rather than removed from it, because the layout the
 	code defines is what a saved file is laid over — an item that vanished from the list would

@@ -105,6 +105,22 @@ void layoutApplyUser(const std::string& slug, Layout& layout) {
 		json_t* valueJ;
 		json_object_foreach(itemsJ, key, valueJ) {
 			Item* item = layout.find(key);
+			// A LINE THE USER DREW HAS TO BE BROUGHT BACK INTO EXISTENCE. Every other item
+			// stands for a parameter, a port or a light the module declared, so the code is
+			// always the authority on whether it exists; a dividing line has nothing behind it
+			// and may have been made in the editor, in which case this file is the only record
+			// that it is there at all.
+			if (!item) {
+				json_t* kindJ = json_object_get(valueJ, "kind");
+				if (json_is_string(kindJ) && std::string(json_string_value(kindJ)) == "rule") {
+					Item made;
+					made.key = key;
+					made.kind = Item::RULE;
+					made.created = true;
+					layout.items.push_back(made);
+					item = &layout.items.back();
+				}
+			}
 			// A key the module no longer has is skipped rather than treated as an error: a
 			// saved file outliving a control it named is ordinary, not broken.
 			if (!item)
@@ -183,6 +199,13 @@ void layoutApplyUser(const std::string& slug, Layout& layout) {
 			if (json_t* j = json_object_get(valueJ, "chars")) {
 				if (json_is_integer(j)) { item->chars = (int) json_integer_value(j); took("chars"); }
 			}
+			if (json_t* j = json_object_get(valueJ, "length")) {
+				if (json_is_number(j)) {
+					const float len = (float) json_number_value(j);
+					if (item->horizontal) item->w = len; else item->h = len;
+					took("length");
+				}
+			}
 			if (json_t* j = json_object_get(valueJ, "height")) {
 				if (json_is_number(j)) { item->h = json_number_value(j); took("height"); }
 			}
@@ -234,6 +257,15 @@ void layoutSaveUser(const std::string& slug, const Layout& layout) {
 		}
 		// AND WHATEVER ELSE WAS DELIBERATELY CHANGED. Only what the properties menu was used
 		// on, so a default the module later improves still reaches a panel somebody has edited.
+		// A LINE IS WRITTEN OUT WHOLE, because nothing else knows it exists. Which way it runs
+		// and how long it is are part of what it IS, not adjustments to something the code
+		// already describes.
+		if (item.kind == Item::RULE) {
+			json_object_set_new(itemJ, "kind", json_string("rule"));
+			json_object_set_new(itemJ, "horizontal", json_boolean(item.horizontal));
+			json_object_set_new(itemJ, "length",
+				json_real(item.horizontal ? item.w : item.h));
+		}
 		if (item.userSet("style"))
 			json_object_set_new(itemJ, "style", json_string(item.style.c_str()));
 		if (item.userSet("ticks"))
@@ -331,6 +363,7 @@ void layoutRefreshPanel(Panel* panel, Layout& layout) {
 	panel->labels.clear();
 	panel->brackets.clear();
 	panel->scales.clear();
+	panel->lines.clear();
 	for (const Item& item : layout.items) {
 		if (item.kind == Item::PARAM && item.ticks > 0 && item.style != "lamps") {
 			// MEASURED FROM THE KNOB'S OWN SIZE, so that a scale stays round its knob when the
@@ -354,7 +387,15 @@ void layoutRefreshPanel(Panel* panel, Layout& layout) {
 			sc.textSize = item.nameSize > 0.f ? item.nameSize : 6.f;
 			panel->scales.push_back(sc);
 		}
-		if (item.kind == Item::BRACKET) {
+		if (item.kind == Item::RULE) {
+			Panel::Rule r;
+			r.x = mm2px(math::Vec(item.x, 0)).x;
+			r.y = mm2px(math::Vec(0, item.y)).y;
+			r.len = mm2px(math::Vec(item.horizontal ? item.w : item.h, 0)).x;
+			r.horizontal = item.horizontal;
+			panel->lines.push_back(r);
+		}
+		else if (item.kind == Item::BRACKET) {
 			Panel::Bracket b;
 			b.x = mm2px(math::Vec(item.x, 0)).x;
 			b.y = mm2px(math::Vec(0, item.y)).y;
@@ -637,6 +678,12 @@ static math::Rect itemVisual(const Item& item) {
 			break;
 		case Item::BRACKET:
 			return math::Rect(math::Vec(item.x, item.y), math::Vec(item.w, item.h));
+		case Item::RULE:
+			// A LINE HAS NO THICKNESS, so the outline is given some — half a millimetre either
+			// side of it, which is enough to see it is selected without hiding it.
+			return item.horizontal
+				? math::Rect(math::Vec(item.x, item.y - 0.5f), math::Vec(item.w, 1.f))
+				: math::Rect(math::Vec(item.x - 0.5f, item.y), math::Vec(1.f, item.h));
 		case Item::DISPLAY:
 			return math::Rect(math::Vec(item.x, item.y), math::Vec(item.w, item.h));
 		case Item::LABEL: {
@@ -742,6 +789,13 @@ static math::Rect itemRect(const Item& item) {
 			// Placed by its top-left corner, like the lamp list, because it is an extent
 			// rather than a point.
 			return math::Rect(math::Vec(item.x - 1.f, item.y), math::Vec(item.w + 2.f, item.h));
+		case Item::RULE:
+			// THICKER THAN IT LOOKS, because a one-pixel line is a one-pixel target. Two and a
+			// half millimetres either side is about the width of a fingertip on screen and is
+			// still narrow enough that a knob beside it is easier to hit than the line.
+			return item.horizontal
+				? math::Rect(math::Vec(item.x, item.y - 2.5f), math::Vec(item.w, 5.f))
+				: math::Rect(math::Vec(item.x - 2.5f, item.y), math::Vec(5.f, item.h));
 		case Item::DISPLAY:
 			// An area, by its corner: exactly the rectangle it draws in.
 			return math::Rect(math::Vec(item.x, item.y), math::Vec(item.w, item.h));
@@ -767,6 +821,32 @@ struct PanelEditor : widget::OpaqueWidget {
 	Panel* panel = NULL;
 	Layout* layout = NULL;
 	std::string slug;
+	/** THE LINE BEING STRETCHED, and nothing else is. A press within reach of a dividing line's
+	far end takes hold of that end rather than of the line, so one gesture moves it and the
+	other lengthens it — which is how every drawing program has behaved for thirty years and so
+	is the one thing a reader does not have to be told.
+
+	Only the FAR end. The near end is where the line is placed from, so dragging it would move
+	and shorten at once, and the result reads as the line sliding out from under the pointer. */
+	int stretching = -1;
+
+	/** How near the end a press has to be to mean the end. Generous, because it is a line. */
+	static constexpr float END_GRAB_MM = 4.f;
+
+	/** Whether this press landed on a rule's far end, and on which rule. */
+	int endAt(math::Vec mm) {
+		for (int i = (int) layout->items.size() - 1; i >= 0; i--) {
+			const Item& it = layout->items[i];
+			if (it.kind != Item::RULE)
+				continue;
+			const math::Vec far_ = it.horizontal
+				? math::Vec(it.x + it.w, it.y) : math::Vec(it.x, it.y + it.h);
+			if (mm.minus(far_).norm() <= END_GRAB_MM)
+				return i;
+		}
+		return -1;
+	}
+
 	/** The item the pointer took hold of. Everything selected moves with it. */
 	int grabbed = -1;
 	/** Where in the item the pointer took hold, so it does not jump to the centre. */
@@ -1097,6 +1177,15 @@ struct PanelEditor : widget::OpaqueWidget {
 				e.consume(this);
 				return;
 			}
+			// AN END BEFORE ANYTHING ELSE, so that a line lying across a knob can still be
+			// lengthened — the end sticks out past whatever the line crosses.
+			stretching = endAt(mm);
+			if (stretching >= 0) {
+				selection.clear();
+				selection.insert(stretching);
+				e.consume(this);
+				return;
+			}
 			const bool add = (e.mods & GLFW_MOD_SHIFT) != 0;
 			grabbed = itemAt(mm);
 			marquee = false;
@@ -1175,6 +1264,20 @@ struct PanelEditor : widget::OpaqueWidget {
 			resizeTo(resizeHP + (resizing > 0 ? movedHP : -movedHP));
 			return;
 		}
+		if (stretching >= 0) {
+			Item& it = layout->items[stretching];
+			const math::Vec mm = toMM(localMouse());
+			// A MILLIMETRE IS THE SHORTEST LINE WORTH HAVING. Anything less is a dot nobody
+			// can take hold of again, and a negative length would draw backwards.
+			if (it.horizontal)
+				it.w = std::fmax(1.f, mm.x - it.x);
+			else
+				it.h = std::fmax(1.f, mm.y - it.y);
+			it.userProps.insert("length");
+			layoutRefreshPanel(panel, *layout);
+			dirty = true;
+			return;
+		}
 		if (marquee)
 			marqueeTo = toMM(localMouse());
 		else if (grabbed >= 0)
@@ -1185,6 +1288,12 @@ struct PanelEditor : widget::OpaqueWidget {
 	void onDragEnd(const DragEndEvent& e) override {
 		if (resizing != 0) {
 			resizing = 0;
+			saveNow();
+			widget::OpaqueWidget::onDragEnd(e);
+			return;
+		}
+		if (stretching >= 0) {
+			stretching = -1;
 			saveNow();
 			widget::OpaqueWidget::onDragEnd(e);
 			return;
@@ -1549,6 +1658,43 @@ void PanelEditor::editItem(int index) {
 			});
 	}
 
+	// ---- a dividing line ----
+	if (it.kind == Item::RULE) {
+		addTyped(menu, this, "length", num(it.horizontal ? it.w : it.h),
+			[self, index, touch](const std::string& v) {
+				Item& r = self->layout->items[index];
+				const float len = std::fmax(1.f, (float) std::atof(v.c_str()));
+				if (r.horizontal) r.w = len; else r.h = len;
+				touch("length");
+			});
+		addChoice(menu, this, "runs", {"across", "down"}, it.horizontal ? 0 : 1,
+			[self, index, touch](int i) {
+				Item& r = self->layout->items[index];
+				const bool across = (i == 0);
+				if (across == r.horizontal)
+					return;
+				// THE LENGTH FOLLOWS THE LINE ROUND. Turning a line is turning THAT line, so it
+				// keeps the length it had rather than picking up whatever was in the other
+				// field — which would be nought, and the line would vanish.
+				const float len = r.horizontal ? r.w : r.h;
+				r.horizontal = across;
+				if (across) r.w = len; else r.h = len;
+				touch("horizontal");
+				touch("length");
+			});
+		// ONLY A LINE CAN BE REMOVED. Everything else stands for a parameter, a port or a
+		// light, and taking one off the panel would leave a control nobody can reach.
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuItem("Remove this line", "", [self, index]() {
+			self->selection.clear();
+			self->grabbed = -1;
+			self->layout->items.erase(self->layout->items.begin() + index);
+			layoutRefreshPanel(self->panel, *self->layout);
+			self->saveNow();
+			self->dirty = true;
+		}));
+	}
+
 	// ---- a piece of text ----
 	if (it.kind == Item::LABEL) {
 		addTyped(menu, this, "text", layoutTextToUser(it.text),
@@ -1628,6 +1774,41 @@ static PanelEditor* editorOf(ModuleWidget* mw) {
 	return NULL;
 }
 
+/** Adds a dividing line to a panel and saves it.
+
+A KEY OF ITS OWN, and one that cannot collide with a module's. Every item is found by key, so
+two lines sharing one would be one line as far as the file is concerned; the number after the
+prefix is simply the first that is free. */
+static void layoutAddRule(Panel* panel, Layout* layout, const std::string& slug,
+		bool horizontal) {
+	int n = 1;
+	while (layout->find("rule." + std::to_string(n)))
+		n++;
+	Item r;
+	r.key = "rule." + std::to_string(n);
+	r.kind = Item::RULE;
+	r.created = true;
+	r.horizontal = horizontal;
+	const float wide = layout->hp * 5.08f;
+	if (horizontal) {
+		r.x = 9.f;
+		r.y = RACK_GRID_HEIGHT / 2.f / RACK_GRID_WIDTH * 5.08f;
+		r.w = std::fmax(1.f, wide - 18.f);
+	}
+	else {
+		r.x = wide / 2.f;
+		r.y = 28.f;
+		r.h = 80.f;
+	}
+	r.userProps.insert("length");
+	r.userProps.insert("horizontal");
+	layout->items.push_back(r);
+	layoutRefreshPanel(panel, *layout);
+	// SAVED AT ONCE. Everything else in this editor is saved when a drag ends, and a line that
+	// was made and never dragged would not have had one.
+	layoutSaveUser(slug, *layout);
+}
+
 void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* layout,
 		const std::string& slug) {
 	menu->addChild(new ui::MenuSeparator);
@@ -1654,6 +1835,24 @@ void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* la
 			}
 			editor->setEditing(!editor->visible);
 		}));
+
+	// ---- making a new dividing line ----
+	//
+	// IN THE MENU RATHER THAN AS A TOOL, because a line is drawn once and then lived with. A
+	// drawing mode to switch in and out of would cost more attention than the act is worth, and
+	// there is nothing else in this editor that creates anything.
+	//
+	// A NEW LINE ARRIVES IN THE MIDDLE, at a readable length, and is dragged into place from
+	// there. Putting it where the pointer was would need the menu to remember where it was
+	// opened, and the first thing anybody does with a new line is move it anyway.
+	if (editing) {
+		menu->addChild(createMenuItem("Add a line across", "", [panel, layout, slug]() {
+			layoutAddRule(panel, layout, slug, true);
+		}));
+		menu->addChild(createMenuItem("Add a line down", "", [panel, layout, slug]() {
+			layoutAddRule(panel, layout, slug, false);
+		}));
+	}
 
 	if (editing) {
 		menu->addChild(createMenuItem("Save layout", "", [mw, layout, slug]() {
