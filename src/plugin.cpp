@@ -15,4 +15,6 @@ void init(Plugin* p) {
 	p->addModel(modelPolyToStereo);
 	p->addModel(modelMpxArp);
 	p->addModel(modelMpxRand);
+	p->addModel(modelMpxMelody);
+	p->addModel(modelMpxMelodyVoice);
 }

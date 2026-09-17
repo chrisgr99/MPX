@@ -76,4 +76,11 @@ charttest:
 		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
 
 
+melodytest:
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		test/melodytest.cpp src/Melodic.cpp src/Chord.cpp \
+		-o build/melodytest -L$(RACK_DIR) -lRack
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/melodytest $(ARGS)
+
+
 .PHONY: test

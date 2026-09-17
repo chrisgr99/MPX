@@ -115,6 +115,26 @@
         "Polyphonic",
         "Utility"
       ]
+    },
+    {
+      "slug": "mpxMelody",
+      "name": "mpxMelody",
+      "description": "Master for a melody chain: how far the voices keep apart, the random seed they share, and the chart they are played against. Voice expanders make the sound",
+      "tags": [
+        "Sequencer",
+        "Polyphonic",
+        "Random"
+      ]
+    },
+    {
+      "slug": "mpxMelodyVoice",
+      "name": "mpxVoice",
+      "description": "One melodic line drawn against the harmony on the cable — bass, melody or inner voice. Sits beside mpxMelody",
+      "tags": [
+        "Sequencer",
+        "Expander",
+        "Polyphonic"
+      ]
     }
   ]
 }
