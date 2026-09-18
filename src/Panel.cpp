@@ -9,6 +9,10 @@ const NVGcolor PANEL_BG = nvgRGB(0x1b, 0x1f, 0x26);
 const NVGcolor PANEL_INK = nvgRGB(0xe6, 0xe8, 0xec);
 const NVGcolor PANEL_DIM = nvgRGB(0x9a, 0xa3, 0xaf);
 const NVGcolor PANEL_EDGE = nvgRGB(0x3d, 0xd6, 0x8c);
+/** THE DIVIDING LINES, half as bright again as they were. At 0x35,0x3c,0x47 a rule between two
+groups of controls was there if you looked for it and invisible if you did not, which is no use
+for a line whose whole job is to say that what is on one side of it is not what is on the other. */
+const NVGcolor PANEL_RULE = nvgRGB(0x50, 0x5a, 0x6a);
 
 // COLOUR SAYS WHAT KIND OF SIGNAL, and it is the same code here as in DreamRack and in
 // Clarity: yellow for audio, orange for control voltage, blue for gates, green for pitch.
@@ -80,7 +84,7 @@ void Panel::draw(const DrawArgs& args) {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 9.f, y);
 		nvgLineTo(args.vg, box.size.x - 9.f, y);
-		nvgStrokeColor(args.vg, nvgRGB(0x35, 0x3c, 0x47));
+		nvgStrokeColor(args.vg, PANEL_RULE);
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 	}
@@ -92,7 +96,7 @@ void Panel::draw(const DrawArgs& args) {
 			nvgLineTo(args.vg, r.x + r.len, r.y);
 		else
 			nvgLineTo(args.vg, r.x, r.y + r.len);
-		nvgStrokeColor(args.vg, nvgRGB(0x35, 0x3c, 0x47));
+		nvgStrokeColor(args.vg, PANEL_RULE);
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 	}
@@ -137,8 +141,22 @@ void Panel::draw(const DrawArgs& args) {
 				nvgFontSize(args.vg, sc.textSize);
 				nvgFillColor(args.vg, PANEL_INK);
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-				nvgText(args.vg, sc.x + dx * sc.textRadius, sc.y + dy * sc.textRadius,
-					sc.marks[i].c_str(), NULL);
+				// THE TOP OF THE CIRCLE IS FLATTENED, and this is the reason.
+				//
+				// Every mark sits the same distance from the knob's CENTRE, which is not the same
+				// as sitting the same distance from anything a reader can see. The ends of the
+				// sweep are at 0.83 of a half turn, so they stand 0.861 of that radius above or
+				// below the centre — while a mark at the top of the sweep stands the whole radius
+				// above it. A three-mark scale therefore put its middle word a seventh further
+				// out than the two beside it, which looked like a mistake and, on a column of
+				// knobs, reached up into the name of the knob above.
+				//
+				// So the vertical offset is limited to what the ends of the sweep use. Sideways
+				// the radius is untouched: it is only the top and bottom of the circle that have
+				// further to reach.
+				const float limit = 0.861f * sc.textRadius;
+				const float ty = math::clamp(dy * sc.textRadius, -limit, limit);
+				nvgText(args.vg, sc.x + dx * sc.textRadius, sc.y + ty, sc.marks[i].c_str(), NULL);
 			}
 		}
 	}
@@ -415,6 +433,13 @@ void DreamerKnob::draw(const DrawArgs& args) {
 	const float cx = w / 2.f, cy = h / 2.f;
 	const float r = std::fmin(w, h) / 2.f;
 
+	float frac = 0.5f;
+	if (ParamQuantity* pq = getParamQuantity()) {
+		const float lo = pq->getMinValue(), hi = pq->getMaxValue();
+		if (hi > lo)
+			frac = math::clamp((pq->getValue() - lo) / (hi - lo), 0.f, 1.f);
+	}
+
 	// The shadow under it, which is most of what says the knob stands off the panel.
 	nvgBeginPath(args.vg);
 	nvgCircle(args.vg, cx, cy + r * 0.06f, r * 0.98f);
@@ -438,13 +463,7 @@ void DreamerKnob::draw(const DrawArgs& args) {
 
 	// THE POINTER, which is the whole reason anybody looks at a knob. A wedge rather than a
 	// hairline, because a hairline on a small knob at a small zoom disappears.
-	float t = 0.5f;
-	if (ParamQuantity* pq = getParamQuantity()) {
-		const float lo = pq->getMinValue(), hi = pq->getMaxValue();
-		if (hi > lo)
-			t = math::clamp((pq->getValue() - lo) / (hi - lo), 0.f, 1.f);
-	}
-	const float a = minAngle + (maxAngle - minAngle) * t;
+	const float a = minAngle + (maxAngle - minAngle) * frac;
 	const float dx = std::sin(a), dy = -std::cos(a);
 	nvgBeginPath(args.vg);
 	nvgMoveTo(args.vg, cx + dx * r * 0.78f, cy + dy * r * 0.78f);

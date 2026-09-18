@@ -135,6 +135,16 @@
         "Expander",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "mpxPhrase",
+      "name": "mpxPhrase",
+      "description": "A rhythm that phrases: notes placed against the bars, chord changes and cadences of the chart on the cable, in breath groups with pauses between them",
+      "tags": [
+        "Sequencer",
+        "Rhythm",
+        "Random"
+      ]
     }
   ]
 }

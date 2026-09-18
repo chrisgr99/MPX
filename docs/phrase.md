@@ -34,7 +34,13 @@ Every rhythm module in the family follows the same rule for timing: no clock inp
 
 mpxPhrase has no clock input. Every onset is placed by the beat position the chart publishes on the cable. It therefore cannot drift from the harmony, and it stops, rewinds and loops exactly when the chart does.
 
-The consequence is that mpxPhrase does nothing without a chart. That is stated on the panel in the same way mpxMelody states a missing voice.
+The consequence is that mpxPhrase does nothing without a chart. Nothing on the panel says so: neither lamp flashes and no note leaves, which is what a module with no chart looks like, and the help says it in words. A notice across the panel said the same thing and took room a control could use.
+
+**A chart with no phrasing is played in four-bar phrases,** measured off the beat — the same fallback the chart itself uses for a stretch it cannot phrase. Without one, a module reading the phrase length from the cable would sit at the start of a phrase of no length for ever.
+
+**A control moved part-way through a phrase takes effect at the start of the next sub-phrase.** Waiting for the next phrase would make a knob feel dead for several bars; acting at once would cut a breath group in half. The phrase is decided again from where the music is, so what has already sounded is left alone.
+
+**Controls that are on the panel before their milestone say so.** Rack saves a parameter by its number, so a control added later would move every number after it and misread every patch saved before. REPEAT, CYCLE, SECTIONS, ELIDE and RECORD are therefore declared from the start, and their names in the help say they are not built yet.
 
 **The tempo is measured from the chart.** The harmony block carries the beat position but not the tempo, so mpxPhrase measures how fast the beat is advancing. Sub-phrase lengths are set in seconds and converted to beats at that rate, for the reason given under Sub-phrases.
 
@@ -152,7 +158,7 @@ Grouped by what they decide.
 
 **Pitch:** NOTE, a plate showing a note name, C1 to C7, default C4.
 
-**Style:** STYLE, a plate offering starting points — SONG and JAZZ at least. Choosing one writes its values into the controls below, which can then be adjusted; it does not override them afterwards.
+**Starting points are presets, not a control.** There is no style control on the panel. SONG and JAZZ ship as factory presets, so they appear in Rack's own Preset menu beside your own saved ones, with Rack's save, open, copy and paste. The two preset files are generated at build time from the same `phraseStyle` the census in `phrasetest` measures, which is what keeps what ships equal to what was measured. A preset carries the whole module, the note and the seed included, as a preset does everywhere else in Rack.
 
 **Sub-phrases:** GROUP, one to eight seconds. VARY, nought to one. START, bipolar, setting the mix from mostly pickups, through downbeat starts, to mostly off-beat starts. ENDING, nought to one, setting the mix from mostly strong-beat endings to mostly off-beat ones.
 
@@ -168,7 +174,7 @@ Grouped by what they decide.
 
 **Defaults, from the evidence:** GROUP three seconds; VARY low; PAUSE about two beats and PHRASE PAUSE a little longer; HOLD toward silence, so a sustaining synthesizer patch still leaves audible space; SILENT PHRASES near nought; VARIATION near the middle. START and ENDING take their defaults from the SONG style: roughly equal pickups and downbeat starts, and endings favouring the strong beat.
 
-**The two styles, from the two corpora.** SONG: starts divided between pickup and downbeat, endings mostly on strong beats, the last note held. JAZZ: starts mostly off the beat, endings mostly off the beat, a higher DENSITY and SYNCOPATION, and shorter holds.
+**The two presets, from the two corpora.** SONG: starts divided between pickup and downbeat, endings mostly on strong beats, the last note held. JAZZ: starts mostly off the beat, endings mostly off the beat, a higher DENSITY and SYNCOPATION, and shorter holds. The module's own defaults are the SONG values, from the same place.
 
 ## What moves out of mpxVoice
 
@@ -187,7 +193,7 @@ The phrase boundaries themselves change: from the present four-and-eight-bar rul
 
 ## Evidence
 
-Four measurements informed this design, and published research is cited where it bears on a decision. All the measurements can be rerun.
+Five measurements informed this design, and published research is cited where it bears on a decision. All the measurements can be rerun.
 
 **Cadences in 2,137 iReal charts.** `make charttest ARGS="--cadences"`, with no phrase-length preference applied.
 
@@ -235,6 +241,27 @@ Closing cadences are therefore more frequent than four- or eight-bar phrases, an
 
 **Limits of the evidence.** The jazz solos are improvised, almost entirely by wind players, and busier than sung melodies; the findings in seconds should transfer to song-like lines better than those about beat positions, which are the most style-specific. The twenty-two lead sheets are a small sample and mostly jazz standards. Lead sheets differ in how they notate breaths. The held-note threshold was chosen, not derived. The cadence detection is by chord symbol only and cannot see key changes. The figures are strong enough to set defaults and ranges, and not strong enough to fix constants; those are tuned by ear with the recording log.
 
+**Swing and triplets in the same 456 jazz solos.** `python3 test/swing.py`, over 200,809 notes. The swing ratio is the beat-upbeat ratio: within one beat, how long the first half lasts against the second, where one is even and two is a full triplet feel. It is measured at whichever level the player is dividing the beat — eighths where the beat is in two, sixteenths where it is in four — because measuring only the eighth level made slow tempos look straight: at sixty-five beats a minute almost no beat is divided in two. One figure per solo, so a long solo does not outvote fifty short ones; 22,574 eighth pairs and 7,717 sixteenth pairs, from the 344 solos with at least twenty of either.
+
+- At the eighth-note level the median solo swings at 1.31, with the middle half between 1.16 and 1.46. A full two to one is not what players do.
+- It depends on the tempo, and not in one direction. Around 120 to 200 beats a minute the median is 1.43; it falls to 1.36 by 240, 1.24 by 280 and 1.15 by 320, and it is also lower below 120, at 1.22. So the ratio peaks at medium tempos and flattens at both ends.
+- Swung sixteenths are much flatter: median 1.10, middle half 1.02 to 1.18, and they are what slow tempos use — below 160 beats a minute the sixteenth level is where the dividing happens.
+- The feel the transcribers named barely moves it. Pooling pairs rather than solos, swing reads 1.26, two-beat 1.33, funk 1.27 and latin 1.23. The ratio is a matter of tempo and player, not of a style setting.
+- Triplet figures appear on 13 per cent of the beats that carry any note, and every solo but two uses at least one. But only 60 per cent of those beats sound the middle unit of the triplet — the other 40 per cent are the swung pair written as a triplet, which is what swing already produces. A true triplet event therefore falls on 8 per cent of played beats.
+- They do not come in runs. Of the stretches of consecutive beats sounding a middle unit, 82 per cent are a single beat, 13 per cent two and 3 per cent three. So it is a figure that happens, not a mode the line goes into.
+
+## Feel: swing on the chart, triplets in the phrase
+
+**Swing is not a rhythm and does not belong to a rhythm module.** It is how the beat is divided, which is the chart's business already: the chart is what publishes the beat, the bar, the time signature, the phrase boundaries, the seed and the pass count — everything a patch has to agree on. Two rhythm modules are peers with no cable between them, so a swing control on each would let them disagree with no way to tell why, and making one feed the other is ruled out by the rule that neither depends on the other's results. So SWING is a control on mpxChart and a number on the harmony block, and everything downstream divides the beat the same way without being told.
+
+**What the control sets is an amount, not a ratio.** The measured ratio peaks near 1.43 at medium tempos and flattens toward even at both ends, so a knob set to a literal ratio would be wrong at every tempo but one. The knob runs from none to full, and full is the measured ratio for the tempo the chart is running at, not two to one, which the corpus says players do not play.
+
+**The chart does the converting, and publishes the answers.** The ratio depends on which division is being swung — eighths swing at about 1.4 and sixteenths at about 1.1 — so the harmony block carries a ratio for each level rather than one number to be interpreted. A module looks up the ratio for whichever division it is working at and shifts its notes by it. Nothing downstream knows anything about tempo curves, and two modules cannot convert the same amount differently, which is the disagreement putting swing on the chart was meant to prevent. The amount itself travels too, for anything that wants to know how hard the music is swinging rather than by how much to move a note.
+
+**The grid stays on mpxPhrase.** Swing has to be shared because a swung line over a straight part is always wrong. A grid need not be: a drum part in sixteenths under a melodic line in eighths is how music is ordinarily built, and the two are peers. A grid on the chart would therefore be a setting every module has to be free to depart from, which is a control with no reliable effect. It also belongs beside the controls it only means anything with — density, length and syncopation, all of which act on the resolution it sets.
+
+**Triplets are the middle unit, and they belong to the line.** On a swung line the eighth-note pair already is a triplet — the long part is two units, the short part the third — so a triplet figure is the line also sounding the middle unit that swing skips. That makes it one control on mpxPhrase rather than a second grid: TRIPLETS, an amount, the likelihood that a beat sounds the middle unit. Default about 8 per cent of played beats, from the measurement, applied per figure rather than per group, with the occasional pair or three of consecutive beats the corpus shows. Below a full swing setting the long-short pair does not line up with an even three-per-beat division, so a triplet figure is drawn evenly across its beat and the swing deformation is left off it for that beat.
+
 ## Recording
 
 The RECORD button writes a file in the same folder and manner as mpxMelody's. A settings line is written at the start and whenever a setting changes, and records the seed actually in use and where it came from. One line is written per phrase, giving its position in the form and in the cycle, its cadence type, its sub-phrase division, and how many slots were copied by REPEAT. One line is written per note as it is sent.
@@ -254,6 +281,34 @@ The generated statistics at the SONG and JAZZ styles are compared directly with 
 5. REPEAT and CYCLE, then SECTIONS and ELIDE.
 6. The recurrence correction, CYCLE and the cadence-driven phrase anchor in mpxMelody.
 7. Recording.
+
+## Standalone mode — deferred, and how it would work
+
+Everything above assumes a chart. Most of what mpxPhrase does needs only time and the metre: the sub-phrase division, START, ENDING, the pauses, HOLD, REPEAT, CYCLE, VARIATION and the styles. Only four things come from the chart — the beat, the metre, where the phrases fall, and the chord changes that ON CHANGES uses — and three of those can be supplied directly. So the module could make phrase-shaped rhythm for anybody in Rack, with no chart and no other MPX module in the patch.
+
+This is deferred, not designed away. It is written down so the decisions are not made twice.
+
+**Revealed from the right-click menu, not by an expander.** An expander would mean another entry in the browser, adjacency to get wrong, and an orphan state to describe, for the sake of a handful of settings. A setting that reveals part of the panel keeps the module one thing, and the plugin already resizes a panel and pushes its neighbours aside when the panel editor changes a width.
+
+**Nothing extra is on the panel in the ordinary case.** No clock jack, no reset. The panel is control-heavy enough without inputs that a patch with a chart in it would never use.
+
+**Hiding the band removes the cables on its jacks.** A hidden jack with a cable in it is an invisible connection, which is worse than losing the cable. Every MPX port already removes cables that cannot work on the frame after they appear, so this behaves as the rest of the plugin does, and it happens at the moment the setting is changed rather than quietly.
+
+**The band on the left, revealed with the mode:** CLOCK and RESET inputs; BEATS IN A BAR; PULSES PER BEAT, since people clock at one pulse a beat, four, or twenty-four; PHRASE LENGTH in bars, which takes the place of cadence-to-cadence phrases and is the fallback the design already has; and FORM LENGTH in phrases, so that every fourth or eighth phrase ends as a close — which keeps PHRASE PAUSE, question and answer, and CYCLE meaningful with no harmony at all.
+
+**A band on the right, revealed with it:** GATE, LEVEL and a trigger at each phrase start.
+
+- **GATE** is the note. Its length is the note's length, so LENGTH and HOLD are audible through it and no duration output is needed.
+- **LEVEL** matters more than it looks. Every note carries a level from DYNAMICS, from its slot's metric weight and from the accent on a chord change; without the output, every note is the same loudness and the phrasing loses its accents, which is half of what makes a line sound played.
+- **The phrase trigger** is the one thing this module knows that nothing else in a rack does. It can reset an arpeggiator, advance a sequencer or fire a fill, so the rest of a patch can agree with the phrasing.
+
+Pitch needs no output: with no melody every note is the pitch NOTE sets, and an oscillator can be tuned to it.
+
+**Two controls do nothing in this mode** and read as inactive rather than pretending: ON CHANGES, because there are no chord changes, and SECTIONS, because there is no form to return to.
+
+**The clock is safe here, though it is refused with a chart.** A rhythm running on its own clock drifts away from a chart's harmony, which is why there is no clock input in the ordinary case. With no chart in the patch there is nothing to drift from: the phrases are counted from the clock itself.
+
+**The cost is care rather than code.** The generator does not change. Two modes mean two ways for the module to be wrong, so every test would have to run both, and the help would need to describe both without making the ordinary case sound complicated.
 
 ## Deferred
 

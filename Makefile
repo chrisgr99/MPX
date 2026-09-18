@@ -14,6 +14,7 @@ SOURCES += $(wildcard src/*.cpp)
 # with a few strokes. Petaluma is Steinberg's handwritten music font, under the Open Font
 # Licence, which is redistributed here with its licence beside it.
 DISTRIBUTABLES += res
+DISTRIBUTABLES += presets
 DISTRIBUTABLES += $(wildcard LICENSE*)
 
 include $(RACK_DIR)/plugin.mk
@@ -46,6 +47,8 @@ dev: $(TARGET)
 	@cp plugin.json "$(PLUGIN_DIR)/"
 	@rm -rf "$(PLUGIN_DIR)/res"
 	@cp -R res "$(PLUGIN_DIR)/"
+	@rm -rf "$(PLUGIN_DIR)/presets"
+	@cp -R presets "$(PLUGIN_DIR)/"
 	@cp LICENSE "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@xattr -c "$(PLUGIN_DIR)/plugin.dylib" 2>/dev/null || true
 	@codesign -v "$(PLUGIN_DIR)/plugin.dylib" && echo "signature valid"
@@ -76,6 +79,23 @@ charttest:
 		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
 
 
+phrasetest:
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		test/phrasetest.cpp src/Phrasing.cpp src/ChartLayout.cpp src/IReal.cpp src/Chord.cpp \
+		-o build/phrasetest -L$(RACK_DIR) -lRack
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/phrasetest $(ARGS) \
+		"$(HOME)/ProgrammingProjects/GXW/Blues 50.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Pop 400.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Brazilian 220.html" \
+		"$(HOME)/ProgrammingProjects/GXW/Jazz 1460.html"
+
+# THE FACTORY PRESETS, GENERATED. Rack's own Preset menu is what offers SONG and JAZZ, and their
+# values are the two measured styles — see tools/presetgen.cpp for why they are not typed in.
+presets:
+	@mkdir -p build presets/mpxPhrase
+	@c++ -std=c++11 -O1 -Wall tools/presetgen.cpp src/Phrasing.cpp -o build/presetgen
+	@./build/presetgen "$(VERSION)" presets/mpxPhrase
+
 melodytest:
 	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
 		test/melodytest.cpp src/Melodic.cpp src/Chord.cpp \
@@ -83,4 +103,4 @@ melodytest:
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/melodytest $(ARGS)
 
 
-.PHONY: test
+.PHONY: test presets

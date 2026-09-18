@@ -4,7 +4,7 @@ How the design in `phrase.md` is built. Each milestone ends with something that 
 
 ## Status
 
-Milestones 1 and 2 are built and their census checks pass. What remains of both is visual: mpxMonitor showing each phrase, how it ends, its section and appearance, and its chord changes while a chart plays.
+Milestones 1, 2, 3 and 4 are built, and milestone 4a is designed and measured but not built. `make phrasetest` reports the generated statistics beside the two corpora and ends with the exact checks, and mpxPhrase is a playable module whose remaining checks are the ones only Rack can make: that the cables take, that the measured tempo tracks a tempo change, and the listening checkpoint. `make phrasetest` reports the generated statistics beside the two corpora and ends with the exact checks. What remains of milestones 1 and 2 is visual: mpxMonitor showing each phrase, how it ends, its section and appearance, and how many chord changes it holds.
 
 ## Rules that apply throughout
 
@@ -64,15 +64,23 @@ Exact checks, which must never fail:
 - VARIATION at nought gives the same phrase for every seed
 - no note falls outside its phrase, and no note overlaps the breath
 
+**Result.** `make phrasetest`, over 1,326 real phrases at three tempos in both styles. At the SONG style: starts pickup 36 per cent, downbeat 37, after the beat 27, against the lead sheets' 37, 37 and 22; endings on a strong beat 62 per cent, matching; the last note the longest in its group 75 per cent against 71. At the JAZZ style: starts off the beat 55 per cent and on a downbeat 33, against the solos' 55 and 10 plus 23 on another beat; endings off the beat 62 per cent, matching; last note longest 58 per cent against 56. Group length holds 2.1 to 2.9 seconds at every tempo while growing from 2.9 to 11.5 beats, against the solos' median of 2.7 seconds. Pauses median 2.1 to 2.2 beats against the solos' 1.9. All four exact checks pass.
+
+**Four faults the census found, three of them mine.** Sharpening the START and ENDING mixes by VARIATION turned an intended 62 per cent into 85, so a mix is now used as the proportion it is. GROUP was being measured against the group's whole span rather than its sounding part, which made every group short by the length of its pause. Snapping every boundary to the nearest bar line robbed groups of up to a third of their length. And making the last note the longest by construction let it run past the end of the phrase, which the check caught as one note in twenty thousand.
+
 **Risk.** Defaults that match the lead-sheet statistics can still sound mechanical. The statistics are a floor, not a finish; milestone 8 is where the sound is judged.
 
 ## Milestone 4 — The module
 
 mpxPhrase as a playable module.
 
-**Work.** The panel, with every control present and labelled, for arranging in the panel editor. Timing from the chart's beat, with no clock input, and the tempo measured from how fast that beat advances. A phrase generated when the chart reaches its start, and notes sent at their times. Correct behaviour when the chart stops, rewinds, loops or has a section chosen: the pattern is regenerated from the new position rather than continued. The missing-chart notice on the panel. NOTE, SEED and OWN SEED. A DreamerHelp entry for every control.
+**Work.** The panel, with every control present and labelled, for arranging in the panel editor. Timing from the chart's beat, with no clock input, and the tempo measured from how fast that beat advances. A phrase generated when the chart reaches its start, and notes sent at their times. Correct behaviour when the chart stops, rewinds, loops or has a section chosen: the pattern is regenerated from the new position rather than continued. NOTE, SEED and OWN SEED. A DreamerHelp entry for every control.
 
 **When a setting changes mid-phrase,** the change takes effect at the start of the next sub-phrase. Waiting for the next phrase would make a knob feel dead for several bars; applying it mid-group would cut a breath group in half.
+
+**Result.** `src/mpxPhrase.cpp`, twenty-three parameters, two inputs and one output, registered in the plugin and given a DreamerHelp entry for every control. The test patch is at `patches/mpxphrase-test.vcv`, built from the autosave with Clarity and its settings kept: the chart feeds mpxPhrase and mpxMelody, mpxPhrase feeds the mpxVoice on one path and a second fromMPX on the other, and mpxEuclid is left in place but no longer drives the voice. The installed package is newer than every changed source and contains the new module, so Rack needs restarting to see it.
+
+**Three decisions taken while building it.** Every control is declared now, including milestone five's REPEAT, CYCLE, SECTIONS and ELIDE and milestone seven's RECORD, because Rack saves a parameter by its number and adding them later would misread every patch saved before; they are named on the panel and in the help as not built yet. The two styles are factory presets in Rack's own Preset menu rather than a control on the panel, which declutters it and brings saving your own for free; the preset files are generated from `phraseStyle` by `make presets`, and the module's defaults come from the same header, so the shipped preset, the defaults and the measured style cannot drift apart. And a chart that publishes no phrasing is played in four-bar phrases measured off the beat, which is the same fallback the chart itself uses, rather than leaving this module at the start of a phrase of no length.
 
 **Checks.**
 - A test patch built from the autosave: mpxChart into mpxPhrase and mpxMelody, mpxPhrase into mpxVoice, with Clarity kept.
@@ -80,6 +88,16 @@ mpxPhrase as a playable module.
 - The panel and help load, and cables take.
 - The measured tempo is checked against the chart's tempo setting, and follows a change of tempo within a beat or two.
 - **Listening checkpoint with you:** does the line breathe, does it leave audible space, and do the controls do what their names say.
+
+## Milestone 4a — Feel: swing and triplets
+
+Numbered this way so the later milestones keep the numbers they already have. It comes before repetition, because a repeated phrase that swings differently from its first appearance is not a repetition.
+
+**Work.** A SWING control on mpxChart, from none to full, and on the harmony block the amount plus one ratio per division — the eighth level and the sixteenth level — converted by the chart from the amount and the tempo it is running, along the curve measured in `test/swing.py`. A reader looks up the ratio for the division it works at and knows nothing of the curve. In mpxPhrase, the onsets and the durations of a phrase are deformed by that ratio after the notes are placed, not before: placement stays on an even grid so that the metre, the chord changes and the sub-phrase boundaries are all still reasoned about in plain beats. A TRIPLETS control on mpxPhrase, the likelihood a beat sounds the middle unit of the triplet, drawn per figure.
+
+**Checks — `make phrasetest`.** With swing at nought every onset stays on its slot. At full swing, the census of first-half against second-half durations reproduces the ratio the chart published, at both the eighth and the sixteenth level. The deformation moves nothing across a bar line or a phrase boundary, and no note overlaps the one after it. Triplet figures land on about the share the control asks for, and the runs of consecutive triplet beats stay as short as the corpus's.
+
+**Open, for you.** Where the SWING control goes on the mpxChart panel, which is already arranged.
 
 ## Milestone 5 — Repetition
 
@@ -116,5 +134,7 @@ mpxPhrase as a playable module.
 **Check.** The generated statistics at the final defaults are reported next to the lead-sheet figures in `phrase.md`, so the gap between them is visible.
 
 ## Not in this plan
+
+Standalone mode — running from a clock with no chart, revealed from the right-click menu, with its own input band and a gate, level and phrase trigger on the right. Described in `phrase.md`; it would follow the milestones above, since it changes what feeds the generator and not the generator itself.
 
 The drum pattern generator. Swing, ratchets and fills. Whether a melody may alter the rhythm's rests. Any module reading another module's notes, which the design rules out.

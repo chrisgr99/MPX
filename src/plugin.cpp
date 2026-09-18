@@ -17,4 +17,5 @@ void init(Plugin* p) {
 	p->addModel(modelMpxRand);
 	p->addModel(modelMpxMelody);
 	p->addModel(modelMpxMelodyVoice);
+	p->addModel(modelMpxPhrase);
 }

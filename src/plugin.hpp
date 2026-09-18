@@ -16,6 +16,7 @@ extern Model* modelMpxArp;
 extern Model* modelMpxRand;
 extern Model* modelMpxMelody;
 extern Model* modelMpxMelodyVoice;
+extern Model* modelMpxPhrase;
 
 namespace px {
 
@@ -37,6 +38,7 @@ struct NoteSink {
 
 /** The signal families, coloured the same way DreamRack colours them: the colour says what
 kind of signal a jack carries, and it is the same code on every panel. */
+extern const NVGcolor PANEL_RULE;
 extern const NVGcolor SIG_AUDIO;
 extern const NVGcolor SIG_CV;
 extern const NVGcolor SIG_GATE;
