@@ -646,6 +646,19 @@ struct PianoModule : Module, NoteSink {
 		startOneShot(bank->find(PART_RESONANCE, v.key, v.vel), gain, PART_RESONANCE, v.key, sampleRate);
 	}
 
+	/** Every key up at once, as though each had been released: the pedal still decides how long
+	the strings ring. */
+	void allKeysUp(float sampleRate) {
+		const float sustain = std::max(0.f, params[P_SUSTAIN].getValue());
+		for (PianoVoice& v : voices) {
+			if (!v.active || v.part != PART_STRINGS || !v.keyDown)
+				continue;
+			v.keyDown = false;
+			if (sustain < 0.95f)
+				damp(v, sampleRate, sustain);
+		}
+	}
+
 	void noteOff(int64_t source, float sampleRate, float sustain) {
 		const PianoBank* bank = gLib.bank.load();
 		for (PianoVoice& v : voices) {
@@ -681,6 +694,8 @@ struct PianoModule : Module, NoteSink {
 			v.active = false;
 	}
 
+	bool attachedWas = false;
+
 	void process(const ProcessArgs& args) override {
 		if (relink.exchange(false)) {
 			reader.clear();
@@ -688,6 +703,15 @@ struct PianoModule : Module, NoteSink {
 			for (int i = 0; i < n; i++)
 				reader.add(wantSlots[i].load(), wantGenerations[i].load());
 		}
+
+		// THE CABLE GOING IS EVERY KEY COMING UP. A note ends when its note-off arrives, and a
+		// cable pulled out — or muted, which takes the cable out — never sends one, so whatever
+		// was sounding rang on for ever with its key still down. Unplugging a piano is not a way
+		// to hold a chord.
+		const bool attached = reader.attached();
+		if (!attached && attachedWas)
+			allKeysUp(args.sampleRate);
+		attachedWas = attached;
 
 		// A NEW SET OF SAMPLES — a different number of layers, or a fresh download — invalidates
 		// every voice, which point into the old one. They stop rather than read freed memory.
