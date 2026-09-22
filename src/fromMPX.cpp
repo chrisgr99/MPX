@@ -168,13 +168,13 @@ struct VoiceModule : Module, NoteSink {
 		paramQuantities[P_POLY]->snapEnabled = true;
 		configSwitch(P_ROLLOVER, 0.f, NUM_ROLLOVER - 1, 0.f, "When no voice is free",
 			{"Take the oldest", "Take the quietest", "Ignore the note",
-			 "Glide — one voice", "Legato — two voices"});
+			 "Glide", "Legato"});
 		configParam(P_GLIDE, 0.f, 2.f, 0.06f, "Glide time", " s");
 
-		configInput(I_NOTE, "MPX note in \u2014 takes an MPX output only");
-		configInput(I_SOUNDING, "Envelope back in, so a releasing voice is not reused");
+		configInput(I_NOTE, "MPX note");
+		configInput(I_SOUNDING, "Envelope return");
 		configOutput(O_GATE, "Gate");
-		configOutput(O_PITCH, "1V/oct, bend included");
+		configOutput(O_PITCH, "1V/oct");
 		configOutput(O_LEVEL, "Level");
 		configOutput(O_BEND, "Bend");
 		configOutput(O_PRESSURE, "Pressure");

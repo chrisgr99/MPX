@@ -99,11 +99,11 @@ struct ProgressionModule : Module, NoteSource {
 		paramQuantities[P_WHICH]->snapEnabled = true;
 		configParam(P_KEY, 0.f, 11.f, 0.f, "Key");
 		paramQuantities[P_KEY]->snapEnabled = true;
-		configParam(P_TEMPO, 30.f, 300.f, 100.f, "Tempo (when no clock is patched)", " bpm");
+		configParam(P_TEMPO, 30.f, 300.f, 100.f, "Tempo", " bpm");
 
 		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
-		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
+		configOutput(O_MPX, "MPX note");
 
 		slot = busClaim(&generation);
 	}

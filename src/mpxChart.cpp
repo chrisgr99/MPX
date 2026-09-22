@@ -369,15 +369,15 @@ struct ChartModule : Module, NoteSource {
 			{"Letter names", "Roman numerals"});
 		configButton(P_OPEN, "Open chart window");
 		configSwitch(P_RECORD, 0.f, 1.f, 0.f, "Record the chain",
-			{"Off", "Recording: every module downstream that keeps a log"});
+			{"Off", "Recording"});
 		configSwitch(P_STYLE, 0.f, 6.f, 0.f, "Style",
 			{"\u2014", "Pop 1", "Pop 2", "Pop 3", "Jazz 1", "Jazz 2", "Jazz 3"});
-		configInput(I_CLOCK, "Clock, which overrides the tempo knob");
+		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
-		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
-		configOutput(O_CHORD, "Chord tones as polyphonic V/Oct");
-		configOutput(O_ROOT, "Root as V/Oct");
-		configOutput(O_BASS, "Bass line as V/Oct, below the chord");
+		configOutput(O_MPX, "MPX note");
+		configOutput(O_CHORD, "Chord V/Oct");
+		configOutput(O_ROOT, "Root V/Oct");
+		configOutput(O_BASS, "Bass V/Oct");
 		slot = busClaim(&generation);
 	}
 

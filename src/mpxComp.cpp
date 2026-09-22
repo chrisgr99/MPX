@@ -170,8 +170,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// without one the root has to be here and has to be underneath. The chart's own bass
 		// output is the ordinary case, so that is the default.
 		configSwitch(P_BASS, 0.f, 1.f, 0.f, "Root",
-			{"Rootless — a separate instrument has it",
-			"Chord has the root — this part plays it, underneath"});
+			{"Rootless", "With root"});
 		configSwitch(P_SPREAD, 0.f, (float) (NUM_SPREADS - 1), 0.f, "Spread",
 			{SPREAD_NAMES[0], SPREAD_NAMES[1], SPREAD_NAMES[2]});
 		configSwitch(P_COLOUR, 0.f, (float) (NUM_COLOURS - 1), (float) COLOUR_EXTENSIONS,
@@ -185,7 +184,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// tied — a voice that does not move is never re-struck — which is the module's other
 		// half and what somebody feeding a pad wants. Turning the rhythm on trades the tie for
 		// a figure, and that is a musical choice rather than a completeness.
-		configSwitch(P_RHYTHM, 0.f, 1.f, 0.f, "Rhythm", {"Off — one held chord", "On"});
+		configSwitch(P_RHYTHM, 0.f, 1.f, 0.f, "Rhythm", {"Off", "On"});
 		configSwitch(P_RATE, 0.f, (float) (NUM_RATES - 1), 2.f, "Rate",
 			{RATE_NAMES[0], RATE_NAMES[1], RATE_NAMES[2], RATE_NAMES[3], RATE_NAMES[4],
 			RATE_NAMES[5]});
@@ -206,8 +205,8 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// cannot do this, because in a block chord every voice of it is accented alike.
 		configParam(P_BALANCE, 0.f, 1.f, 0.3f, "Balance", "%", 0.f, 100.f);
 
-		configInput(I_MPX, "MPX note in \u2014 takes an MPX output only");
-		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
+		configInput(I_MPX, "MPX note");
+		configOutput(O_MPX, "MPX note");
 
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);

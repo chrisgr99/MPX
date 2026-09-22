@@ -91,8 +91,7 @@ struct NoteModule : Module, NoteSource {
 		// what it does rather than for which signal it watches: the gate can only ever end a
 		// note EARLY, since duration is a maximum in both positions.
 		configSwitch(P_ENDS, 0.f, 1.f, 0.f, "Note ends",
-			{"At its duration, whatever the gate does",
-			 "At the gate's fall or its duration, whichever comes first"});
+			{"Duration", "Gate or duration"});
 
 		configInput(I_GATE, "Gate");
 		configInput(I_PITCH, "1V/oct");
@@ -101,9 +100,9 @@ struct NoteModule : Module, NoteSource {
 		configInput(I_PAN, "Pan");
 		configInput(I_PRESSURE, "Pressure");
 		configInput(I_TIMBRE, "Timbre");
-		configInput(I_SUSTAIN, "Sustain pedal \u2014 a gate holds it down; 0 to 10V is part way");
-		configInput(I_SOFT, "Soft pedal \u2014 a gate holds it down; 0 to 10V is part way");
-		configOutput(O_VOICE, "MPX note out \u2014 goes to an MPX input only");
+		configInput(I_SUSTAIN, "Sustain pedal");
+		configInput(I_SOFT, "Soft pedal");
+		configOutput(O_VOICE, "MPX note");
 
 		slot = busClaim(&generation);
 	}

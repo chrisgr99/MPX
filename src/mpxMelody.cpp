@@ -375,12 +375,12 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 		// A QUARTER, WHICH IS THE JAZZ SOLOS' FIGURE: about one interval in twenty a repeated
 		// note. Songs repeat far more, and that is a setting, not a default.
 		configParam(P_REPEAT, 0.f, 1.f, 0.25f, "Repeated notes", "%", 0.f, 100.f);
-		configParam(P_MOTIF, 0.f, 1.f, 0.5f, "Motif: a restated rhythm brings back its pitches", "%",
+		configParam(P_MOTIF, 0.f, 1.f, 0.5f, "Motif", "%",
 			0.f, 100.f);
-		configParam(P_CONTOUR, 0.f, 1.f, 0.5f, "Contour: each line rises early and falls to its end",
+		configParam(P_CONTOUR, 0.f, 1.f, 0.5f, "Contour",
 			"%", 0.f, 100.f);
 
-		configInput(I_RHYTHM, "Rhythm in — MPX");
+		configInput(I_RHYTHM, "MPX rhythm");
 		// THE WORD CV IS IN THE NAME ON PURPOSE. Clarity colours every port in the rack, and
 		// where it has no entry for a module it falls back to reading the port's name — "MPX"
 		// makes a port magenta, "CV" makes it orange, "CLOCK" makes it blue. Without the word,
@@ -389,9 +389,9 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 		//
 		// The name is doing two jobs, and it should: a port called "Random draw" that carries a
 		// control voltage ought to say so in its tooltip for a reader as much as for a rule.
-		configInput(I_RAND, "Random draw — CV");
-		configInput(I_PROFILE, "Profile CV — moves the register");
-		configOutput(O_PART, "Notes out — MPX");
+		configInput(I_RAND, "Random draw CV");
+		configInput(I_PROFILE, "Profile CV");
+		configOutput(O_PART, "MPX notes");
 	}
 
 	~VoiceModule() {
@@ -568,7 +568,7 @@ struct MelodyModule : Module, NoteSink {
 		configParam(P_CYCLE, 1.f, 16.f, 4.f, "Cycle", " phrases");
 		paramQuantities[P_CYCLE]->snapEnabled = true;
 		configSwitch(P_OWN_SEED, 0.f, 1.f, 0.f, "Seed",
-			{"Added to the chart's seed", "Used alone"});
+			{"Added to chart's", "Used alone"});
 
 		configInput(I_CHART, "Chart in \u2014 MPX");
 	}

@@ -139,7 +139,7 @@ struct RandModule : Module, NoteSource, NoteSink {
 		// a knob that sometimes does nothing is easier to understand than one that disappears.
 		configParam(P_RATE, 0.05f, 8.f, 1.f, "Rate", " cycles per beat");
 		configSwitch(P_EVOLVE, 0.f, 1.f, 0.f, "Each pass",
-			{"Repeat — the same every time round", "Evolve — different each time round"});
+			{"Repeat", "Evolve"});
 		configInput(I_MPX, "MPX in");
 		configOutput(O_MPX, "MPX out");
 		slot = busClaim(&generation);

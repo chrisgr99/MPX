@@ -473,19 +473,19 @@ struct PianoModule : Module, NoteSink {
 	PianoModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(P_VOLUME, 0.f, 2.f, 1.f, "Volume", "%", 0.f, 100.f);
-		configParam(P_RELEASE, 0.f, 2.f, 1.f, "Release — the strings' resonance as a key comes up",
+		configParam(P_RELEASE, 0.f, 2.f, 1.f, "Release",
 			"%", 0.f, 100.f);
-		configParam(P_HAMMER, 0.f, 2.f, 1.f, "Hammer — the key and hammer noise as a key comes up",
+		configParam(P_HAMMER, 0.f, 2.f, 1.f, "Hammer",
 			"%", 0.f, 100.f);
-		configParam(P_PEDAL, 0.f, 2.f, 1.f, "Pedal — the noise of the sustain pedal", "%", 0.f, 100.f);
+		configParam(P_PEDAL, 0.f, 2.f, 1.f, "Pedal", "%", 0.f, 100.f);
 		configParam(P_BRIGHT, 0.f, 1.f, 1.f, "Brightness", "%", 0.f, 100.f);
 		configParam(P_DYNAMICS, 0.f, 1.f, 1.f,
-			"Dynamics — how far soft and loud notes differ", "%", 0.f, 100.f);
+			"Dynamics", "%", 0.f, 100.f);
 		configParam(P_DAMPING, 0.f, 1.f, 0.8f,
-			"Damping — how long a note takes to die once its key is up", " s", 40.f, 0.05f);
+			"Damping", " s", 40.f, 0.05f);
 		configSwitch(P_SUSTAIN, 0.f, 1.f, 0.f, "Sustain pedal", {"Up", "Down"});
 		configSwitch(P_SOFT, 0.f, 1.f, 0.f, "Soft pedal", {"Up", "Down"});
-		configInput(I_MPX, "MPX in — takes an MPX output only");
+		configInput(I_MPX, "MPX note");
 		configOutput(O_L, "Left");
 		configOutput(O_R, "Right");
 		for (int i = 0; i < MAX_UPSTREAM; i++) {

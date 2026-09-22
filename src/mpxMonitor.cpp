@@ -74,8 +74,8 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 		// HOLD STOPS THE DISPLAY, NOT THE CABLE. Notes go on through either way: a monitor
 		// that could silence a patch by being read would be a trap.
 		configSwitch(P_HOLD, 0.f, 1.f, 0.f, "Display", {"Running", "Held"});
-		configInput(I_MPX, "MPX note in \u2014 takes an MPX output only");
-		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
+		configInput(I_MPX, "MPX note");
+		configOutput(O_MPX, "MPX note");
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);

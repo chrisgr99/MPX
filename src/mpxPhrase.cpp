@@ -176,7 +176,7 @@ struct PhraseModule : Module, NoteSource, NoteSink {
 		// the chart's seed still moves it. Locked, this module's line stays exactly as it is
 		// while every other random process in the patch follows the chart.
 		configSwitch(PHP_OWN_SEED, 0.f, 1.f, d[PHP_OWN_SEED], "Lock seed",
-			{"Follows the chart's seed", "Locked to the seed here"});
+			{"Follows chart", "Locked"});
 
 		configParam(PHP_REPEAT, 0.f, 1.f, d[PHP_REPEAT], "Repeat", "%", 0.f, 100.f);
 		configParam(PHP_CYCLE, 1.f, 16.f, d[PHP_CYCLE], "Cycle", " phrases");
@@ -192,14 +192,14 @@ struct PhraseModule : Module, NoteSource, NoteSink {
 		// falls on eight per cent of the beats real solos play. Thirty per cent at the top is
 		// beyond anything measured and is there to be overdone deliberately.
 		configParam(PHP_TRIPLETS, 0.f, 0.3f, d[PHP_TRIPLETS], "Triplets", "% of beats", 0.f, 100.f);
-		configParam(PHP_SHAPE, 0.f, 1.f, d[PHP_SHAPE], "Loudness shape across a phrase", "%", 0.f,
+		configParam(PHP_SHAPE, 0.f, 1.f, d[PHP_SHAPE], "Loudness shape", "%", 0.f,
 			100.f);
-		configParam(PHP_MOTIF, 0.f, 1.f, d[PHP_MOTIF], "Motif: groups restating an earlier group's rhythm",
+		configParam(PHP_MOTIF, 0.f, 1.f, d[PHP_MOTIF], "Motif",
 			"%", 0.f, 100.f);
 
-		configInput(I_CHART, "Chart in — MPX");
-		configInput(I_DENSITY, "Density — CV");
-		configOutput(O_MPX, "Notes out — MPX");
+		configInput(I_CHART, "MPX chart");
+		configInput(I_DENSITY, "Density CV");
+		configOutput(O_MPX, "MPX notes");
 
 		slot = busClaim(&generation);
 	}

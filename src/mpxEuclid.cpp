@@ -121,20 +121,20 @@ struct EuclidModule : Module, NoteSource {
 			voices[v].duration.seed(v * 2 + 2);
 		}
 		configParam(P_LEVEL, 0.f, 1.f, 0.7f, "Level", "%", 0.f, 100.f);
-		configParam(P_MOVE, 0.f, 1.f, 0.5f, "How far the level wanders", "%", 0.f, 100.f);
+		configParam(P_MOVE, 0.f, 1.f, 0.5f, "Move", "%", 0.f, 100.f);
 		configParam(P_LENGTH, std::log2(0.01f), std::log2(4.f), std::log2(0.15f),
 			"Length", " s", 2.f);
-		configParam(P_WEIGHT, 0.f, 1.f, 0.5f, "How much length follows level", "%", 0.f, 100.f);
+		configParam(P_WEIGHT, 0.f, 1.f, 0.5f, "Weight", "%", 0.f, 100.f);
 		// In beats per point of the wander: a large number is a slow drift.
 		configParam(P_DRIFT, std::log2(0.25f), std::log2(16.f), std::log2(2.f),
 			"Drift", " beats a step", 2.f);
 		configParam(P_LOOP, 1.f, 64.f, 16.f, "Repeats after", " beats");
 		paramQuantities[P_LOOP]->snapEnabled = true;
-		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo (when no clock is patched)", " bpm");
+		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo", " bpm");
 
 		configInput(I_CLOCK, "Clock");
 		configInput(I_RESET, "Reset");
-		configOutput(O_VOICE, "MPX note out \u2014 goes to an MPX input only");
+		configOutput(O_VOICE, "MPX note");
 
 		slot = busClaim(&generation);
 	}
