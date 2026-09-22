@@ -316,10 +316,10 @@ turned while playing, so they are in the right-click menu rather than on the fac
 static const float JACK_X = 7.5f;
 static const float KNOB_X = 20.5f;
 
-static Layout toMPXLayout() {
+static Layout mpxInLayout() {
 	Layout L;
 	L.hp = 6.f;
-	L.title = "toMPX";
+	L.title = "mpxIn";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
@@ -392,15 +392,15 @@ struct NoteWidget : ModuleWidget {
 
 	NoteWidget(NoteModule* module) {
 		setModule(module);
-		layout = toMPXLayout();
-		layoutApplyUser("toMPX", layout);
+		layout = mpxInLayout();
+		layoutApplyUser("mpxIn", layout);
 		panel = new Panel;
 		addChild(panel);
 		layoutBuild(this, panel, layout);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
-		layoutAppendMenu(menu, this, panel, &layout, "toMPX");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxIn");
 		NoteModule* m = dynamic_cast<NoteModule*>(module);
 		if (!m)
 			return;
@@ -455,4 +455,4 @@ struct NoteWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelToMPX = createModel<px::NoteModule, px::NoteWidget>("toMPX");
+Model* modelMpxIn = createModel<px::NoteModule, px::NoteWidget>("mpxIn");

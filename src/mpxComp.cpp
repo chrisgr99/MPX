@@ -22,7 +22,7 @@ is what the rhythm will need.
 
 ONE WAY OUT, and it is an MPX cable too. A note on one carries its pitch, its level and its
 duration as a single event, so the three parallel cables this had at first — pitch, gate and
-level — were saying in triplicate what one event says once, and fromMPX is the one place where
+level — were saying in triplicate what one event says once, and mpxOut is the one place where
 any MPX cable becomes ordinary Rack signals.
 
 AND THAT IS WHAT MAKES A TIE POSSIBLE, which is the whole point of the module. A voice that does

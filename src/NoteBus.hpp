@@ -33,7 +33,7 @@ lapped is moved up rather than replaying: it is a live signal, not a recording.
 namespace px {
 
 
-/** How many voice cables can be sourced at once. An toMPX claims one per output, so
+/** How many voice cables can be sourced at once. An mpxIn claims one per output, so
 this is sixteen of them. */
 static const int MAX_BUSES = 64;
 /** Events a bus holds before the oldest are overwritten. Producer and consumer both run in the
@@ -326,7 +326,7 @@ struct BusReader {
 /** A unique name for a note. */
 int64_t mintHandle();
 
-/** ANYTHING THAT PUTS NOTES ON A CABLE. Implemented by toMPX and by every native source after
+/** ANYTHING THAT PUTS NOTES ON A CABLE. Implemented by mpxIn and by every native source after
 it, so the far end asks a question about a capability rather than about a class: a sequencer
 that speaks MPX plugs straight into an unbundler with no adapter and nothing to whitelist.
 

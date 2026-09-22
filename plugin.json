@@ -15,8 +15,8 @@
   "changelogUrl": "https://github.com/chrisgr99/MPX/blob/main/CHANGELOG.md",
   "modules": [
     {
-      "slug": "toMPX",
-      "name": "toMPX",
+      "slug": "mpxIn",
+      "name": "mpxIn",
       "description": "Gathers ordinary control voltages into voice cables. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, and four voice cables come out, each carrying one instrument's notes. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life; bend, pressure and timbre are followed while it sounds. The notes-per-voice knob decides how the sixteen channels divide among the four cables.",
       "tags": [
         "Polyphonic",
@@ -25,8 +25,8 @@
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/manual.md"
     },
     {
-      "slug": "fromMPX",
-      "name": "fromMPX",
+      "slug": "mpxOut",
+      "name": "mpxOut",
       "description": "Takes one voice cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend as a control signal and as volts per octave, pressure, timbre, pan and duration. It allocates the notes among its voices, with a choice of what gives when none is free: take the oldest, take the quietest, ignore the note, glide, or legato.",
       "tags": [
         "Polyphonic",

@@ -1,6 +1,6 @@
 /** mpxPiano — the Salamander Grand Piano, played from an MPX cable. See docs/piano.md.
 
-ONLY AN MPX CABLE IN. Ordinary Rack signals reach it through toMPX, which already turns pitch,
+ONLY AN MPX CABLE IN. Ordinary Rack signals reach it through mpxIn, which already turns pitch,
 gate, level and timbre into notes and now carries the two pedals as well. That keeps this module to
 the piano: its sound, its pedals, and where its samples come from.
 

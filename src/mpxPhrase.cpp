@@ -2,7 +2,7 @@
 
 It places notes against the chart's bars, chord changes, cadences and phrases, and sends them on
 one MPX cable with a level and a duration. The pitch is whatever NOTE says, so the cable can go
-straight to fromMPX and be heard; an mpxVoice in between replaces the pitch with a melody.
+straight to mpxOut and be heard; an mpxVoice in between replaces the pitch with a melody.
 
 WHY IT EXISTS. mpxEuclid repeats a fixed number of steps and knows nothing of bars, changes or
 phrases, so a melody driven by it drifts through the form and never arrives anywhere. This is the
@@ -523,7 +523,7 @@ struct PhraseModule : Module, NoteSource, NoteSink {
 		//
 		// Every note used to end the one before it and only then begin, so no two notes ever
 		// overlapped by so much as a sample — and a downstream voice that joins overlapping
-		// notes into one line, which is what fromMPX's glide mode is for, never once saw a
+		// notes into one line, which is what mpxOut's glide mode is for, never once saw a
 		// note arrive while another was sounding. Whatever LENGTH said, the line came out
 		// detached. So a note still sounding when the next arrives is ended AFTER the new one
 		// has begun: the order is the whole of what makes it legato.
@@ -534,7 +534,7 @@ struct PhraseModule : Module, NoteSource, NoteSink {
 		Event e;
 		e.kind = Event::ON;
 		e.handle = sounding = mintHandle();
-		// THE PITCH NOTE SETS, in volts from middle C, so the cable can go straight to fromMPX
+		// THE PITCH NOTE SETS, in volts from middle C, so the cable can go straight to mpxOut
 		// and be heard. An mpxVoice downstream replaces it.
 		e.pitch = (params[PHP_NOTE].getValue() - 60.f) / 12.f;
 		e.level = n.level;
@@ -543,7 +543,7 @@ struct PhraseModule : Module, NoteSource, NoteSink {
 		// exactly the gap, so its end and the next start fell on the same sample, and which
 		// arrived first decided whether the line was joined. Fifteen milliseconds past settles
 		// it: long enough that the next note is always there first, short enough that nobody
-		// hears two notes at once. On the note itself, because fromMPX ends a note when its
+		// hears two notes at once. On the note itself, because mpxOut ends a note when its
 		// duration runs out whether or not an OFF has come.
 		if (index + 1 < from.noteCount) {
 			const PhraseNote& after = from.notes[index + 1];

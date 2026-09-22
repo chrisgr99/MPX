@@ -568,10 +568,10 @@ static const float JACK_LABEL_SIZE = 7.f;
 static const float JACK_TOP = 21.5f;
 static const float JACK_PITCH = 11.3f;
 
-static Layout fromMPXLayout() {
+static Layout mpxOutLayout() {
 	Layout L;
 	L.hp = 8.f;
-	L.title = "fromMPX";
+	L.title = "mpxOut";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
@@ -681,19 +681,19 @@ struct VoiceWidget : ModuleWidget {
 
 	VoiceWidget(VoiceModule* module) {
 		setModule(module);
-		layout = fromMPXLayout();
-		layoutApplyUser("fromMPX", layout);
+		layout = mpxOutLayout();
+		layoutApplyUser("mpxOut", layout);
 		panel = new Panel;
 		addChild(panel);
 		layoutBuild(this, panel, layout);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
-		layoutAppendMenu(menu, this, panel, &layout, "fromMPX");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxOut");
 	}
 
 	/** WHERE THE CABLE BECOMES A LINK. Rack owns the cable; this reads it. A cable whose other
-	end is a toMPX registers that source with this module, and pulling the cable unregisters it
+	end is a mpxIn registers that source with this module, and pulling the cable unregisters it
 	on the next frame, because the scan is the only thing that establishes it. Patching happens
 	at human speed, so once a frame is far faster than it needs to be. */
 	void step() override {
@@ -724,4 +724,4 @@ struct VoiceWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelFromMPX = createModel<px::VoiceModule, px::VoiceWidget>("fromMPX");
+Model* modelMpxOut = createModel<px::VoiceModule, px::VoiceWidget>("mpxOut");

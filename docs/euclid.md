@@ -89,7 +89,7 @@ Level and duration are as calculated above. A note-off is sent when the duration
 
 It is an MPX source. It claims a bus slot, writes note events to it, and answers the question every source answers: which bus a given output writes to.
 
-That question is asked of a capability rather than of a class, so this module required no change at the receiving end. Before it existed the lookup tested for toMPX specifically, which made the design's claim that any module can be a source true only on paper.
+That question is asked of a capability rather than of a class, so this module required no change at the receiving end. Before it existed the lookup tested for mpxIn specifically, which made the design's claim that any module can be a source true only on paper.
 
 ## Known limitations
 

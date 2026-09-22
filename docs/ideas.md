@@ -564,7 +564,7 @@ That one requirement is the load-bearing part of both. If it is built into the t
 
 **Sources** — put a stream on a cable. mpxChart, holding and displaying a chart and owning the beat. mpxEuclid, built. mpxPattern, the crosses-and-dots editor aligned to measures. Later, controllers: a harmonica embouchure, a guitar, a plain step sequencer.
 
-**Adapters** — toMPX and fromMPX, both built, and **mpxFromMIDI**, which is small and turns the system from something programmed into something played.
+**Adapters** — mpxIn and mpxOut, both built, and **mpxFromMIDI**, which is small and turns the system from something programmed into something played.
 
 **Harmony processors** — first in the chain, since everything downstream reads what they write. mpxReharmonise, with colour and substitute. Later a transposer and a key filter.
 

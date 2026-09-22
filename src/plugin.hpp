@@ -4,8 +4,8 @@
 using namespace rack;
 
 extern Plugin* pluginInstance;
-extern Model* modelFromMPX;
-extern Model* modelToMPX;
+extern Model* modelMpxOut;
+extern Model* modelMpxIn;
 extern Model* modelEuclid;
 extern Model* modelProgression;
 extern Model* modelMonitor;
@@ -21,7 +21,7 @@ extern Model* modelMpxPiano;
 
 namespace px {
 
-/** The bus slot a toMPX output is writing to, so a fromMPX can find it across
+/** The bus slot a mpxIn output is writing to, so a mpxOut can find it across
 the cable. Returns -1 for any other module, and for any port that is not a voice output. */
 int noteBusOf(engine::Module* module, int outputId, uint32_t* generation);
 

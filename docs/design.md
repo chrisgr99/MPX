@@ -16,7 +16,7 @@ It does not carry the notes. Rack cables carry one float per channel per sample,
 
 The events travel through a table inside the plugin. The cable is what says which source is joined to which destination.
 
-Once a frame, on the main thread, fromMPX looks at the cable in its Voice input. If the other end of that cable is a toMPX, the two are linked. Removing the cable unlinks them on the next frame, because the scan is the only thing that establishes the link. Patching happens at human speed, so a scan at frame rate is faster than it needs to be.
+Once a frame, on the main thread, mpxOut looks at the cable in its Voice input. If the other end of that cable is a mpxIn, the two are linked. Removing the cable unlinks them on the next frame, because the scan is the only thing that establishes the link. Patching happens at human speed, so a scan at frame rate is faster than it needs to be.
 
 ### Why not sixteen channels of voltage
 
@@ -30,7 +30,7 @@ Rack's message passing between modules reaches the module physically beside it a
 
 ### What happens if a voice cable is patched somewhere else
 
-toMPX puts zero volts on the wire, so a module patched to it receives zero volts. fromMPX fed by an ordinary module receives no events, because no link is registered.
+mpxIn puts zero volts on the wire, so a module patched to it receives zero volts. mpxOut fed by an ordinary module receives no events, because no link is registered.
 
 ### Slots rather than pointers
 
@@ -40,7 +40,7 @@ The buses are static, so a voice reads a slot that always exists and finds it un
 
 ### One producer, several consumers
 
-One toMPX feeds as many fromMPX modules as are patched to it. Each keeps its own cursor into the source's ring.
+One mpxIn feeds as many mpxOut modules as are patched to it. Each keeps its own cursor into the source's ring.
 
 ### Timing
 
@@ -72,9 +72,9 @@ A source whose pitch keeps moving after the gate — an unquantised drift, or th
 
 Bend is a deviation, not an absolute pitch. That is what a wheel, a wind controller and MPE all produce.
 
-It is sent in volts, unscaled. toMPX computes it as the pitch input minus the value held at the gate's edge, so it is zero at every note-on by construction and the source patches one ordinary moving voltage.
+It is sent in volts, unscaled. mpxIn computes it as the pitch input minus the value held at the gate's edge, so it is zero at every note-on by construction and the source patches one ordinary moving voltage.
 
-**fromMPX's pitch output carries the bend already.** Where the note is now is what an oscillator wants, and a note bent up a semitone after it starts is one signal rather than a note plus a correction somebody has to remember to sum. A guitar line works without a second cable.
+**mpxOut's pitch output carries the bend already.** Where the note is now is what an oscillator wants, and a note bent up a semitone after it starts is one signal rather than a note plus a correction somebody has to remember to sum. A guitar line works without a second cable.
 
 It also leaves on its own jack. The **Bend** output runs to five volts at full deflection, scaled by the bend range knob — how many semitones count as full deflection — and clamped there, as a wheel at its stop is. That is for the effects that should respond to a note being bent rather than to the pitch it is now producing.
 
@@ -88,13 +88,13 @@ Level is the note's velocity, taken at the gate's edge. Pressure is how the note
 
 A source that wants a velocity out of a continuous signal does that on its own face, where it is visible, rather than invisibly at the boundary.
 
-### Breath makes the note, and toMPX does not know that yet
+### Breath makes the note, and mpxIn does not know that yet
 
 On a wind controller there is no key and no strike. Pressure rising through a threshold is the note starting, and pressure falling below a lower one is the note ending — the gap between the two thresholds being what stops a player breathing quietly at the edge from stuttering the note on and off. So on that instrument pressure IS the gate, as well as being the expression the note is played with.
 
-Nothing at the far end changes for this. fromMPX's gate already carries the note's life whatever produced it, and pressure remains its own output because the effects a wind player expects — a filter opening as they push — respond to the pressure itself and not to the fact that a note is sounding.
+Nothing at the far end changes for this. mpxOut's gate already carries the note's life whatever produced it, and pressure remains its own output because the effects a wind player expects — a filter opening as they push — respond to the pressure itself and not to the fact that a note is sounding.
 
-What is missing is at the near end. toMPX takes a gate on one jack and pressure on another, so a wind controller needs the player to build the threshold and its hysteresis out of a comparator and a latch, which is fiddly to get right and belongs in the module that already knows what a note is.
+What is missing is at the near end. mpxIn takes a gate on one jack and pressure on another, so a wind controller needs the player to build the threshold and its hysteresis out of a comparator and a latch, which is fiddly to get right and belongs in the module that already knows what a note is.
 
 Three things go together when it is built:
 
@@ -102,7 +102,7 @@ Three things go together when it is built:
 
 **Where the velocity comes from.** A breath note has no strike, so the usual answers are the pressure at the moment of crossing, or how fast it rose through the threshold. The second is closer to what a player feels as attack and is what the better wind controllers do. Either way it is one number captured at onset, since level is fixed for the note's life while pressure goes on separately.
 
-**Duration stops being a minimum.** A breath note ends when the breath ends and its length is not known when it starts, so toMPX's "at its duration, whatever the gate does" setting would cut notes off in the middle of a phrase. In breath mode the duration is a maximum or it is ignored.
+**Duration stops being a minimum.** A breath note ends when the breath ends and its length is not known when it starts, so mpxIn's "at its duration, whatever the gate does" setting would cut notes off in the middle of a phrase. In breath mode the duration is a maximum or it is ignored.
 
 ### What does not ride on the cable
 
@@ -118,19 +118,19 @@ It does not send zeros. A voice with no breath behind it falls back to its own e
 
 The continuing values are looked at every sixty-four samples and sent only when they have moved. A control that is not moving sends nothing at all, which is most of them most of the time.
 
-fromMPX ramps to each new value over the same sixty-four samples, so the next one arrives as the ramp completes and the steps between them never reach the output.
+mpxOut ramps to each new value over the same sixty-four samples, so the next one arrives as the ramp completes and the steps between them never reach the output.
 
 A low-pass filter would be the wrong instrument for that. It cannot tell a step it should remove from a transient it should keep, and tonguing a note is a five to ten millisecond dip in pressure that a filter slow enough to smooth the steps is fast enough to blunt.
 
 ## Polyphony
 
-A voice cable carries as many sounding notes as the source sends. toMPX takes its channel count from its Gate input, so a monophonic gate makes one note and a sixteen-channel gate makes sixteen, all on the one cable.
+A voice cable carries as many sounding notes as the source sends. mpxIn takes its channel count from its Gate input, so a monophonic gate makes one note and a sixteen-channel gate makes sixteen, all on the one cable.
 
-A voice in Rack is a group of physical modules, and a module cannot copy the group. So fromMPX allocates the notes among a number of voices and puts its lanes out as ordinary Rack polyphonic cables, one channel per voice.
+A voice in Rack is a group of physical modules, and a module cannot copy the group. So mpxOut allocates the notes among a number of voices and puts its lanes out as ordinary Rack polyphonic cables, one channel per voice.
 
 Everything downstream is then ordinary. A polyphonic oscillator, envelope and amplifier patched to those outputs plays the notes with no adapter in between.
 
-Multitimbral is one voice cable per instrument, each running to the fromMPX of its own cluster.
+Multitimbral is one voice cable per instrument, each running to the mpxOut of its own cluster.
 
 ### Which voice a note takes
 
@@ -156,7 +156,7 @@ The amplitude is not faded here. In this rack the envelope and the amplifier are
 
 A voice whose note has ended is not silent. Its gate has fallen and whatever envelope the patch put after it is in its release, so handing that voice to a new note cuts the release off and moves it to a new pitch part way through. No envelope can repair that, however note-aware it is: the pitch has already moved, and the fact that would have prevented it — how long this release lasts — is in a different module from the allocator.
 
-**fromMPX takes the envelope back on a jack.** Patch the envelope that the gate drove into it, and a voice counts as busy while its own channel is above a floor of 0.05 volts, whether or not its note has ended. The channels line up by construction, since the gate that drove that envelope came from here. It works with any envelope — exponential, multi-stage, a low pass gate, a ten-second tail — because it watches the signal rather than modelling it.
+**mpxOut takes the envelope back on a jack.** Patch the envelope that the gate drove into it, and a voice counts as busy while its own channel is above a floor of 0.05 volts, whether or not its note has ended. The channels line up by construction, since the gate that drove that envelope came from here. It works with any envelope — exponential, multi-stage, a low pass gate, a ten-second tail — because it watches the signal rather than modelling it.
 
 With nothing patched the module falls back to the best guess available: among free voices it takes the one that has been free longest, since that is the one whose release is furthest along whatever its length. That is a heuristic and is meant to be; the jack is how it becomes exact.
 
@@ -174,7 +174,7 @@ The duration is in the note-on as well as being what ends the note at the source
 
 ## Voltages
 
-| Value | On the cable | At fromMPX |
+| Value | On the cable | At mpxOut |
 | --- | --- | --- |
 | Pitch | volts per octave | volts per octave |
 | Level | 0 to 1 | 0 to 10 V |
@@ -184,13 +184,13 @@ The duration is in the note-on as well as being what ends the note at the source
 | Pressure | 0 to 1 | 0 to 10 V |
 | Timbre | 0 to 1 | 0 to 10 V |
 
-At toMPX the same scales apply to the inputs: level and pressure and timbre are 0 to 10 V, pan is -5 to 5 V, duration is one volt per second.
+At mpxIn the same scales apply to the inputs: level and pressure and timbre are 0 to 10 V, pan is -5 to 5 V, duration is one volt per second.
 
 ## The modules
 
-**toMPX** and **fromMPX** are adapters: they bring ordinary control voltages into the domain and take them back out. A patch needs them only where a source or an instrument does not speak MPX itself.
+**mpxIn** and **mpxOut** are adapters: they bring ordinary control voltages into the domain and take them back out. A patch needs them only where a source or an instrument does not speak MPX itself.
 
-**mpxEuclid** is a source. It has no adapter in front of it, which is what the transport was designed to allow and what this document claimed before anything but toMPX could do it. [euclid.md](euclid.md) describes it.
+**mpxEuclid** is a source. It has no adapter in front of it, which is what the transport was designed to allow and what this document claimed before anything but mpxIn could do it. [euclid.md](euclid.md) describes it.
 
 **mpxChart** is a source and the plugin's only reader of written music: it loads iReal Pro charts, shows one as a lead sheet in a window, and publishes its harmony. [chart.md](chart.md) describes it.
 
@@ -200,6 +200,6 @@ At toMPX the same scales apply to the inputs: level and pressure and timbre are 
 
 ## Limits
 
-Sixteen toMPX modules can exist at once, each holding four voice cables. Each holds two hundred and fifty-six events, which is more than a sample's worth by a wide margin.
+Sixteen mpxIn modules can exist at once, each holding four voice cables. Each holds two hundred and fifty-six events, which is more than a sample's worth by a wide margin.
 
-Sixteen voices per fromMPX, which is Rack's polyphonic channel limit.
+Sixteen voices per mpxOut, which is Rack's polyphonic channel limit.

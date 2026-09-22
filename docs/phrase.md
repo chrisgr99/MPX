@@ -16,7 +16,7 @@ mpxChart's output goes to mpxPhrase's CHART IN. mpxPhrase's NOTES OUT goes to an
 
 One mpxPhrase drives one line. A bass and a melody that should phrase differently take two mpxPhrase modules from the same chart.
 
-**Without a melody.** NOTES OUT is an ordinary MPX cable and goes to any MPX input, not only to an mpxVoice. Patched straight to fromMPX, the phrasing plays on its own: gate, level and duration drive any envelope, percussion voice or sound source, and the pitch output carries the note set by NOTE. That makes mpxPhrase usable as a phrase-shaped rhythm for a single pitch, a drum sound, or a modulation source, with no melody generator in the patch.
+**Without a melody.** NOTES OUT is an ordinary MPX cable and goes to any MPX input, not only to an mpxVoice. Patched straight to mpxOut, the phrasing plays on its own: gate, level and duration drive any envelope, percussion voice or sound source, and the pitch output carries the note set by NOTE. That makes mpxPhrase usable as a phrase-shaped rhythm for a single pitch, a drum sound, or a modulation source, with no melody generator in the patch.
 
 **NOTE sets the pitch the notes leave with,** C4 by default. An mpxVoice downstream replaces it with the melody's own pitch, so the setting has no effect when a melody is patched and cannot interfere with one.
 

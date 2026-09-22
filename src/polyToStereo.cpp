@@ -4,7 +4,7 @@ WHAT IT IS. Per voice it is a channel strip: two gain stages and a pan. Sixteen 
 one destination is a mixdown in everything but the fader caps.
 
 IT IS NOT AN MPX MODULE, and that is deliberate. Any polyphonic patch can use it. It takes no note
-cable because UNBUNDLING ASSIGNS VOICES: fromMPX decides which arriving note goes into which
+cable because UNBUNDLING ASSIGNS VOICES: mpxOut decides which arriving note goes into which
 channel, using its own polyphony count and its own rollover rule, and a second module doing its
 own allocation would put channel three's velocity on channel three's audio only by luck. One
 module turns a note cable into voltages and everything after it works in voltages.

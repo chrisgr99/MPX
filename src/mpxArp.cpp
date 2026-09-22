@@ -15,7 +15,7 @@ ONE KNOB DOES GATE AND OVERLAP, and that is the control that matters here. LENGT
 note lasts as a fraction of the step it started on. Under a hundred it is staccato; at a hundred
 each note ends as the next begins; ABOVE a hundred the notes overlap, deliberately, and that is
 the only way a single line can exercise voice allocation, voice stealing and the returning
-envelope at all. Turn it past the mark and raise the voice count on fromMPX and you can hear
+envelope at all. Turn it past the mark and raise the voice count on mpxOut and you can hear
 directly whether a release is being cut short.
 
 CHORD IS A DIRECTION. The fifth position of the direction control strikes every tone together
@@ -392,7 +392,7 @@ struct ArpModule : Module, NoteSource, NoteSink {
 					e.kind = Event::UPDATE;
 					e.lane = LANE_BEND;
 					e.handle = s.handle;
-					// IN VOLTS, RAW, which is the convention toMPX already sends on: the far end
+					// IN VOLTS, RAW, which is the convention mpxIn already sends on: the far end
 					// adds it to the held pitch, and the bend range only decides what the separate
 					// control voltage calls full deflection.
 					e.value = want;

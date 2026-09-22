@@ -2,11 +2,11 @@
 
 Status: first draft built.
 
-A sampled acoustic piano in the MPX plugin, playing the Salamander Grand Piano. It takes only an MPX cable. Ordinary Rack signals reach it through toMPX, which turns pitch, gate, level and timbre into notes and carries the two pedals; that keeps this module to the piano itself.
+A sampled acoustic piano in the MPX plugin, playing the Salamander Grand Piano. It takes only an MPX cable. Ordinary Rack signals reach it through mpxIn, which turns pitch, gate, level and timbre into notes and carries the two pedals; that keeps this module to the piano itself.
 
 ## Why it is in the MPX plugin
 
-An MPX cable is a real Rack cable, but the notes travel through NoteBus, a table inside this plugin. A plugin is its own compiled library with its own copy of anything static, so a module in another plugin sees the cable arrive and cannot read the table behind it. In this plugin, the piano reads MPX directly, including the bend, pressure and timbre lanes. The alternatives were a separate plugin fed through fromMPX, which loses everything MPX carries beyond pitch, gate and velocity, or a separate plugin that looks up an exported function in this one at run time, which breaks quietly when either is updated without the other.
+An MPX cable is a real Rack cable, but the notes travel through NoteBus, a table inside this plugin. A plugin is its own compiled library with its own copy of anything static, so a module in another plugin sees the cable arrive and cannot read the table behind it. In this plugin, the piano reads MPX directly, including the bend, pressure and timbre lanes. The alternatives were a separate plugin fed through mpxOut, which loses everything MPX carries beyond pitch, gate and velocity, or a separate plugin that looks up an exported function in this one at run time, which breaks quietly when either is updated without the other.
 
 Slug and name `mpxPiano`, in the pattern of the other modules.
 
@@ -42,11 +42,11 @@ The menu chooses how many velocity layers to load: 4, 8 or all 16, default 16. A
 ## Notes in
 
 - **MPX in**: notes with pitch, level and duration, and the bend, pressure and timbre lanes. Bend moves pitch. **Timbre moves each note's own brightness**, on top of the Brightness knob — timbre means tone everywhere else in MPX, and a piano's tone is the one thing about a note it would make sense to vary. **Pressure is ignored**: nothing on a piano responds to it once a key is down.
-- **Up to four MPX cables into the one input**, merged: a piano played by an MPX phrase can have notes added from a keyboard through toMPX.
+- **Up to four MPX cables into the one input**, merged: a piano played by an MPX phrase can have notes added from a keyboard through mpxIn.
 
 ### Pedals
 
-- **Sustain** and **soft** arrive on the MPX cable, from toMPX's two pedal inputs, and a panel button for each does the same by hand and lights while down. Whichever is further down wins.
+- **Sustain** and **soft** arrive on the MPX cable, from mpxIn's two pedal inputs, and a panel button for each does the same by hand and lights while down. Whichever is further down wins.
 - **Sustain holds the dampers off**: notes ring on after their key is released until the pedal comes up.
 - **Soft is the una corda.** The set has no una corda recording, so it is imitated by favouring the softer layers and darkening the tone.
 
@@ -58,9 +58,9 @@ So that a phrase can carry its own pedalling rather than needing a gate patched 
 
 What each module does with them:
 
-- **toMPX** has sustain and soft inputs and puts them on the cable: a gate is a pedal down, and 0 to 10 V is part way, for half-pedalling.
+- **mpxIn** has sustain and soft inputs and puts them on the cable: a gate is a pedal down, and 0 to 10 V is part way, for half-pedalling.
 - **Every processor passes them through unchanged**: mpxComp, mpxArp, mpxRand, mpxMonitor, mpxPhrase and mpxMelody's voices each forward them as they forward the harmony.
-- **fromMPX** sustain and soft outputs, so any voice in the rack can be pedalled from an MPX cable, and **mpxMonitor** showing the pedals, are not built yet.
+- **mpxOut** sustain and soft outputs, so any voice in the rack can be pedalled from an MPX cable, and **mpxMonitor** showing the pedals, are not built yet.
 - **mpxPhrase** may later write pedalling of its own, lifting the pedal at chord changes. Not part of the first version.
 
 This is a change to the transport; `design.md` has still to be updated with it.
@@ -75,7 +75,7 @@ For what is adjusted while playing.
 - **Release, Hammer, Pedal**: the levels of the three mechanical components, so the piano can be made realistic or clean. The strings are the main sound, covered by volume.
 
   **A release follows the note it ends.** When a key comes up, the release sample is scaled by how loud that note still is at that moment — loud when the string is still ringing hard, faint when it has died away, as the damper sounds on a real piano. The Release knob sets the level on top of that. The note's loudness is already tracked for choosing which note to take when polyphony runs out, so this costs nothing further.
-- **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from toMPX's timbre input.
+- **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from mpxIn's timbre input.
 - **Dynamics**: how far the soft and loud layers differ. Down, every note sounds much alike whatever its velocity; up, the full range of the instrument.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
 - **Sustain and Soft buttons.**
@@ -96,7 +96,7 @@ For what is set once.
 - **Polyphony**: how many notes sound at once. When they are all in use, the QUIETEST is taken for the new note: a piano's notes decay, so the one that has faded most is the one least missed.
 - **The samples**: download, location, remove.
 
-**16 HP to start**, drawn with the same layout tools as the other MPX modules. With the inputs moved to toMPX it has room to spare, and a narrower panel may follow once the layout has been tried.
+**16 HP to start**, drawn with the same layout tools as the other MPX modules. With the inputs moved to mpxIn it has room to spare, and a narrower panel may follow once the layout has been tried.
 
 ## Left out
 

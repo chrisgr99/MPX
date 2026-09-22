@@ -81,7 +81,7 @@ Movement counts at one per semitone and the rest below it, so a voicing that kee
 | mpxIn | The harmony to play: the current chord as a degree of the key and a quality, the next chord and the one after, the beat, the beat within the bar, the time signature, and the beats until the chord turns over |
 | mpxOut | The notes this module plays, and everything that arrived on the way in, forwarded |
 
-**Two jacks, and both of them MPX.** A note on an MPX cable carries its pitch, its level and its duration as one event, so the three parallel cables this had at first — pitch, gate and level — were saying in triplicate what one event says once. `fromMPX` is the one place where any MPX cable becomes ordinary Rack signals, and putting the breakout there rather than on every source means it is the same breakout every time.
+**Two jacks, and both of them MPX.** A note on an MPX cable carries its pitch, its level and its duration as one event, so the three parallel cables this had at first — pitch, gate and level — were saying in triplicate what one event says once. `mpxOut` is the one place where any MPX cable becomes ordinary Rack signals, and putting the breakout there rather than on every source means it is the same breakout every time.
 
 **And that is what makes a tie possible,** which is the point rather than a side effect. A voice that does not move is a note that is simply never sent again: one event carrying on, the way a player's finger stays down. Three cables could not say that — a gate cable has no way to mark one channel as carrying on — so every voice was struck afresh at every chord change, which is exactly the fault the voicing exists to avoid. What is now sent at a chord change is a note-off and a note-on for the voices that moved, and nothing at all for the ones that did not.
 
@@ -89,7 +89,7 @@ Movement counts at one per semitone and the rest below it, so a voicing that kee
 
 **There is no clock input.** The module is dead without an MPX cable and an MPX cable already carries the beat, the bar and the time signature. A clock jack could only ever have been a second timebase fighting the first.
 
-**The trap to know about.** Nothing tells the far end how many voices are coming, so a four-voice comp into a `fromMPX` set to two voices loses notes silently, by stealing. Set the receiving module's voice count to at least this module's Voices. Something should say so on the panel; nothing does yet.
+**The trap to know about.** Nothing tells the far end how many voices are coming, so a four-voice comp into a `mpxOut` set to two voices loses notes silently, by stealing. Set the receiving module's voice count to at least this module's Voices. Something should say so on the panel; nothing does yet.
 
 ## Controls
 

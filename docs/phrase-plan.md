@@ -82,13 +82,13 @@ mpxPhrase as a playable module.
 
 **When a setting changes mid-phrase,** the change takes effect at the start of the next sub-phrase. Waiting for the next phrase would make a knob feel dead for several bars; applying it mid-group would cut a breath group in half.
 
-**Result.** `src/mpxPhrase.cpp`, twenty-three parameters, two inputs and one output, registered in the plugin and given a DreamerHelp entry for every control. The test patch is at `patches/mpxphrase-test.vcv`, built from the autosave with Clarity and its settings kept: the chart feeds mpxPhrase and mpxMelody, mpxPhrase feeds the mpxVoice on one path and a second fromMPX on the other, and mpxEuclid is left in place but no longer drives the voice. The installed package is newer than every changed source and contains the new module, so Rack needs restarting to see it.
+**Result.** `src/mpxPhrase.cpp`, twenty-three parameters, two inputs and one output, registered in the plugin and given a DreamerHelp entry for every control. The test patch is at `patches/mpxphrase-test.vcv`, built from the autosave with Clarity and its settings kept: the chart feeds mpxPhrase and mpxMelody, mpxPhrase feeds the mpxVoice on one path and a second mpxOut on the other, and mpxEuclid is left in place but no longer drives the voice. The installed package is newer than every changed source and contains the new module, so Rack needs restarting to see it.
 
 **Three decisions taken while building it.** Every control is declared now, including milestone five's REPEAT, CYCLE, SECTIONS and ELIDE and milestone seven's RECORD, because Rack saves a parameter by its number and adding them later would misread every patch saved before; they are named on the panel and in the help as not built yet. The two styles are factory presets in Rack's own Preset menu rather than a control on the panel, which declutters it and brings saving your own for free; the preset files are generated from `phraseStyle` by `make presets`, and the module's defaults come from the same header, so the shipped preset, the defaults and the measured style cannot drift apart. And a chart that publishes no phrasing is played in four-bar phrases measured off the beat, which is the same fallback the chart itself uses, rather than leaving this module at the start of a phrase of no length.
 
 **Checks.**
 - A test patch built from the autosave: mpxChart into mpxPhrase and mpxMelody, mpxPhrase into mpxVoice, with Clarity kept.
-- A second path in the same patch, from mpxPhrase straight to fromMPX with no melody, confirming the notes play at the pitch set by NOTE and that an mpxVoice on the other path replaces it.
+- A second path in the same patch, from mpxPhrase straight to mpxOut with no melody, confirming the notes play at the pitch set by NOTE and that an mpxVoice on the other path replaces it.
 - The panel and help load, and cables take.
 - The measured tempo is checked against the chart's tempo setting, and follows a change of tempo within a beat or two.
 - **Listening checkpoint with you:** does the line breathe, does it leave audible space, and do the controls do what their names say.
