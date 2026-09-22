@@ -65,6 +65,35 @@ struct Event {
 	float bendRange = 2.f;
 	/** UPDATE only. */
 	float value = 0.f;
+
+	/** WHAT THIS NOTE IS TO ITS PHRASE, from a rhythm source that knows. A melody cannot tell
+	which note is the last of a phrase — it sees notes one at a time, and the phrase's breath
+	comes after its last note, so a countdown to the phrase's end misses the note that matters.
+	The source that placed the notes knows, and says so here.
+
+	ARRIVAL: the last note of the phrase, which a melody lands on the tonic at a full close and on
+	an open degree at a half cadence. GROUP_END: the last note before a breath inside the phrase,
+	which a melody takes on a tone of the chord sounding. APPROACH: the note before the arrival,
+	which a melody takes on a neighbour of the note it is about to land on, so the ending is
+	arrived at rather than jumped to. A source that sets none of these — a Euclidean
+	rhythm, a keyboard — leaves the melody to its countdown.
+
+	PICKUP: a note leading into the NEXT phrase, sounding in the breath before it begins. It
+	belongs to the phrase it leads into and not to the one it sounds in, so a melody neither pulls
+	it toward the ending phrase's arrival nor draws it as part of that phrase.
+
+	ON_CHANGE: the note falls where the chord changes, which a melody arrives at by step. */
+	enum Flag : uint8_t { ARRIVAL = 1, GROUP_END = 2, APPROACH = 4, PICKUP = 8, ON_CHANGE = 16 };
+	uint8_t flags = 0;
+
+	/** MOTIF: this note restates the rhythm of the note sent this many notes before it, as part
+	of a figure coming back; nought when it restates nothing. A melody can then bring back that
+	note's pitch as well, and the figure returns whole. See applyMotif in Phrasing.cpp. */
+	uint8_t echo = 0;
+	/** HOW FAR THROUGH ITS BREATH GROUP THE NOTE FALLS, nought at the group's first note and one
+	at its last; below nought from a source that does not know. A melody shapes its line by it:
+	see CONTOUR on mpxVoice. */
+	float along = -1.f;
 };
 
 /** THE HARMONY THE NOTES ARE PLAYED AGAINST, carried by the same cable.
@@ -138,6 +167,50 @@ struct Harmony {
 	uint8_t phraseChangesAll = 0;
 	float phraseChanges[MAX_PHRASE_CHANGES] = {};
 
+	/** THE PHRASE AFTER THIS ONE, as the fields above describe the current one.
+
+	WHY THE FUTURE IS NEEDED. Most sung phrases do not begin on their first bar line: in thirty
+	pop songs only one in six did, and more than a quarter began with a pickup in the bar before.
+	A pickup sounds while the previous phrase is still the current one, so a rhythm generator has
+	to decide the next phrase before it begins — which it can only do if it knows how long that
+	phrase is, how it ends and where its chords change.
+
+	`epoch` is the pass the next phrase falls in: one more than this pass's when the current phrase
+	is the last of the form, since the chart loops. `valid` is false where nothing is known. */
+	struct Upcoming {
+		bool valid = false;
+		uint16_t phrase = 0;
+		uint32_t epoch = 0;
+		float beats = 0.f;
+		uint8_t cadence = 0;
+		char section = 0;
+		uint8_t sectionAppearance = 0;
+		uint8_t phraseInSection = 0;
+		uint8_t changeCount = 0;
+		float changes[MAX_PHRASE_CHANGES] = {};
+	};
+	Upcoming upcoming;
+
+	/** HOW HARD THE MUSIC SWINGS, and by how much a note off the beat is therefore moved.
+
+	ON THE CHART BECAUSE EVERYTHING HAS TO AGREE. Swing is not a rhythm and does not belong to a
+	rhythm module: it is how the beat is divided, which is the chart's business already — as the
+	beat, the bar, the metre and the phrase boundaries are. Two rhythm modules are peers with no
+	cable between them, so a swing control on each would let them disagree with nothing to say
+	why, and a swung line over a straight drum part is always wrong.
+
+	THE CHART DOES THE CONVERTING. `swing` is the amount, nought to one, as set on the panel; the
+	two ratios are what that amount means at the tempo the chart is running, taken from the curve
+	measured in 456 jazz solos — see Swing.hpp. A module looks up the ratio for whichever division
+	it is working at and knows nothing of tempo curves, so two modules cannot convert the same
+	amount differently.
+
+	A ratio is the length of the first half of a divided beat against the second: one is even, two
+	is a full triplet feel. */
+	float swing = 0.f;
+	float swingEighth = 1.f;
+	float swingSixteenth = 1.f;
+
 	/** THE NUMBER EVERY RANDOM PROCESS DOWNSTREAM STARTS FROM.
 
 	A patch full of scatter and chance is unrepeatable unless everything in it agrees where its
@@ -152,6 +225,23 @@ struct Harmony {
 	was not there to hear would have told it nothing. It changes on a rewind and on the chart
 	looping, and a module that wants each pass to differ folds it into the seed. */
 	uint32_t epoch = 0;
+
+	/** RECORD, PRESSED ON THE CHART: every module downstream that keeps a log starts and stops
+	its log with it, so one press records a whole take — the rhythm, the pitches — as one. Each
+	module follows a change of it and can still be switched on its own. */
+	bool record = false;
+
+	/** THE STYLE CHOSEN ON THE CHART, as a PhraseStyle: nought for none. When it changes, every
+	module downstream that has a part of a style — mpxPhrase its rhythm, each melody voice its line
+	— sets its own knobs to that style, so one choice sets the whole chain. Only a change is
+	followed: the knobs stay yours afterwards, and a patch opening is not a change. */
+	uint8_t style = 0;
+
+	/** THE CHART IS NOT MOVING: stopped, or started and waiting for its clock's next pulse to
+	begin on. Nothing is to be played on the strength of the beat it shows — it shows the beat it
+	will start from, and a note there belongs to the moment it starts, not to the moment it was
+	rewound or PLAY was pressed. */
+	bool holding = false;
 };
 
 struct Bus {
@@ -166,6 +256,14 @@ struct Bus {
 	exactly the traffic a seqlock suits. */
 	std::atomic<uint32_t> hseq{0};
 	Harmony harmony;
+
+	/** THE PEDALS, as state rather than events, for the reason the harmony is: a module that
+	starts listening while the pedal is already down must know that at once, not when the pedal
+	next moves. Nought is up and one fully down; between is half-pedalling. Two independent words,
+	so no seqlock — a reader that sees one updated before the other sees a pedal half a sample
+	early, which nothing can hear. */
+	std::atomic<float> sustain{0.f};
+	std::atomic<float> soft{0.f};
 };
 
 extern Bus gBuses[MAX_BUSES];
@@ -177,6 +275,11 @@ void busRelease(int slot);
 
 /** Appends an event. Audio thread, one writer per bus. */
 void busPush(int slot, const Event& e);
+
+/** Publishes the pedals on this bus. Audio thread, one writer per bus. A module that reads an
+upstream and publishes its own bus forwards them, exactly as it forwards the harmony: a processor
+that dropped them would leave everything after it unpedalled. */
+void busPublishPedals(int slot, float sustain, float soft);
 
 /** Publishes the harmony on this bus. Audio thread, one writer per bus. */
 void busPublishHarmony(int slot, const Harmony& h);
@@ -214,6 +317,10 @@ struct BusReader {
 	bool next(Event& e);
 	/** The harmony from the first upstream that has one. */
 	bool harmony(Harmony& out) const;
+	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
+	one player's hands, and either one holding the pedal holds it. Nought and nought with
+	nothing attached. */
+	void pedals(float& sustain, float& soft) const;
 };
 
 /** A unique name for a note. */

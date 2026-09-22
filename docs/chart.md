@@ -34,7 +34,7 @@ Barlines, repeat dots, ending brackets and the section rule are drawn as geometr
 
 **A section letter** chooses that section; clicking it again puts the whole chart back. Only the letter is a hit target.
 
-**Any measure** moves the play head there — to the next occurrence at or after where the music is now, so pointing at a bar ahead of the cursor goes forward to it.
+**A drag across measures** loops them: the bars from the one pressed to the one released play over and over, bracketed in orange while the drag is under way and afterwards. **A click on a measure** clears a loop when there is one, and otherwise moves the play head there — to the next occurrence at or after where the music is now, so pointing at a bar ahead of the cursor goes forward to it. Which it is is decided when the button comes up: a press that has left the bar it started on is a drag.
 
 **The transport**, top left, drives the module's own parameters so the two pairs cannot disagree.
 
@@ -42,7 +42,23 @@ Escape closes the window from anywhere. Rack sends a key to the selected widget 
 
 ### Two marks, two meanings
 
-The measure being played is filled with a translucent block. The chosen section is an orange rule across the top of every bar of every occurrence of that letter, turned down at the true ends of each run. One says what is being played and the other says what will be played, and they are on screen at the same time.
+The measure being played is filled with a translucent block. The chosen section, or the loop, is an orange rule across the top of every bar of every occurrence of that letter, turned down at the true ends of each run. One says what is being played and the other says what will be played, and they are on screen at the same time.
+
+## Loops
+
+A loop plays written bars from one to another, both included, taken from the first place the walk through the form plays the first of them and running until it has played the last — the bars as the song plays them, once. A repeat that leaves the range ends the loop there. A loop takes the place of a chosen section while it is set, and is saved with the patch.
+
+**It is phrased as the song is.** The loop's phrases are the song's own, cut to the looped bars: a phrase begun before the loop starts part-way through, and one that runs past its end is cut there and loses its cadence, since the loop ends before the cadence does. Each keeps its number in the song, and the chart publishes the song's count of phrases, so everything downstream that varies by phrase draws exactly what it draws in that place in the song. What is heard in the loop is what is heard there in the song.
+
+**Every time round is the same.** The wrap at the end of a loop is a rewind, not another pass: the pass counter stays where it is and the bass line starts again, and the phrase and melody modules, which notice the beat going backwards, start their lines again. So a loop can be listened to, and recorded, over and over, and each pass is the first.
+
+## Recording the chain
+
+RECORD, on the panel below the seed, records a whole take with one press. It travels on the MPX cable with the harmony, and every module downstream that keeps a log — mpxPhrase and mpxMelody — starts its log when it is lit and stops it when it goes out. Each follows a change of it, so its own switch still works on its own in between. A patch never opens recording.
+
+## Style
+
+STYLE, a plate below SWING, chooses the style of the whole chain: a dash for none, then Pop 1 to 3 and Jazz 1 to 3. It travels on the MPX cable with the harmony. When it changes, mpxPhrase sets its knobs to that style's rhythm and every melody voice of mpxMelody sets its knobs to that style's line; a voice set to bass or inner keeps its own. Only a change is followed: a patch opening is not a change, so knobs turned after a style was chosen stay as they were. The styles are the same tables the factory presets are generated from.
 
 ## Sections
 

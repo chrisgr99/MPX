@@ -308,10 +308,17 @@ struct VoiceModule : Module, NoteSink {
 		if (rollover == R_GLIDE) {
 			Slot& s = slots[0];
 			const bool sounding = s.active;
+			const float levelWas = s.level.value;
 			adopt(s, e, args.sampleRate);
 			if (sounding) {
 				const int n = (int) (params[P_GLIDE].getValue() * args.sampleRate);
 				s.pitch.to(e.pitch, n);
+				// AND THE LEVEL CARRIES ON FROM WHERE IT WAS. A new note starts from silence so it
+				// does not smear the last one into it — but a note taken over in glide mode IS
+				// the last one continuing, and starting it from silence put a dip at the front of
+				// every note of a legato line: a joined line, audibly re-struck on every note.
+				s.level.set(levelWas);
+				s.level.to(e.level, std::max(RISE_MIN, (int) (RISE_MS * 0.001f * args.sampleRate)));
 			}
 			else {
 				s.pitch.set(e.pitch);

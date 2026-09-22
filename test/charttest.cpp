@@ -511,9 +511,8 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 	if (phrases_) {
-		std::printf("rule: a cadence ends a phrase if it closes the section or is %d or more "
-			"bars after the last end; fallback %d bars\n\n",
-			PHRASE_MIN_BARS, PHRASE_FALLBACK_BARS);
+		std::printf("rule: %d-bar phrases from each section's start, the leftover joining the "
+			"last\n\n", PHRASE_BARS);
 		std::printf("%d songs phrased, %d phrases\n", phrasedSongs, phraseCount);
 		std::printf("  empty phrases: %d\n", oddLen);
 		std::printf("  charts whose phrases do not cover the cycle: %d\n", uncovered);

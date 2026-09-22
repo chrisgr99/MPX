@@ -506,6 +506,13 @@ struct RandModule : Module, NoteSource, NoteSink {
 		// module has an opinion about notes and none whatever about the chart.
 		if (slot >= 0 && haveHarmony)
 			busPublishHarmony(slot, h);
+		// The pedals likewise, and whether or not there is a harmony: a keyboard's sustain pedal
+		// has nothing to do with a chart.
+		if (slot >= 0) {
+			float sustain, soft;
+			reader.pedals(sustain, soft);
+			busPublishPedals(slot, sustain, soft);
+		}
 
 		if (lightFade > 0.f)
 			lightFade = std::fmax(0.f, lightFade - args.sampleTime * 6.f);

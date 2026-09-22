@@ -46,6 +46,10 @@ enum PhraseParam {
 	PHP_RECORD,
 	/** Milestone 4a, the feel. */
 	PHP_TRIPLETS,
+	/** The loudness shape across a phrase: nought falling from its start, one an arch. */
+	PHP_SHAPE,
+	/** How often a group restates the rhythm of an earlier group in the phrase. */
+	PHP_MOTIF,
 	PHP_LEN,
 };
 
@@ -67,6 +71,13 @@ inline void phraseParamsFrom(const PhraseControls& c, float* v) {
 	v[PHP_LENGTH] = c.length;
 	v[PHP_DYNAMICS] = c.dynamics;
 	v[PHP_VARIATION] = c.variation;
+	v[PHP_REPEAT] = c.repeat;
+	v[PHP_CYCLE] = (float) c.cycle;
+	v[PHP_SECTIONS] = c.sections;
+	v[PHP_ELIDE] = c.elide;
+	v[PHP_TRIPLETS] = c.triplets;
+	v[PHP_SHAPE] = c.shape;
+	v[PHP_MOTIF] = c.motif;
 }
 
 /** WHAT THE MODULE COMES UP WITH, which is the SONG style plus the few parameters no style has

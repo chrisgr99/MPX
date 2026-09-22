@@ -164,6 +164,13 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 			any = true;
 		}
 
+		// The pedals, like the harmony, are state: forwarding them is a copy. See NoteBus.hpp.
+		{
+			float sustain, soft;
+			reader.pedals(sustain, soft);
+			busPublishPedals(slot, sustain, soft);
+		}
+
 		// The harmony is state rather than a stream, so forwarding it is a copy.
 		Harmony h;
 		if (reader.harmony(h)) {
@@ -217,7 +224,7 @@ struct MonitorDisplay : widget::Widget {
 		if (!module) {
 			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, PANEL_DIM);
-			nvgText(args.vg, pad, y, "mpxMonitor", NULL);
+			crispText(args.vg, pad, y, "mpxMonitor", NULL);
 			return;
 		}
 
@@ -231,7 +238,7 @@ struct MonitorDisplay : widget::Widget {
 			std::snprintf(buf, sizeof(buf), "%s %s  %d/%d  cycle %.0f",
 				pitchClassNameIn(h.key.tonic, h.key), h.key.minor ? "min" : "maj",
 				h.barBeats, h.barUnit, h.cycleBeats);
-			nvgText(args.vg, pad, y, buf, NULL);
+			crispText(args.vg, pad, y, buf, NULL);
 			y += 12.f;
 
 			nvgFillColor(args.vg, nvgRGB(0xff, 0x3c, 0xc8));
@@ -239,14 +246,14 @@ struct MonitorDisplay : widget::Widget {
 			std::snprintf(buf, sizeof(buf), "%s \u2192 %s   in %.1f",
 				chordLetter(h.current, h.key).c_str(),
 				chordLetter(h.next, h.key).c_str(), h.beatsToNext);
-			nvgText(args.vg, pad, y, buf, NULL);
+			crispText(args.vg, pad, y, buf, NULL);
 			y += 13.f;
 
 			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, PANEL_DIM);
 			std::snprintf(buf, sizeof(buf), "%s   bar %d  beat %.1f",
 				chordRoman(h.current).c_str(), h.bar + 1, h.beatInBar + 1.f);
-			nvgText(args.vg, pad, y, buf, NULL);
+			crispText(args.vg, pad, y, buf, NULL);
 			y += 12.f;
 
 			// THE PHRASE, WHICH IS THE ONE THING ON THE CABLE NOTHING COULD SEE. It is computed
@@ -264,7 +271,7 @@ struct MonitorDisplay : widget::Widget {
 			else {
 				std::snprintf(buf, sizeof(buf), "%s", "no phrasing");
 			}
-			nvgText(args.vg, pad, y, buf, NULL);
+			crispText(args.vg, pad, y, buf, NULL);
 			y += 12.f;
 
 			// WHERE IN THE FORM, and how many changes the phrase holds — the rest of what a rhythm
@@ -275,13 +282,13 @@ struct MonitorDisplay : widget::Widget {
 						h.section, h.sectionAppearance, h.phraseInSection + 1, h.phraseChangesAll);
 				else
 					std::snprintf(buf, sizeof(buf), "no section  %d changes", h.phraseChangesAll);
-				nvgText(args.vg, pad, y, buf, NULL);
+				crispText(args.vg, pad, y, buf, NULL);
 			}
 			y += 14.f;
 		}
 		else {
 			nvgFillColor(args.vg, nvgRGB(0x6a, 0x72, 0x7e));
-			nvgText(args.vg, pad, y, "no harmony here", NULL);
+			crispText(args.vg, pad, y, "no harmony here", NULL);
 			y += 26.f;
 		}
 
@@ -294,7 +301,7 @@ struct MonitorDisplay : widget::Widget {
 		if (module->params[MonitorModule::P_HOLD].getValue() > 0.5f) {
 			nvgFillColor(args.vg, nvgRGB(0xff, 0x9a, 0x3c));
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, box.size.x - pad, 11.f, "HELD", NULL);
+			crispText(args.vg, box.size.x - pad, 11.f, "HELD", NULL);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 		}
 
@@ -303,7 +310,7 @@ struct MonitorDisplay : widget::Widget {
 		const uint32_t w = module->logWrite.load(std::memory_order_acquire);
 		if (w == 0) {
 			nvgFillColor(args.vg, nvgRGB(0x6a, 0x72, 0x7e));
-			nvgText(args.vg, pad, y + 3.f, "no notes yet", NULL);
+			crispText(args.vg, pad, y + 3.f, "no notes yet", NULL);
 			return;
 		}
 		const int shown = (int) std::min<uint32_t>(w, LOG);
@@ -327,7 +334,7 @@ struct MonitorDisplay : widget::Widget {
 					line.lane < 3 ? LANE[line.lane] : "?", line.a,
 					(long long) (line.handle % 1000));
 			}
-			nvgText(args.vg, pad, y + 3.f + i * 11.f, buf, NULL);
+			crispText(args.vg, pad, y + 3.f + i * 11.f, buf, NULL);
 		}
 	}
 };

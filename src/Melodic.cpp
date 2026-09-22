@@ -86,6 +86,42 @@ static int nearestScaleNote(int from, const int* scale, int count, int low, int 
 	return start;
 }
 
+float melodyDraw(uint32_t chartSeed, uint32_t ownSeed, bool alone, int cycle,
+		uint32_t epoch, uint32_t phrasesPerPass, uint32_t phrase, float intoPhrase) {
+	const int n = cycle > 0 ? cycle : 1;
+	const uint32_t position = (uint32_t) (((int) (epoch * (phrasesPerPass > 0 ? phrasesPerPass : 1)
+		+ phrase)) % n);
+	// To a ninety-sixth of a beat: finer than any grid a rhythm generator uses, and coarse enough
+	// that a hair of jitter in when a note arrives does not change the note chosen.
+	uint32_t x = (alone ? ownSeed * 7919u : chartSeed + ownSeed * 7919u)
+		+ position * 104729u
+		+ (uint32_t) (int32_t) std::lround(intoPhrase * 96.f) * 2654435761u;
+	// A cheap integer hash: three rounds of shift and multiply, which is enough to turn a counter
+	// into something that does not look like one.
+	x ^= x >> 16; x *= 0x7feb352du;
+	x ^= x >> 15; x *= 0x846ca68bu;
+	x ^= x >> 16;
+	return (float) (x >> 8) / 16777216.f;
+}
+
+
+/** HOW STRONGLY A LINE KEEPS ITS DIRECTION, calibrated against 456 jazz solos — see the comment
+in melodicStep and `python3 test/contour.py`, which measures both. */
+static const float CONTINUE_AFTER_STEP = 2.2f;
+static const float TURN_AFTER_LEAP = 1.8f;
+static const float RETURN_WEIGHT = 0.3f;
+static const float CONTINUE_THROUGH_CHORD = 2.f;
+/** A NEW CHORD ARRIVED AT BY STEP: its tones a step from the note before, twice and a half as
+likely. */
+static const float ARRIVE_BY_STEP = 2.5f;
+/** A NOTE AND ITS OWN ALTERATION IN A ROW — A then A flat — a twelfth as likely. */
+static const float CROSS_RELATION = 0.08f;
+/** ANY NOTE OUTSIDE THE KEY, a third as likely: available when a borrowed chord calls for it, but
+not the line's first choice, so the melody stays in its key while the harmony borrows. */
+static const float OUTSIDE_KEY = 0.33f;
+/** A NOTE TO STEER AWAY FROM, a seventh as likely. */
+static const float AVOID_WEIGHT = 0.15f;
+
 int melodicStep(const MelodyAsk& ask, const MelodyProfile& profile) {
 	const int low = profile.low, high = profile.high;
 	const float centre = (float) (low + high) / 2.f;
@@ -100,9 +136,27 @@ int melodicStep(const MelodyAsk& ask, const MelodyProfile& profile) {
 	int count = 0;
 	float total = 0.f;
 
+	// WHETHER ANY ANCHOR NOTE IS WITHIN REACH at all, so that an anchor-only choice never leaves
+	// the line with nothing to play.
+	bool anchorOnly = false;
+	if (ask.anchorOnly && ask.anchorCount > 0) {
+		for (int n = low; n <= high; n++) {
+			if (ask.previous >= 0 && std::abs(n - ask.previous) > profile.window)
+				continue;
+			if (holds(ask.anchor, ask.anchorCount, pitchClass(n))) {
+				anchorOnly = true;
+				break;
+			}
+		}
+	}
+
 	for (int n = low; n <= high && count < MAX_CANDIDATES; n++) {
 		const int pc = pitchClass(n);
-		if (!holds(ask.scale, ask.scaleCount, pc))
+		if (anchorOnly && !holds(ask.anchor, ask.anchorCount, pc))
+			continue;
+		// AN ANCHOR NEED NOT BE IN THE SCALE: the dominant's raised seventh in a minor key is not
+		// in the natural minor the line is drawing from, and it is the note a half cadence wants.
+		if (!anchorOnly && !holds(ask.scale, ask.scaleCount, pc))
 			continue;
 		// WITHIN REACH OF THE LAST NOTE. This is what makes a line rather than a sequence of
 		// unrelated notes, and it is skipped on the first note because there is nothing to be
@@ -110,14 +164,92 @@ int melodicStep(const MelodyAsk& ask, const MelodyProfile& profile) {
 		if (ask.previous >= 0 && std::abs(n - ask.previous) > profile.window)
 			continue;
 
+		const bool isChordTone = holds(ask.chord, ask.chordCount, pc);
 		float w = 1.f;
 		if (ask.previous >= 0) {
-			w *= std::pow(intervalWeight(n - ask.previous), profile.leapAversion);
+			if (n == ask.previous && profile.unison >= 0.f)
+				w *= profile.unison;
+			else
+				w *= std::pow(intervalWeight(n - ask.previous), profile.leapAversion);
 			if (n < ask.previous)
 				w *= profile.descendBias;
 		}
 
-		const bool isChordTone = holds(ask.chord, ask.chordCount, pc);
+		// WHICH WAY THE LINE IS GOING. With only the last note to go on, a line cannot tell
+		// rising from falling, and with smoothness high the likeliest move is a step — either way
+		// — so it rocked between neighbours: G F G F G. It turned round on 60 per cent of its
+		// moves and went straight back to the note before on 39 per cent. In 456 transcribed jazz
+		// solos those figures are 39 and 11, because real lines do three things this now does too:
+		//
+		// A STEP CARRIES ON the way it started — 64 per cent of the time after a step.
+		// A LEAP TURNS BACK — 55 per cent of the time after a leap — filling in the gap it left.
+		// AND A LINE SELDOM GOES STRAIGHT BACK to the note it has just left, which is a trill, not
+		// a melody.
+		if (ask.previous >= 0 && ask.beforePrevious >= 0) {
+			const int last = ask.previous - ask.beforePrevious;
+			const int move = n - ask.previous;
+			if (last != 0 && move != 0) {
+				const bool same = (last > 0) == (move > 0);
+				if (std::abs(last) <= 2) {
+					if (same)
+						w *= CONTINUE_AFTER_STEP;
+				}
+				else if (std::abs(last) <= 4) {
+					// A THIRD CARRIES ON THROUGH THE CHORD. A skip of a third to a chord tone is a
+					// line moving through the harmony — F, A flat, B over D diminished in Michelle
+					// — and it carries on the way it started, to the next chord tone or by step.
+					// Counted as a leap, it was made to turn back, and a line could only ever touch
+					// a chord's tones and retreat from them.
+					if (same && std::abs(move) <= 4 && (isChordTone || std::abs(move) <= 2))
+						w *= CONTINUE_THROUGH_CHORD;
+				}
+				else if (!same) {
+					w *= TURN_AFTER_LEAP;
+				}
+			}
+			if (n == ask.beforePrevious && n != ask.previous)
+				w *= RETURN_WEIGHT;
+		}
+		// A NOTE AND ITS OWN ALTERATION IN A ROW, A to A flat. In Michelle a line in F moved from A
+		// to A flat as the harmony moved to B flat 7, and to the ear the melody had slipped out of
+		// tune: both notes are right for their chords, and the pair is what a singer avoids.
+		// The note before that as well: A, G, then A flat is the same slip heard a moment later.
+		if (ask.naturalOf && ask.previous >= 0) {
+			const int a = pitchClass(ask.previous);
+			if (ask.naturalOf[pc] == a || ask.naturalOf[a] == pc)
+				w *= CROSS_RELATION;
+			else if (ask.beforePrevious >= 0) {
+				const int b = pitchClass(ask.beforePrevious);
+				if (ask.naturalOf[pc] == b || ask.naturalOf[b] == pc)
+					w *= CROSS_RELATION;
+			}
+		}
+		// A NEW CHORD IS ARRIVED AT BY STEP. On the note that falls on a chord change, the new
+		// chord's tones a step from the note before are favoured: A to G onto C, A flat to G onto
+		// C, as Michelle arrives at each chord. A line that leapt onto every change never sounded as
+		// though it was going anywhere.
+		if (ask.arriveByStep && ask.previous >= 0 && isChordTone) {
+			const int d = std::abs(n - ask.previous);
+			if (d >= 1 && d <= 2)
+				w *= ARRIVE_BY_STEP;
+		}
+		// AN ENDING MOVES, AND THE NOTE BEFORE IT DOES NOT LAND EARLY. A step into a held ending
+		// on the pitch the ending then takes is one note struck twice, not a step.
+		if (ask.moveOn && ask.previous >= 0 && n == ask.previous)
+			w *= AVOID_WEIGHT;
+		if (ask.avoidCount > 0 && holds(ask.avoid, ask.avoidCount, pc)
+				&& !(ask.anchorCount > 0 && holds(ask.anchor, ask.anchorCount, pc)))
+			w *= AVOID_WEIGHT;
+		// A MELODY STAYS IN ITS KEY WHILE THE HARMONY BORROWS. A line over B flat 7 in F took A flat
+		// as readily as any other note, and against the A natural of the bar before the melody
+		// sounded out of tune. An anchor is exempt: an ending that needs the note gets it.
+		// A BORROWED CHORD'S OWN TONES ARE NOT OUTSIDE ANYTHING: over D diminished in F, A flat and
+		// B are the chord, and steering away from them sent the line to E, G and B flat instead —
+		// in the key, and against the chord.
+		if (ask.naturalOf && ask.naturalOf[pc] >= 0 && !isChordTone
+				&& !(ask.anchorCount > 0 && holds(ask.anchor, ask.anchorCount, pc)))
+			w *= OUTSIDE_KEY;
+
 		w *= isChordTone ? profile.chordPull : profile.passing;
 		if (ask.strong && isChordTone)
 			w *= profile.strongChordPull;
@@ -144,6 +276,24 @@ int melodicStep(const MelodyAsk& ask, const MelodyProfile& profile) {
 		// stays there, because nothing else in the weighting cares where it is, only where it
 		// is going.
 		w *= 1.f - profile.gravity * (std::fabs((float) n - centre) / halfSpan);
+
+		// A FIGURE COMING BACK: the note it restates, or failing that the same step from here.
+		if (ask.echo >= 0 && n == ask.echo)
+			w *= ask.echoWeight;
+		else if (ask.echoStep >= 0 && n == ask.echoStep)
+			w *= ask.echoStepWeight;
+		else if (ask.hasEchoMove && ask.previous >= 0) {
+			const int move = n - ask.previous;
+			if ((move > 0) == (ask.echoMove > 0) && (move < 0) == (ask.echoMove < 0)
+					&& std::abs(move - ask.echoMove) <= 2)
+				w *= ask.echoShapeWeight;
+		}
+		// THE LINE'S SHAPE: a pull toward where the contour puts this note, three semitones away
+		// being as far as a full pull lets through at a seventh of its weight.
+		if (ask.aimStrength > 0.f && ask.aim >= 0.f) {
+			const float d = ((float) n - ask.aim) / 3.f;
+			w *= std::exp(-2.f * ask.aimStrength * d * d);
+		}
 
 		// AT A PHRASE BOUNDARY, the tones that sound like arriving somewhere.
 		if (ask.anchorCount > 0 && holds(ask.anchor, ask.anchorCount, pc))

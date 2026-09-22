@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 /** Choosing one note, and nothing else.
 
 PURE, AND DELIBERATELY SO. No Rack, no module, no state: everything it needs arrives as
@@ -83,6 +84,12 @@ struct MelodyProfile {
 	/** Multiplier on candidates below the previous note. Above one, lines tend to fall — which
 	is what melodies do, and what makes a rising line sound like an effort. */
 	float descendBias = 1.05f;
+	/** THE WEIGHT OF A REPEATED NOTE, taken as it is rather than through the interval table, or
+	below nought to use the table. A repeated note is not a leap, so the table's route — its
+	weight raised to the leap aversion — made smoother lines repeat less, when the smoothest
+	lines there are, the ones in songs, repeat most. The jazz solos repeat a note on one interval
+	in twenty. */
+	float unison = -1.f;
 };
 
 /** THE TWO CONTROLS THE WHOLE PROFILE COMES FROM.
@@ -104,7 +111,11 @@ enum MelodyScale {
 	SCALE_MAJOR_PENT,
 	SCALE_MINOR_PENT,
 	SCALE_BLUES,
-	SCALE_FROM_CHORD,       /**< Not built; behaves as the key. */
+	/** THE CHORD SOUNDING, AND THE KEY'S NOTES THAT SIT WELL AGAINST IT: every chord tone, and of
+	the key's other notes only those neither a semitone from a chord tone nor a tritone from its
+	root. Over F in F that is F major pentatonic; over E7 in A minor it has G sharp and not G; over
+	a borrowed chord its borrowed notes, without the key's notes that would rub against them. */
+	SCALE_FROM_CHORD,
 	NUM_MELODY_SCALES,
 };
 
@@ -132,6 +143,8 @@ struct MelodyReport {
 struct MelodyAsk {
 	/** The note last played by this line, or -1 to start one. */
 	int previous = -1;
+	/** And the one before it, or -1: two notes are what say which way a line is going. */
+	int beforePrevious = -1;
 	/** The palette, as pitch classes. */
 	const int* scale = NULL;
 	int scaleCount = 0;
@@ -151,13 +164,60 @@ struct MelodyAsk {
 	const int* anchor = NULL;
 	int anchorCount = 0;
 	float anchorStrength = 1.f;
+	/** THE ANCHOR IS THE ONLY CHOICE, when any anchor note is within reach: the rest of the
+	weighting then picks among the anchors — the nearest, usually — rather than competing with
+	them. For the note a phrase arrives on, where a multiplier of any size still lost to a steep
+	enough smoothness whenever every target note was a leap away. */
+	bool anchorOnly = false;
 	/** Pitch classes another voice has just taken, and how hard to avoid them. */
 	const int* taken = NULL;
 	int takenCount = 0;
 	float separation = 0.f;
 	/** Where to write the candidates, or NULL not to. */
 	MelodyReport* report = NULL;
+	/** FOR EACH PITCH CLASS OUTSIDE THE KEY, the key note it alters — A for A flat in F major,
+	B flat for B natural — and -1 for a key note; or NULL. A line moving straight between the two,
+	A to A flat, sounds as though it has changed key under the listener, so that move is rare. */
+	const int* naturalOf = NULL;
+	/** PITCH CLASSES TO STEER AWAY FROM: the note an ending is about to land on, for the note
+	that leads to it. And whether to move off the previous note rather than repeat it — for an
+	ending, which struck again on the note before it sounds like one note played twice. */
+	const int* avoid = NULL;
+	int avoidCount = 0;
+	bool moveOn = false;
+	/** THE NOTE FALLS ON A CHORD CHANGE: the new chord's tones a step from the note before are
+	favoured, so each chord is arrived at by step. */
+	bool arriveByStep = false;
+	/** MOTIF: the pitch of the note this one restates, favoured by `echoWeight`; failing that,
+	the same step moved to where the line is now, favoured by `echoStepWeight`. -1 for none. */
+	int echo = -1;
+	float echoWeight = 1.f;
+	int echoStep = -1;
+	float echoStepWeight = 1.f;
+	/** And failing both, the same shape: a move the same way as the restated note's, within a
+	whole tone of its size, favoured by `echoShapeWeight`. `echoMove` is that move in semitones;
+	`hasEchoMove` says whether there is one. */
+	bool hasEchoMove = false;
+	int echoMove = 0;
+	float echoShapeWeight = 1.f;
+	/** CONTOUR: the pitch the line's shape puts this note at, as a MIDI number, and how hard the
+	line is pulled toward it; a strength of nought for none. */
+	float aim = -1.f;
+	float aimStrength = 0.f;
 };
+
+/** THE DRAW A LINE IS MADE FROM, when no voltage is patched to take it from.
+
+PURE, SO RECURRENCE CAN BE CHECKED RATHER THAN LISTENED FOR. What makes a line come round is
+exactly what this hashes: where the phrase falls in a cycle of phrases, and where the note falls
+inside the phrase. Nothing about the pass count, and nothing about the note's handle — both were
+in here once, and between them no line ever repeated, since a handle counts upward for ever and
+the same beat of the same bar therefore drew differently every time round.
+
+`cycle` is how many phrases pass before the sequence returns; at one, every phrase draws alike.
+`intoPhrase` is below nought for a pickup, which is drawn as part of the phrase it leads into. */
+float melodyDraw(uint32_t chartSeed, uint32_t ownSeed, bool alone, int cycle,
+	uint32_t epoch, uint32_t phrasesPerPass, uint32_t phrase, float intoPhrase);
 
 /** THE NOTE, as a MIDI number inside the profile's register. */
 int melodicStep(const MelodyAsk& ask, const MelodyProfile& profile);

@@ -798,6 +798,71 @@ std::vector<ChartSection> chartSections(const std::vector<ChartBar>& bars) {
 }
 
 
+ChartPlayback chartPlaybackForBars(const ChartPlayback& whole, int first, int last, int* from) {
+	ChartPlayback out;
+	if (from)
+		*from = -1;
+	if (first > last)
+		std::swap(first, last);
+	for (size_t i = 0; i < whole.timeline.size(); i++) {
+		if (whole.timeline[i].bar != first)
+			continue;
+		// FROM HERE TO THE FIRST PLAYING OF `last`, and no further than the walk stays inside the
+		// range: a repeat that jumps out of it ends the loop there.
+		float beat = 0.f;
+		for (size_t j = i; j < whole.timeline.size(); j++) {
+			const int bar = whole.timeline[j].bar;
+			if (bar < first || bar > last)
+				break;
+			PlayedBar played;
+			played.bar = bar;
+			played.startBeat = beat;
+			played.endBeat = beat + (whole.timeline[j].endBeat - whole.timeline[j].startBeat);
+			beat = played.endBeat;
+			out.timeline.push_back(played);
+			if (bar == last)
+				break;
+		}
+		out.totalBeats = beat;
+		if (from)
+			*from = (int) i;
+		return out;
+	}
+	return out;
+}
+
+
+std::vector<ChartPhrase> chartPhrasesInLoop(const std::vector<ChartPhrase>& whole,
+	const ChartPlayback& wholePlayback, const ChartPlayback& loop, int from) {
+	std::vector<ChartPhrase> out;
+	if (from < 0 || from >= (int) wholePlayback.timeline.size() || loop.timeline.empty())
+		return out;
+	const float begin = wholePlayback.timeline[from].startBeat;
+	const float end = begin + loop.totalBeats;
+	for (size_t k = 0; k < whole.size(); k++) {
+		const ChartPhrase& p = whole[k];
+		if (p.endBeat <= begin + 0.001f || p.startBeat >= end - 0.001f)
+			continue;
+		// THE WHOLE PHRASE STAYS THE WHOLE PHRASE: its length, its chord changes and its cadence
+		// are the song's, and only where it is heard is cut. Handing on the cut-down phrase made a
+		// looped passage phrase differently from the song — a six-bar phrase looped for four bars
+		// became a four-bar phrase, too short to breathe in, and the loop had none of the song's
+		// breaths.
+		ChartPhrase c = p;
+		c.number = p.number >= 0 ? p.number : (int) k;
+		c.fullStart = p.startBeat - begin;
+		c.fullEnd = p.endBeat - begin;
+		c.startBeat = std::max(p.startBeat, begin) - begin;
+		c.endBeat = std::min(p.endBeat, end) - begin;
+		c.cut = c.startBeat > c.fullStart + 0.001f || c.endBeat < c.fullEnd - 0.001f;
+		c.startBar = std::max(p.startBar, from) - from;
+		c.endBar = std::min(p.endBar, from + (int) loop.timeline.size()) - from;
+		out.push_back(c);
+	}
+	return out;
+}
+
+
 ChartPlayback chartPlaybackForLabel(const std::vector<ChartBar>& bars,
 	const ChartPlayback& whole, char label) {
 
@@ -877,37 +942,70 @@ const char* chartCadenceName(int cadence) {
 	}
 }
 
+/** Whether a slot names a chord that can be played. */
+static bool soundingSlot(const ChartSlot& slot) {
+	return !slot.empty && !slot.noChord && slot.chord.valid && slot.simile == ChartSlot::SIMILE_NONE;
+}
+
+
+/** THE CHORD SOUNDING at a place in the played cycle.
+
+THERE IS NEVER SILENCE. A chart can write N.C. — "no chord", where in iReal the band stops — and
+hold it or repeat it with the held-bar mark and a simile; Oceania writes four bars of it, twice
+over. That is right for a band accompanying a singer and never right here, where the chart is
+what everything else plays from: eight bars of nothing is the generator stopping. So N.C., a
+blank slot and a symbol that could not be read all hold the chord that was sounding before them,
+looking back through earlier bars if they have to and round the end of the cycle, which is what
+plays before its start on every pass after the first. Only a chart with no chords in it at all
+has nothing to give. */
 bool chartChordAt(const std::vector<ChartBar>& bars, const ChartPlayback& pb, int at,
 		float within, Chord& out, float& toNext) {
 	const int n = (int) pb.timeline.size();
 	if (at < 0 || at >= n)
 		return false;
-	int steps = 0;
+
+	// A SIMILE stands for the bar before it, at the same place within the bar.
 	int here = at;
 	float offset = within;
-	while (steps++ < 64) {
+	for (int steps = 0; steps < 64; steps++) {
 		const ChartBar& bar = bars[pb.timeline[here].bar];
-		const int count = (int) bar.slots.size();
 		bool simile = false;
 		for (const ChartSlot& slot : bar.slots)
 			simile = simile || slot.simile != ChartSlot::SIMILE_NONE;
-
-		if (count > 0 && !simile) {
-			const float share = (float) bar.beats / (float) count;
-			int k = (int) (offset / std::max(0.001f, share));
-			k = std::max(0, std::min(k, count - 1));
-			// A blank slot holds whatever was sounding before it.
-			while (k > 0 && bar.slots[k].empty)
-				k--;
-			if (bar.slots[k].empty || !bar.slots[k].chord.valid)
-				return false;
-			out = bar.slots[k].chord;
-			toNext = share * (float) (k + 1) - offset;
-			return true;
-		}
-		// A simile: ask the bar before it, at the same place within the bar.
+		if (!simile && !bar.slots.empty())
+			break;
 		here = (here - 1 + n) % n;
 		offset = std::min(offset, (float) bars[pb.timeline[here].bar].beats - 0.01f);
+	}
+
+	const ChartBar& bar = bars[pb.timeline[here].bar];
+	const int count = (int) bar.slots.size();
+	int k = -1;
+	toNext = (float) bar.beats - offset;
+	if (count > 0) {
+		const float share = (float) bar.beats / (float) count;
+		k = (int) (offset / std::max(0.001f, share));
+		k = std::max(0, std::min(k, count - 1));
+		toNext = share * (float) (k + 1) - offset;
+	}
+
+	// The slot itself, or the nearest chord before it.
+	int bh = here;
+	int slot = k;
+	int total = 0;
+	for (const PlayedBar& p : pb.timeline)
+		total += std::max(1, (int) bars[p.bar].slots.size());
+	for (int steps = 0; steps <= total + 1; steps++) {
+		const ChartBar& b = bars[pb.timeline[bh].bar];
+		if (slot >= 0 && slot < (int) b.slots.size() && soundingSlot(b.slots[slot])) {
+			out = b.slots[slot].chord;
+			return true;
+		}
+		slot--;
+		if (slot < 0) {
+			bh = (bh - 1 + n) % n;
+			slot = (int) bars[pb.timeline[bh].bar].slots.size() - 1;
+		}
 	}
 	return false;
 }
@@ -987,27 +1085,6 @@ ChartCadence chartCadenceOf(const Chord& from, const Chord& to, float heldBeats,
 	return CADENCE_NONE;
 }
 
-/** Cuts [from, to) of played bars into phrases of the fallback length, the last ending with
-`cadence`. A remainder shorter than the shortest phrase joins the piece before it rather than
-standing alone. `whole` says whether to cut all the way down, which is what a stretch with no
-cadence wants; otherwise only a span more than twice the fallback is cut. */
-static void cutSpan(std::vector<std::pair<int, ChartCadence>>& ends, int from, int to,
-		ChartCadence cadence, bool whole) {
-	int at = from;
-	while (true) {
-		const int remaining = to - at;
-		const bool cut = whole ? remaining > PHRASE_FALLBACK_BARS
-			: remaining > 2 * PHRASE_FALLBACK_BARS;
-		if (!cut)
-			break;
-		if (remaining - PHRASE_FALLBACK_BARS < PHRASE_MIN_BARS)
-			break;
-		at += PHRASE_FALLBACK_BARS;
-		ends.push_back({at, CADENCE_NONE});
-	}
-	ends.push_back({to, cadence});
-}
-
 std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
 		const ChartPlayback& pb) {
 	std::vector<ChartPhrase> out;
@@ -1017,14 +1094,6 @@ std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
 
 	const std::vector<ChartChange> changes = chartChanges(chartBars, pb);
 
-	// Which played bar a beat falls in.
-	auto barOf = [&](float beat) {
-		for (int b = 0; b < nBars; b++) {
-			if (beat < pb.timeline[b].endBeat - 0.001f)
-				return b;
-		}
-		return nBars - 1;
-	};
 
 	// Where each section opens. Bar nought always does.
 	std::vector<int> sections;
@@ -1034,8 +1103,8 @@ std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
 			sections.push_back(b);
 	}
 
-	// EVERY CADENCE THAT COULD END A PHRASE, with the bar its arrival stops sounding in.
-	struct Candidate { int arrivalBar; int endBar; bool held; ChartCadence cadence; };
+	// EVERY CADENCE, by the bar its arrival falls in.
+	struct Candidate { size_t change; int arrivalBar; ChartCadence cadence; };
 	std::vector<Candidate> candidates;
 	for (size_t i = 1; i < changes.size(); i++) {
 		const float held = (i + 1 < changes.size())
@@ -1046,49 +1115,51 @@ std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
 			barBeats);
 		if (c == CADENCE_NONE || c == CADENCE_DECEPTIVE)
 			continue;
-		Candidate cand;
-		cand.arrivalBar = changes[i].playedBar;
-		// THE PHRASE ENDS WHEN THE ARRIVAL STOPS SOUNDING, not when it arrives, so a tonic held
-		// or repeated is not cut off a bar early.
-		cand.endBar = barOf(changes[i].beat + held - 0.001f) + 1;
-		cand.held = held >= barBeats - 0.01f;
-		cand.cadence = c;
-		candidates.push_back(cand);
+		candidates.push_back({i, changes[i].playedBar, c});
 	}
 
+	// FOUR-BAR UNITS FROM THE START OF EACH SECTION, AND THE CADENCE ONLY SAYS HOW EACH ENDS.
+	//
+	// It was the other way round: phrases ran from cadence to cadence, with four bars as a
+	// preference. That suits a jazz standard, where the harmony carries the form, and it misread
+	// pop songs, where the form carries the harmony. In Killing Me Softly a G7 held for a bar read
+	// as a half cadence and ended the first phrase after two bars, and the next ran on for eight
+	// to the next dominant, because nothing marked the end of bar four where the song's phrase
+	// ends; in A Thousand Miles a chorus bar played three times ended a phrase in every bar. Laid
+	// out in fours from each section's start, both come out exactly as the songs are sung.
+	//
+	// A SECTION THAT IS NOT A MULTIPLE OF FOUR gives its leftover bars to its last phrase: an
+	// ending held for two more bars belongs to the phrase it ends. A section of fewer than four
+	// bars is one phrase.
 	std::vector<std::pair<int, ChartCadence>> ends;
 	for (size_t s = 0; s < sections.size(); s++) {
 		const int secStart = sections[s];
 		const int secEnd = (s + 1 < sections.size()) ? sections[s + 1] : nBars;
-		int last = secStart;
-		std::vector<std::pair<int, ChartCadence>> accepted;
-		for (const Candidate& c : candidates) {
-			if (c.arrivalBar < secStart || c.arrivalBar >= secEnd)
-				continue;
-			const int endBar = std::min(c.endBar, secEnd);
-			if (endBar <= last)
-				continue;
-			const bool closesSection = (endBar == secEnd);
-			const bool farEnough = (endBar - last) >= PHRASE_MIN_BARS;
-			// A HELD TONIC DOES NOT BYPASS THE MINIMUM. It did at first, and checked against
-			// seventeen lead sheets it found real breaths no better while making sixteen phrases
-			// in every hundred a single bar long — a held tonic straight after a phrase end, or a
-			// held dominant straight after a tonic. Without the bypass, six in a hundred.
-			if (closesSection || farEnough) {
-				accepted.push_back({endBar, c.cadence});
-				last = endBar;
-			}
-		}
-		// The section's end is always a boundary.
-		if (last < secEnd)
-			accepted.push_back({secEnd, CADENCE_NONE});
+		std::vector<int> unitEnds;
+		for (int e = secStart + PHRASE_BARS; e <= secEnd; e += PHRASE_BARS)
+			unitEnds.push_back(e);
+		if (unitEnds.empty())
+			unitEnds.push_back(secEnd);
+		else
+			unitEnds.back() = secEnd;
 
-		// Spans with no cadence at their end are cut to the fallback length; spans that do end
-		// at a cadence are cut only when they run to more than twice it.
+		// HOW EACH ENDS: by the unit's LAST chord change, when that change is a cadence arriving
+		// in its final two bars; otherwise none. A close earlier in the unit, or one followed by
+		// another chord, is passing: in Killing Me Softly C major arrives in bar eleven and the
+		// phrase goes on to end on E7, and calling that an authentic close put the tonic over E7.
 		int from = secStart;
-		for (const auto& a : accepted) {
-			cutSpan(ends, from, a.first, a.second, a.second == CADENCE_NONE);
-			from = a.first;
+		for (int end : unitEnds) {
+			size_t lastChange = changes.size();
+			for (size_t i = 0; i < changes.size(); i++)
+				if (changes[i].playedBar >= from && changes[i].playedBar < end)
+					lastChange = i;
+			ChartCadence cadence = CADENCE_NONE;
+			for (const Candidate& c : candidates) {
+				if (c.change == lastChange && c.arrivalBar >= std::max(from, end - 2))
+					cadence = c.cadence;
+			}
+			ends.push_back({end, cadence});
+			from = end;
 		}
 	}
 
@@ -1101,6 +1172,8 @@ std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& chartBars,
 		ph.endBar = e.first;
 		ph.startBeat = pb.timeline[from].startBeat;
 		ph.endBeat = pb.timeline[e.first - 1].endBeat;
+		ph.fullStart = ph.startBeat;
+		ph.fullEnd = ph.endBeat;
 		ph.cadence = e.second;
 		for (const ChartChange& c : changes) {
 			if (c.beat >= ph.startBeat - 0.001f && c.beat < ph.endBeat - 0.001f)

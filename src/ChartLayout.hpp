@@ -187,6 +187,16 @@ struct ChartPhrase {
 	float startBeat = 0.f, endBeat = 0.f;
 	int startBar = 0, endBar = 0;           /**< Played bars; endBar is one past the last. */
 	ChartCadence cadence = CADENCE_NONE;
+	/** ITS NUMBER IN THE WHOLE FORM, where it has been cut out of it by a loop, or -1 for its
+	place in the list. A looped passage is the song's own phrases, so it keeps the song's numbers
+	and draws exactly what the song draws there. */
+	int number = -1;
+	/** WHERE THE WHOLE PHRASE LIES, in beats of the played walk, when a loop has cut it: it may
+	begin before the loop does and end after. A rhythm is decided for the whole phrase and only
+	the part inside the loop is heard, so the loop plays what the song plays there. Equal to the
+	start and end when the phrase is whole. `changes` and `cadence` are the whole phrase's. */
+	float fullStart = 0.f, fullEnd = 0.f;
+	bool cut = false;
 
 	/** EVERY CHORD CHANGE INSIDE THE PHRASE, in beats from its start, so that a rhythm can be
 	generated for the whole phrase at once rather than discovering each change as it arrives. */
@@ -201,29 +211,45 @@ struct ChartPhrase {
 	int phraseInSection = 0;
 };
 
-/** WHERE THE PHRASES FALL: from cadence to cadence, contiguous, covering the whole played cycle.
+/** WHERE THE PHRASES FALL: four-bar units laid out from the start of each section, contiguous,
+covering the whole played cycle.
 
-A PHRASE ENDS AT A CADENCE, NOT AT A LENGTH. A census of 2,137 charts found closing cadences most
-often two bars apart and one bar apart more than one time in ten, so no length is assumed. Only
-where the harmony has no cadence — a vamp, a groove on one chord, a pedal — is a fixed length used.
+THE FORM FIRST, THE HARMONY SECOND. A sung phrase is four bars far more often than not, and in a
+pop song it is four bars whatever the chords do: the chords only colour how it ends. So the units
+are laid out first and each takes as its cadence the last one arriving in its final two bars, or
+none. Two readings this replaced — cadence to cadence, with four bars as a preference — split
+songs at every dominant held for a bar and at every bar of a repeated vamp.
 
-NOT EVERY TONIC IS A PHRASE END. The tonic touched in passing, inside a turnaround, is a cadence by
-its chords and not by its function. A cadence ends a phrase only if it closes the section, or it
-comes at least PHRASE_MIN_BARS after the last phrase end. Checked against the breaths in real lead
-sheets by test/phrasecheck.py, which is where a change to that number should be justified.
+A section whose length is not a multiple of four gives the leftover bars to its last phrase; one
+shorter than four bars is a single phrase.
+
+A PHRASE IS NOT A BREATH. Four bars is often longer than a singer's breath; the breaths inside a
+phrase are mpxPhrase's groups, set in seconds.
 
 A HALF CADENCE is a dominant held for a bar or more. It is a melodic fact that chords can only
-suggest, and this is the suggestion.
-
-A DECEPTIVE CADENCE never ends a phrase. It is a close set up and evaded, and the phrase runs on.
+suggest, and this is the suggestion. A DECEPTIVE CADENCE never ends a phrase.
 
 SECTIONS ARE HARD BOUNDARIES. A phrase never crosses the start of a section. */
 std::vector<ChartPhrase> chartPhrases(const std::vector<ChartBar>& bars,
 	const ChartPlayback& playback);
 
-/** The rule's constants, so a census can print them beside its figures. */
-static const int PHRASE_MIN_BARS = 2;
-static const int PHRASE_FALLBACK_BARS = 4;
+/** The length of a phrase, in bars, before a section's leftover is added to its last. */
+static const int PHRASE_BARS = 4;
+
+
+/** THE LOOP: the played walk from written bar `first` to written bar `last`, both included,
+taken from the first place in the whole walk where `first` is played and running on until `last`
+has been — the bars as the song plays them, once. Renumbered from nought. `from` receives the
+index in the whole walk where it begins. An empty walk when the range is never played. */
+ChartPlayback chartPlaybackForBars(const ChartPlayback& whole, int first, int last, int* from);
+
+/** THE SONG'S OWN PHRASES, CUT TO A LOOP. Each phrase of `whole` that overlaps the loop — which
+begins at played index `from` of `wholePlayback` and runs as `loop` does — is kept, clipped to it
+and moved to its beats, with its number in the song. A phrase cut short at the loop's end loses
+its cadence, since the loop ends before the cadence does. So a looped passage is phrased exactly
+as it is in the song. */
+std::vector<ChartPhrase> chartPhrasesInLoop(const std::vector<ChartPhrase>& whole,
+	const ChartPlayback& wholePlayback, const ChartPlayback& loop, int from);
 
 
 /** The same walk, keeping only the bars that belong to one section's label.

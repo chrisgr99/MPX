@@ -1,5 +1,7 @@
 #include "NoteBus.hpp"
 
+#include <cmath>
+
 namespace px {
 
 
@@ -32,7 +34,37 @@ int busClaim(uint32_t* generation) {
 void busRelease(int slot) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return;
+	// The pedals come up with the module that held them, or the next occupant of this slot would
+	// start with somebody else's foot down.
+	gBuses[slot].sustain.store(0.f, std::memory_order_relaxed);
+	gBuses[slot].soft.store(0.f, std::memory_order_relaxed);
 	gBuses[slot].claimed.store(false, std::memory_order_release);
+}
+
+
+void busPublishPedals(int slot, float sustain, float soft) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return;
+	gBuses[slot].sustain.store(sustain, std::memory_order_relaxed);
+	gBuses[slot].soft.store(soft, std::memory_order_relaxed);
+}
+
+
+void BusReader::pedals(float& sustain, float& soft) const {
+	sustain = 0.f;
+	soft = 0.f;
+	for (int i = 0; i < count; i++) {
+		const Link& link = links[i];
+		if (link.slot < 0 || link.slot >= MAX_BUSES)
+			continue;
+		const Bus& bus = gBuses[link.slot];
+		if (!bus.claimed.load(std::memory_order_acquire))
+			continue;
+		if (bus.generation.load(std::memory_order_acquire) != link.generation)
+			continue;
+		sustain = std::fmax(sustain, bus.sustain.load(std::memory_order_relaxed));
+		soft = std::fmax(soft, bus.soft.load(std::memory_order_relaxed));
+	}
 }
 
 

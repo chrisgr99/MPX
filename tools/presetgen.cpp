@@ -2,9 +2,9 @@
  *
  *   presetgen <version> <output folder>
  *
- * WHY A PROGRAM AND NOT TWO FILES. Rack's own Preset menu is what offers SONG and JAZZ, and a
- * preset is a list of parameter values by number. Those values are the two styles, and the two
- * styles are what `make phrasetest` runs its census over. Typing them into a pair of files would
+ * WHY A PROGRAM AND NOT FILES. Rack's own Preset menu is what offers them, and a preset is a
+ * list of parameter values by number. The phrase presets' values are the styles, and the styles
+ * are what `make phrasetest` runs its census over. Typing them into a pair of files would
  * mean the thing that ships and the thing that was measured could drift apart without anybody
  * noticing. So they are generated from phraseStyle, once, at build time.
  *
@@ -12,6 +12,7 @@
  */
 #include "../src/PhraseParams.hpp"
 #include "../src/Phrasing.hpp"
+#include "../src/MelodyVoice.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -19,17 +20,18 @@
 
 using namespace px;
 
-static bool writePreset(const std::string& path, const char* version, const float* v) {
+static bool writeParams(const std::string& path, const char* version, const char* model,
+		const float* v, int count) {
 	FILE* f = fopen(path.c_str(), "w");
 	if (!f) {
 		fprintf(stderr, "presetgen: cannot write %s\n", path.c_str());
 		return false;
 	}
-	fprintf(f, "{\n  \"plugin\": \"DreamerMPX\",\n  \"model\": \"mpxPhrase\",\n");
+	fprintf(f, "{\n  \"plugin\": \"DreamerMPX\",\n  \"model\": \"%s\",\n", model);
 	fprintf(f, "  \"version\": \"%s\",\n  \"params\": [\n", version);
-	for (int i = 0; i < PHP_LEN; i++)
+	for (int i = 0; i < count; i++)
 		fprintf(f, "    {\"id\": %d, \"value\": %.6g}%s\n", i, (double) v[i],
-			i + 1 < PHP_LEN ? "," : "");
+			i + 1 < count ? "," : "");
 	fprintf(f, "  ]\n}\n");
 	fclose(f);
 	return true;
@@ -37,26 +39,28 @@ static bool writePreset(const std::string& path, const char* version, const floa
 
 int main(int argc, char** argv) {
 	const char* version = argc > 1 ? argv[1] : "2.0.0";
-	const std::string dir = argc > 2 ? argv[2] : "presets/mpxPhrase";
+	const std::string dir = argc > 2 ? argv[2] : "presets";
 
-	int written = 0;
-	for (int style = 0; style < NUM_PHRASE_STYLES; style++) {
-		// THE DEFAULTS FIRST, then the style over them: a style has an opinion about eleven of the
-		// controls and none about the note, the seed or the ones not built yet, and a preset has
-		// to carry a value for every parameter whether or not the style cares about it.
+	int written = 0, wanted = 0;
+	for (int style = 1; style < NUM_PHRASE_STYLES; style++) {
+		// THE DEFAULTS FIRST, then the style over them: a preset has to carry a value for every
+		// parameter whether or not the style cares about it. SONG, style nought, is what the module
+		// comes up with, and is not written as a preset.
 		float v[PHP_LEN];
 		phraseParamDefaults(v);
 		PhraseControls c;
 		phraseStyle(style, c);
 		phraseParamsFrom(c, v);
-
-		// CAPITALISED, BECAUSE THE FILE NAME IS WHAT RACK PUTS IN THE MENU.
-		std::string name = phraseStyleName(style);
-		if (!name.empty())
-			name[0] = (char) toupper(name[0]);
-		if (writePreset(dir + "/" + name + ".vcvm", version, v))
+		const std::string name = phraseStyleName(style);
+		wanted += 2;
+		if (writeParams(dir + "/mpxPhrase/" + name + ".vcvm", version, "mpxPhrase", v, PHP_LEN))
+			written++;
+		float voice[VOICE_STYLE_PARAMS];
+		if (voiceStyle(style, voice)
+				&& writeParams(dir + "/mpxMelodyVoice/" + name + ".vcvm", version, "mpxMelodyVoice",
+					voice, VOICE_STYLE_PARAMS))
 			written++;
 	}
 	printf("presetgen: wrote %d presets to %s\n", written, dir.c_str());
-	return written == NUM_PHRASE_STYLES ? 0 : 1;
+	return written == wanted ? 0 : 1;
 }

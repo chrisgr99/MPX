@@ -33,6 +33,11 @@ struct NoteModule : Module, NoteSource {
 		I_PAN,
 		I_PRESSURE,
 		I_TIMBRE,
+		/** THE PEDALS, APPENDED so saved patches keep their cables. A gate is a pedal down; a
+		voltage between nought and ten is a pedal part way down, for half-pedalling. They go on
+		the cable as state — see busPublishPedals in NoteBus.hpp. */
+		I_SUSTAIN,
+		I_SOFT,
 		NUM_INPUTS
 	};
 	enum OutputId {
@@ -96,6 +101,8 @@ struct NoteModule : Module, NoteSource {
 		configInput(I_PAN, "Pan");
 		configInput(I_PRESSURE, "Pressure");
 		configInput(I_TIMBRE, "Timbre");
+		configInput(I_SUSTAIN, "Sustain pedal \u2014 a gate holds it down; 0 to 10V is part way");
+		configInput(I_SOFT, "Soft pedal \u2014 a gate holds it down; 0 to 10V is part way");
 		configOutput(O_VOICE, "MPX note out \u2014 goes to an MPX input only");
 
 		slot = busClaim(&generation);
@@ -125,6 +132,16 @@ struct NoteModule : Module, NoteSource {
 		// surprising.
 		outputs[O_VOICE].setChannels(1);
 		outputs[O_VOICE].setVoltage(0.f);
+
+		// THE PEDALS, every sample, as state: whatever is listening knows where the pedal is the
+		// moment it starts listening. Unpatched is up.
+		if (slot >= 0) {
+			const float sustain = inputs[I_SUSTAIN].isConnected()
+				? math::clamp(inputs[I_SUSTAIN].getVoltage() / 10.f, 0.f, 1.f) : 0.f;
+			const float soft = inputs[I_SOFT].isConnected()
+				? math::clamp(inputs[I_SOFT].getVoltage() / 10.f, 0.f, 1.f) : 0.f;
+			busPublishPedals(slot, sustain, soft);
+		}
 
 
 		// The gate decides how many notes this source can sound at once. A monophonic gate
@@ -294,22 +311,15 @@ int noteBusOf(engine::Module* module, int outputId, uint32_t* generation) {
 // whatever each drag happened to land on. Where a knob and a jack are the same setting they now
 // share a row exactly, which is the whole reason they are side by side.
 
-static const float JACK_X = 9.5f;
-static const float KNOB_X = 23.f;
-static const float BEND_X = 36.5f;
-static const float OUT_X = 48.f;
-static const float ROW_TOP = 17.5f;
-static const float ROW_PITCH = 19.5f;
-/** The bend range ring, outside the knob rather than on it. */
-static const float BEND_RING = 10.f;
-
-static float row(int n) {
-	return ROW_TOP + n * ROW_PITCH;
-}
+/** SIX HP: two columns, the jacks and the knobs that stand in for them, with the rows as they were
+arranged by hand and evened up. Notes end at and Bend range are set once per patch rather than
+turned while playing, so they are in the right-click menu rather than on the face. */
+static const float JACK_X = 7.5f;
+static const float KNOB_X = 20.5f;
 
 static Layout toMPXLayout() {
 	Layout L;
-	L.hp = 12.f;
+	L.hp = 6.f;
 	L.title = "toMPX";
 	L.titleAbove = "DREAMER DEVELOPMENT";
 
@@ -321,17 +331,16 @@ static Layout toMPXLayout() {
 		i.align = align; i.heading = heading; i.size = size; i.owner = owner;
 		L.items.push_back(i);
 	};
-	// `name` may be empty, and then the jack gets none. THE KNOB BESIDE IT ALREADY SAYS WHAT IT
-	// IS: a jack labelled "level" next to a knob labelled LEVEL is the same word twice, and the
-	// second one only tells you that the panel was generated rather than laid out.
+	// `below` is how far under the jack its name sits. The bottom four sit closer, so four jacks
+	// with names fit in the space that held two.
 	auto jack = [&](const char* key, Item::Kind kind, float x, float y, int id,
-			const char* name, NVGcolor color) {
+			const char* name, NVGcolor color, float below = 7.5f, float size = 0.f) {
 		Item i;
 		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y; i.ring = color;
 		L.items.push_back(i);
 		if (name && name[0])
-			label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
-				Panel::CENTRE, false, 0.f, key);
+			label((std::string(key) + ".label").c_str(), x, y + below, name,
+				Panel::CENTRE, false, size, key);
 	};
 	auto knob = [&](const char* key, float x, float y, int id, const char* name) {
 		Item i;
@@ -342,68 +351,41 @@ static Layout toMPXLayout() {
 			Panel::CENTRE, true, 0.f, key);
 	};
 
-	// What arrives. The gate is the note: everything else is read at its rising edge.
-	jack("in.pitch", Item::PORT_IN, JACK_X, row(0), NoteModule::I_PITCH, "1V/oct", SIG_PITCH);
-	jack("in.gate", Item::PORT_IN, JACK_X, row(1), NoteModule::I_GATE, "gate", SIG_GATE);
+	// What arrives, and at the top of the second column the one cable that leaves.
+	jack("in.pitch", Item::PORT_IN, JACK_X, 18.5f, NoteModule::I_PITCH, "1V/oct", SIG_PITCH);
+	jack("in.gate", Item::PORT_IN, JACK_X, 36.f, NoteModule::I_GATE, "gate", SIG_GATE);
+
+	Item out;
+	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
+	out.x = KNOB_X; out.y = 18.5f; out.ring = NOTE_CABLE;
+	L.items.push_back(out);
+	label("h.out", KNOB_X, 26.f, "mpx OUT", Panel::CENTRE, true, 0.f, "out.voice");
+	Item lamp;
+	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
+	lamp.x = KNOB_X; lamp.y = 32.5f; lamp.owner = "out.voice";
+	L.items.push_back(lamp);
 
 	// THE JACK AND ITS KNOB ON ONE ROW. Each pair is one setting: the knob is what the note
 	// carries, and a cable in the jack beside it takes over.
-	jack("in.level", Item::PORT_IN, JACK_X, row(2), NoteModule::I_LEVEL, "", SIG_CV);
-	knob("p.level", KNOB_X, row(2), NoteModule::P_LEVEL, "LEVEL");
-	jack("in.dur", Item::PORT_IN, JACK_X, row(3), NoteModule::I_DURATION, "", SIG_CV);
-	knob("p.dur", KNOB_X, row(3), NoteModule::P_DURATION, "DURATION");
-	jack("in.pan", Item::PORT_IN, JACK_X, row(4), NoteModule::I_PAN, "", SIG_CV);
-	knob("p.pan", KNOB_X, row(4), NoteModule::P_PAN, "PAN");
+	jack("in.level", Item::PORT_IN, JACK_X, 54.f, NoteModule::I_LEVEL, "", SIG_CV);
+	knob("p.level", KNOB_X, 54.f, NoteModule::P_LEVEL, "LEVEL");
+	jack("in.dur", Item::PORT_IN, JACK_X, 74.f, NoteModule::I_DURATION, "", SIG_CV);
+	knob("p.dur", KNOB_X, 74.f, NoteModule::P_DURATION, "DURATION");
+	jack("in.pan", Item::PORT_IN, JACK_X, 93.5f, NoteModule::I_PAN, "", SIG_CV);
+	knob("p.pan", KNOB_X, 93.5f, NoteModule::P_PAN, "PAN");
 
-	// These two only ever arrive on a cable: there is nothing sensible for a still control to
-	// say, and an unpatched one sends nothing at all rather than sending zero.
-	jack("in.press", Item::PORT_IN, JACK_X, row(5), NoteModule::I_PRESSURE, "pressure", SIG_CV);
-	jack("in.timb", Item::PORT_IN, KNOB_X, row(5), NoteModule::I_TIMBRE, "timbre", SIG_CV);
-
-	// Bend has no jack of its own: it is the pitch input's movement measured from what the note
-	// started on, so all it needs is how far full deflection reaches.
-	knob("p.bend", BEND_X, 28.f, NoteModule::P_BEND_RANGE, "BEND RANGE");
-	for (int i = 0; i <= 6; i++) {
-		const float a = (-0.78f + i / 6.f * 1.56f) * (float) M_PI;
-		label(("p.bend.n" + std::to_string(i)).c_str(),
-			BEND_X + std::sin(a) * BEND_RING, 28.f - std::cos(a) * BEND_RING,
-			std::to_string(i * 2).c_str(), Panel::CENTRE, false, 7.f, "p.bend");
-	}
-	// LOWER THAN THE OTHER KNOB LABELS, because this is the only knob with numbers ringed
-	// round it and the name has to clear them.
-	L.find("p.bend.label")->y = 28.f + 11.f;
-
-	// What ends a note, as two named lamps rather than a switch whose two positions are only
-	// distinguishable by which way it is leaning — and headed, because two words on their own
-	// say what they are but not what they are about.
-	label("h.ends", BEND_X, 51.f, "NOTES END AT", Panel::CENTRE, true);
-	Item ends;
-	ends.key = "p.ends"; ends.kind = Item::PARAM; ends.id = NoteModule::P_ENDS;
-	ends.style = "lamps"; ends.x = BEND_X - 3.f; ends.y = 56.f;
-	ends.w = 6.f; ends.h = 18.f; ends.pitch = 11.f;
-	// Read under the heading, each of these is a whole sentence: the note ends at its duration,
-	// or at whichever of the gate and the duration comes first. Naming both signals in the
-	// second is what says the gate can only ever end a note EARLY.
-	ends.names = {"DURATION", "GATE OR\nDURATION"};
-	ends.labelSide = Panel::RIGHT;
-	L.items.push_back(ends);
-
-	// One cable out. A polyphonic cable in Rack carries one instrument's voices, so a module
-	// looking at one has one instrument to hand on.
-	label("h.out", OUT_X, 105.f, "mpx\nOUT", Panel::CENTRE, true, 12.f);
-	Item out;
-	out.key = "out.voice"; out.kind = Item::PORT_OUT; out.id = NoteModule::O_VOICE;
-	out.x = OUT_X; out.y = row(5); out.ring = NOTE_CABLE;
-	L.items.push_back(out);
-	Item lamp;
-	lamp.key = "lamp.active"; lamp.kind = Item::LIGHT; lamp.id = NoteModule::L_ACTIVE;
-	lamp.x = OUT_X - 8.f; lamp.y = row(5); lamp.owner = "out.voice";
-	L.items.push_back(lamp);
-
+	// Followed while the note sounds, then the pedals: four jacks, names tucked close.
+	jack("in.press", Item::PORT_IN, JACK_X, 107.f, NoteModule::I_PRESSURE, "pressure", SIG_CV,
+		5.5f, 7.f);
+	jack("in.timb", Item::PORT_IN, KNOB_X, 107.f, NoteModule::I_TIMBRE, "timbre", SIG_CV, 5.5f, 7.f);
+	jack("in.sustain", Item::PORT_IN, JACK_X, 119.5f, NoteModule::I_SUSTAIN, "sustain", SIG_GATE,
+		5.5f, 7.f);
+	jack("in.soft", Item::PORT_IN, KNOB_X, 119.5f, NoteModule::I_SOFT, "soft", SIG_GATE, 5.5f, 7.f);
 
 	L.bindOffsets();
 	return L;
 }
+
 
 struct NoteWidget : ModuleWidget {
 	Panel* panel = NULL;
@@ -420,6 +402,31 @@ struct NoteWidget : ModuleWidget {
 
 	void appendContextMenu(ui::Menu* menu) override {
 		layoutAppendMenu(menu, this, panel, &layout, "toMPX");
+		NoteModule* m = dynamic_cast<NoteModule*>(module);
+		if (!m)
+			return;
+		menu->addChild(new ui::MenuSeparator);
+		// SET ONCE PER PATCH, so here rather than on the face. Both are still params, so they are
+		// saved with the patch and can be mapped like anything else.
+		menu->addChild(createSubmenuItem("Notes end at",
+			m->params[NoteModule::P_ENDS].getValue() < 0.5f ? "Duration" : "Gate or duration",
+			[=](ui::Menu* sub) {
+				sub->addChild(createCheckMenuItem("Their duration, whatever the gate does", "",
+					[=]() { return m->params[NoteModule::P_ENDS].getValue() < 0.5f; },
+					[=]() { m->params[NoteModule::P_ENDS].setValue(0.f); }));
+				sub->addChild(createCheckMenuItem("The gate's fall or the duration, whichever is first", "",
+					[=]() { return m->params[NoteModule::P_ENDS].getValue() >= 0.5f; },
+					[=]() { m->params[NoteModule::P_ENDS].setValue(1.f); }));
+			}));
+		menu->addChild(createSubmenuItem("Bend range",
+			string::f("%g semitones", m->params[NoteModule::P_BEND_RANGE].getValue()),
+			[=](ui::Menu* sub) {
+				const float ranges[] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 7.f, 12.f};
+				for (float r : ranges)
+					sub->addChild(createCheckMenuItem(string::f("%g semitones", r), "",
+						[=]() { return std::fabs(m->params[NoteModule::P_BEND_RANGE].getValue() - r) < 0.01f; },
+						[=]() { m->params[NoteModule::P_BEND_RANGE].setValue(r); }));
+			}));
 	}
 
 	/** MAGENTA MEANS THE LINK WORKS, not merely that the cable left an MPX jack.

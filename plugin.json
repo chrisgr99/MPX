@@ -5,8 +5,8 @@
   "description": "Modular Polyphonic Expression: one cable carries a whole instrument, and every note on it keeps its own pitch, level, duration, pan, bend, pressure and timbre.",
   "version": "2.0.0",
   "license": "MIT",
-  "author": "Dreamer Development",
-  "authorEmail": "",
+  "author": "Chris Graham",
+  "authorEmail": "chrisgr99@gmail.com",
   "authorUrl": "https://github.com/chrisgr99",
   "pluginUrl": "https://github.com/chrisgr99/MPX",
   "manualUrl": "https://github.com/chrisgr99/MPX#readme",
@@ -144,6 +144,15 @@
         "Sequencer",
         "Rhythm",
         "Random"
+      ]
+    },
+    {
+      "slug": "mpxPiano",
+      "name": "mpxPiano",
+      "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable, with sustain and soft pedals and levels for its mechanical sounds. The samples are downloaded once, from the module.",
+      "tags": [
+        "Polyphonic",
+        "Sampler"
       ]
     }
   ]

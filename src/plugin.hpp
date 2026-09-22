@@ -17,6 +17,7 @@ extern Model* modelMpxRand;
 extern Model* modelMpxMelody;
 extern Model* modelMpxMelodyVoice;
 extern Model* modelMpxPhrase;
+extern Model* modelMpxPiano;
 
 namespace px {
 
@@ -58,6 +59,12 @@ In one place because two files need it: the panel draws by it and the layout mea
 a name whose measured height disagrees with its drawn height sits at the wrong distance from
 whatever it names. */
 inline float panelLineStep(float size) { return size * 0.935f; }
+
+/** CRISP TEXT for a module's own display, drawn the way the panel draws its lettering: on a whole
+screen pixel and twice over, so it reads under magnification. The same arguments as nvgText and
+nvgTextBox, so a display changes one word to use them. See Panel::crisp. */
+float crispText(NVGcontext* vg, float x, float y, const char* text, const char* end);
+void crispTextBox(NVGcontext* vg, float x, float y, float width, const char* text, const char* end);
 
 struct Panel : widget::Widget {
 	std::string titleAbove;
@@ -115,6 +122,12 @@ struct Panel : widget::Widget {
 		bool horizontal = true;
 	};
 	std::vector<Rule> lines;
+
+	/** CRISP LETTERING, for reading under screen magnification. Each piece of text is placed on a
+	whole screen pixel and drawn twice in the same place, which turns the soft ramp of
+	half-covered pixels along every edge into a much shorter, harder one. Tried on mpxPiano first,
+	and on every MPX panel since. */
+	bool crisp = true;
 
 	void draw(const DrawArgs& args) override;
 };

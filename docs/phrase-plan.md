@@ -4,7 +4,11 @@ How the design in `phrase.md` is built. Each milestone ends with something that 
 
 ## Status
 
-Milestones 1, 2, 3 and 4 are built, and milestone 4a is designed and measured but not built. `make phrasetest` reports the generated statistics beside the two corpora and ends with the exact checks, and mpxPhrase is a playable module whose remaining checks are the ones only Rack can make: that the cables take, that the measured tempo tracks a tempo change, and the listening checkpoint. `make phrasetest` reports the generated statistics beside the two corpora and ends with the exact checks. What remains of milestones 1 and 2 is visual: mpxMonitor showing each phrase, how it ends, its section and appearance, and how many chord changes it holds.
+Every milestone up to and including 7 is built, and every control on mpxPhrase, mpxMelody and mpxVoice now does what its help says. What remains is milestone 8, the tuning, which is done by listening — against the built-in Examples, with `make phrasesim` and `python3 test/contour.py` to check a change before it is heard.
+
+mpxVoice's ARTICULATION, ACCENT, BREATH and END NOTES AT CHANGES, its PROFILE input, its VOICE switch and the "from chord" scale were on the panel and did nothing until this point: the voice read them only into its log. They are built now, their decisions in `voiceShape` beside the voice's choice of note in MelodyVoice.cpp, checked exactly in `make melodytest`. The voice now ends its own notes, so it can hold a note past what the rhythm sent and slur it into the next; the role, not the register, decides which voice draws first.
+
+Tuning toward pop phrasing is under way, against thirty transcribed pop songs in `research/pop`. From them: a phrase now leads in with a pickup before its bar line, decided two beats early from the chart's description of the next phrase; START's middle is the pop songs' mix of starts; a POP preset ships beside SONG and JAZZ; and mpxVoice has a REPEATED NOTES knob, since pop melodies repeat a note on 29 per cent of intervals against 5 in the jazz solos.
 
 ## Rules that apply throughout
 
@@ -95,18 +99,23 @@ Numbered this way so the later milestones keep the numbers they already have. It
 
 **Work.** A SWING control on mpxChart, from none to full, and on the harmony block the amount plus one ratio per division — the eighth level and the sixteenth level — converted by the chart from the amount and the tempo it is running, along the curve measured in `test/swing.py`. A reader looks up the ratio for the division it works at and knows nothing of the curve. In mpxPhrase, the onsets and the durations of a phrase are deformed by that ratio after the notes are placed, not before: placement stays on an even grid so that the metre, the chord changes and the sub-phrase boundaries are all still reasoned about in plain beats. A TRIPLETS control on mpxPhrase, the likelihood a beat sounds the middle unit of the triplet, drawn per figure.
 
-**Checks — `make phrasetest`.** With swing at nought every onset stays on its slot. At full swing, the census of first-half against second-half durations reproduces the ratio the chart published, at both the eighth and the sixteenth level. The deformation moves nothing across a bar line or a phrase boundary, and no note overlaps the one after it. Triplet figures land on about the share the control asks for, and the runs of consecutive triplet beats stay as short as the corpus's.
+**Checks — `make phrasetest`.** All pass. The curve itself is checked against the per-solo medians at six tempos, so a curve that drifted from the corpus cannot leave every other figure looking right. With swing at nought every onset stays on its slot — none of 1,868 off it. At a published ratio of 1.50 the notes that came out measure 1.50 over 875 pairs, which is what catches a mapping applied to onsets but not to the notes' ends. Triplets asked for on 15 per cent of played beats land on 16, with one run in two hundred longer than three beats.
 
-**Open, for you.** Where the SWING control goes on the mpxChart panel, which is already arranged.
+**A fault the swing check found that had nothing to do with swing.** A group whose last note wanted to land past its sounding end was clamped to half a slot before that end — which is not a position on the grid, so the note came out a quarter of a beat off it. It is clamped to the last slot that fits inside the group now. Nothing but an exact check on onsets would have shown it.
+
+**Open, for you.** Where the SWING control goes on the mpxChart panel, which is already arranged. It is at the moment in the band between the transport and the seed, which is free but was not chosen.
 
 ## Milestone 5 — Repetition
 
 **Work.** REPEAT at both levels. CYCLE, counting phrases from the top of the form across passes, with the repeat chain restarting at each cycle. Question and answer from a half cadence followed by a closing one. SECTIONS. ELIDE.
 
-**Checks — added to `make phrasetest`, all exact:**
+**Checks — added to `make phrasetest`, all exact and all passing:**
 - with CYCLE at N, phrase N plus one has the same onsets as phrase one
-- with REPEAT at one, consecutive phrases share every onset except in the final group
-- with SECTIONS at one, a returning section's phrases match its first appearance's
+- with REPEAT at one, consecutive phrases share every onset except in the final group — 9 restated, none lost
+- with REPEAT at nought the phrase before makes no difference at all, which is what stops a repeat leaking in where none was asked for
+- with ELIDE at one and a closing cadence, the last group sounds to the phrase's end rather than breathing at it
+
+**How SECTIONS works, which is not what the plan assumed.** Nothing is stored. The decision to restate is keyed on the section letter and the phrase within the section and on nothing else, so the second time round draws exactly as the first did — no pattern has to be kept for a section that may not return for two minutes, and a rack that joins the music halfway still plays the section the way it was played before it was listening.
 
 **Listening checkpoint:** can a restated phrase be heard as a restatement, and does the cycle audibly come back.
 
@@ -114,18 +123,29 @@ Numbered this way so the later milestones keep the numbers they already have. It
 
 **Work.** Replace the pass counter in the melody's unpatched draw with the position within a cycle, so a line recurs. Add CYCLE and OWN SEED to the master panel with the same rule as mpxPhrase. Connect the melodic step's phrase anchor to the cadence type: the tonic at a closing cadence, the second, fifth or seventh degree at a half cadence. Remove BREATH from mpxVoice, migrating your saved layout.
 
-**Checks.**
-- `make melodytest` gains an exact recurrence check: with equal CYCLE settings, the pitches of phrase N plus one match phrase one.
-- A recording shows melody notes at closing cadences landing on the tonic markedly more often than elsewhere.
-- **Listening checkpoint:** with equal CYCLE settings on both modules, the whole line recurs.
+**Result.** Built, except for removing BREATH — see the decision below.
 
-**Decision needed first:** whether BREATH leaves mpxVoice here, or stays until the question of a melody altering the rhythm's rests is settled.
+**The draw is now a pure function,** `melodyDraw` in Melodic.hpp, so recurrence is checked from a command line rather than listened for. It hashes where the phrase falls in a cycle of CYCLE phrases and where the note falls inside that phrase, and nothing else. Two things had to come out of it, and between them no line had ever repeated: the pass counter, so every time round the form drew differently, and the note's HANDLE, which is unique for the session and counts upward for ever — so even the same beat of the same bar drew differently on the second pass.
+
+**The anchor is what makes a phrase arrive.** The chart says how a phrase ends and how far off that end is; within two beats of it the melody is pulled toward the tonic at a closing cadence, and toward the second, fifth or seventh degree at a half cadence, which are the degrees that sit over a dominant without resolving. The pull is nothing two beats out and strong on the arrival, and there is no anchor anywhere else in a phrase — a tonic pull applied throughout would make every note the tonic.
+
+**Checks — `make melodytest`, all exact and all passing:**
+- with CYCLE at four, phrase five draws exactly as phrase one, and the four phrases inside a cycle differ from one another
+- it comes round across passes of the form, which is what the pass counter used to prevent
+- a locked seed ignores the chart's
+- the anchor lands a phrase end on the tonic in 50 per cent of draws against nought per cent without it
+
+**And the whole chain now restarts together.** A rewind set the chart's pass counter forward, and the pass counter is what every random process downstream folds into its draws — so a rewind gave a different rhythm and a different melody from the take before it, which is the opposite of what a rewind is for. A rewind now returns the counter to nought; a loop still advances it, because running off the end of the form and back to its start really is another pass. mpxPhrase drops its repeat chain on any jump, since what a phrase restates is the phrase immediately before it, and mpxMelody clears each voice's last note, because a line carried across a rewind begins with an interval from the previous take.
+
+**Decision still yours:** whether BREATH leaves mpxVoice. It is left in place, and I would keep it: a voice fed by mpxEuclid or any other unphrased rhythm source has no other way to breathe. With mpxPhrase upstream it should be at nought, or the two modules pause on top of each other — which is what made the first patches sound as though every phrase ended twice.
 
 ## Milestone 7 — Recording
 
 **Work.** A RECORD button on mpxPhrase writing to the same folder as mpxMelody's log: settings at the start and on change, with the seed in use and its source; one line per phrase with its form position, cycle position, cadence type, sub-phrase division and the count of slots copied by REPEAT; one line per note. A short script that summarises a log per phrase and per setting, so a take can be read without reading every line.
 
 **Check.** A recorded take reproduces the milestone 3 and 5 statistics when summarised.
+
+**Result.** Built. RECORD, in mpxPhrase's right-click menu, writes a new file each take — `phrase-log-` and the moment it started, in the DreamerMPX folder of the Rack user folder, beside mpxMelody's. A settings line when a take starts and whenever a knob moves, with the seed actually in use and where it came from; a line per phrase, with its place in the pass, the form and the cycle, its cadence, its section, its groups and how many slots REPEAT restated; and a line per note, with its group, its place, its length, its level, whether it is a phrase's arrival, its approach or a group's end, and whether it was joined legato to the note before.
 
 ## Milestone 8 — Tuning, and finishing
 

@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include <cmath>
 
 namespace px {
 
@@ -45,6 +46,56 @@ static int alignFlag(Panel::Align a) {
 }
 
 
+/** Text as the panel draws it: as it is, or crisp — see Panel::crisp.
+
+PLACED ON A WHOLE PIXEL. The transform gives where the point lands on the screen; rounding that and
+mapping it back puts the text's origin exactly on a pixel boundary, so its edges fall on the pixel
+grid far more often and fewer edge pixels are left half covered. Panels are never rotated, so the
+transform's scale and offset are all there is to invert.
+
+DRAWN TWICE. A pixel along an edge that one pass leaves half covered is three-quarters covered after
+two, which shortens the grey fringe round each letter without thickening it. Three passes were
+tried and made the letters too heavy. */
+static void panelText(NVGcontext* vg, float x, float y, const char* text, bool crisp) {
+	if (!crisp) {
+		nvgText(vg, x, y, text, NULL);
+		return;
+	}
+	float t[6];
+	nvgCurrentTransform(vg, t);
+	if (t[0] != 0.f && t[3] != 0.f) {
+		x = (std::round(t[0] * x + t[4]) - t[4]) / t[0];
+		y = (std::round(t[3] * y + t[5]) - t[5]) / t[3];
+	}
+	for (int i = 0; i < 2; i++)
+		nvgText(vg, x, y, text, NULL);
+}
+
+
+/** Where a point lands on a whole screen pixel, mapped back into the current coordinates. */
+static void snapToPixel(NVGcontext* vg, float& x, float& y) {
+	float t[6];
+	nvgCurrentTransform(vg, t);
+	if (t[0] != 0.f && t[3] != 0.f) {
+		x = (std::round(t[0] * x + t[4]) - t[4]) / t[0];
+		y = (std::round(t[3] * y + t[5]) - t[5]) / t[3];
+	}
+}
+
+/** Returns where the text ended, as nvgText does, so a run of pieces can be set one after another. */
+float crispText(NVGcontext* vg, float x, float y, const char* text, const char* end) {
+	snapToPixel(vg, x, y);
+	nvgText(vg, x, y, text, end);
+	return nvgText(vg, x, y, text, end);
+}
+
+void crispTextBox(NVGcontext* vg, float x, float y, float width, const char* text, const char* end) {
+	snapToPixel(vg, x, y);
+	for (int i = 0; i < 2; i++)
+		nvgTextBox(vg, x, y, width, text, end);
+}
+
+
 void Panel::draw(const DrawArgs& args) {
 	nvgBeginPath(args.vg);
 	nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
@@ -69,15 +120,15 @@ void Panel::draw(const DrawArgs& args) {
 	nvgFillColor(args.vg, PANEL_INK);
 	if (titleAbove.empty()) {
 		nvgFontSize(args.vg, 15);
-		nvgText(args.vg, box.size.x / 2, 16, title.c_str(), NULL);
+		panelText(args.vg, box.size.x / 2, 16, title.c_str(), crisp);
 	}
 	else {
 		nvgFontSize(args.vg, 8.f);
 		nvgFillColor(args.vg, PANEL_INK);
-		nvgText(args.vg, box.size.x / 2, 9, titleAbove.c_str(), NULL);
+		panelText(args.vg, box.size.x / 2, 9, titleAbove.c_str(), crisp);
 		nvgFillColor(args.vg, PANEL_INK);
 		nvgFontSize(args.vg, 14);
-		nvgText(args.vg, box.size.x / 2, 21, title.c_str(), NULL);
+		panelText(args.vg, box.size.x / 2, 21, title.c_str(), crisp);
 	}
 
 	for (float y : rules) {
@@ -156,7 +207,7 @@ void Panel::draw(const DrawArgs& args) {
 				// further to reach.
 				const float limit = 0.861f * sc.textRadius;
 				const float ty = math::clamp(dy * sc.textRadius, -limit, limit);
-				nvgText(args.vg, sc.x + dx * sc.textRadius, sc.y + ty, sc.marks[i].c_str(), NULL);
+				panelText(args.vg, sc.x + dx * sc.textRadius, sc.y + ty, sc.marks[i].c_str(), crisp);
 			}
 		}
 	}
@@ -193,7 +244,7 @@ void Panel::draw(const DrawArgs& args) {
 		}
 		const float top = label.y - step * (float) (lines.size() - 1) / 2.f;
 		for (size_t i = 0; i < lines.size(); i++)
-			nvgText(args.vg, label.x, top + step * (float) i, lines[i].c_str(), NULL);
+			panelText(args.vg, label.x, top + step * (float) i, lines[i].c_str(), crisp);
 	}
 
 	// Drawn last so nothing sits on top of it.
@@ -632,7 +683,7 @@ void Readout::draw(const DrawArgs& args) {
 	nvgFontSize(args.vg, mm2px(math::Vec(0, figureMM)).y / FIGURE_CAP);
 	nvgFillColor(args.vg, nvgRGB(0x3d, 0xe0, 0x7a));
 	nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-	nvgText(args.vg, w / 2.f, h / 2.f, text.c_str(), NULL);
+	panelText(args.vg, w / 2.f, h / 2.f, text.c_str(), true);
 }
 
 void Readout::openList() {
@@ -780,7 +831,10 @@ void Lamps::draw(const DrawArgs& args) {
 			continue;
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFontSize(args.vg, nameSize);
-		nvgFillColor(args.vg, on ? PANEL_INK : PANEL_DIM);
+		// EVERY NAME IN THE PANEL'S OWN INK, chosen or not. The unchosen ones were set dimmer,
+		// and dim thin text is exactly what goes to a fuzz under magnification; the lit lamp
+		// already says which one is chosen, so the name does not have to say it too.
+		nvgFillColor(args.vg, PANEL_INK);
 		// A NAME MAY BE SEVERAL LINES, split on the newlines the slash rule writes, and set
 		// about the lamp's own line rather than downward from it. Short lines beside a lamp
 		// read better than one long one that pushes the panel wider than it needs to be.
@@ -800,7 +854,7 @@ void Lamps::draw(const DrawArgs& args) {
 		const float step = panelLineStep(nameSize);
 		const float top = c.y - step * (float) (lines.size() - 1) / 2.f;
 		for (size_t k = 0; k < lines.size(); k++)
-			nvgText(args.vg, tx, top + step * (float) k, lines[k].c_str(), NULL);
+			panelText(args.vg, tx, top + step * (float) k, lines[k].c_str(), true);
 	}
 }
 

@@ -247,7 +247,7 @@ struct ProgressionDisplay : widget::Widget {
 		nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle : body->handle);
 		nvgFontSize(args.vg, 13.f);
 		nvgFillColor(args.vg, PANEL_INK);
-		nvgText(args.vg, 7.f, 14.f, p.name, NULL);
+		crispText(args.vg, 7.f, 14.f, p.name, NULL);
 
 		nvgFontFaceId(args.vg, body->handle);
 		nvgFontSize(args.vg, 9.f);
@@ -256,7 +256,7 @@ struct ProgressionDisplay : widget::Widget {
 		std::snprintf(head, sizeof(head), "%s %s", pitchClassNameIn(key.tonic, key),
 			p.minor ? "minor" : "major");
 		nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-		nvgText(args.vg, box.size.x - 7.f, 14.f, head, NULL);
+		crispText(args.vg, box.size.x - 7.f, 14.f, head, NULL);
 
 		// FOUR TO A LINE, which is how a chart is written and how a phrase is counted.
 		const float left = 7.f;
@@ -288,11 +288,11 @@ struct ProgressionDisplay : widget::Widget {
 
 			nvgFontSize(args.vg, 12.f);
 			nvgFillColor(args.vg, i == at ? nvgRGB(0xff, 0x3c, 0xc8) : PANEL_INK);
-			nvgText(args.vg, x + width / 2.f, y - 3.f, chordLetter(c, key).c_str(), NULL);
+			crispText(args.vg, x + width / 2.f, y - 3.f, chordLetter(c, key).c_str(), NULL);
 
 			nvgFontSize(args.vg, 8.f);
 			nvgFillColor(args.vg, PANEL_DIM);
-			nvgText(args.vg, x + width / 2.f, y + 8.f, chordRoman(c).c_str(), NULL);
+			crispText(args.vg, x + width / 2.f, y + 8.f, chordRoman(c).c_str(), NULL);
 
 			if (col == 3 || i == p.count - 1) {
 				nvgBeginPath(args.vg);

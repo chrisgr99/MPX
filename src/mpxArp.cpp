@@ -76,21 +76,18 @@ static const int TONES_COUNT[NUM_TONES] = {3, 4, 0};
 level lane is working at all, so the shapes are here to make it audible. */
 static const char* VELOCITY_NAMES[] = {"Same", "Rising", "Falling", "Random", "First loudest"};
 static const int NUM_VELOCITIES = (int) (sizeof(VELOCITY_NAMES) / sizeof(VELOCITY_NAMES[0]));
-/** THE RANGE A SHAPE COVERS, and it is nearly all of it.
+/** THE RANGE A SHAPE COVERS: a player's range, not a test signal's.
 
-It was a small deviation from the reference at first — eight volts give or take three — which is
-mpxComp's arithmetic, and there it is right: comp emits an accent, an accent is a stress rather
-than a different note, and the room above the reference is deliberately left for it.
-
-That is the wrong scale for a module whose job is to show you whether the level lane is working.
-Five volts to ten is six decibels, and six decibels of note-to-note difference disappears
-underneath an envelope with a percussive shape — which is what it did. A shape now runs from
-almost nothing to full, better than twenty-five decibels, so it is not a question of listening
-carefully. */
-static const float VELOCITY_QUIET = 0.08f;
-static const float VELOCITY_LOUD = 1.f;
+It ran from almost nothing to full — more than twenty-five decibels — chosen when the job was to
+show beyond doubt that the level lane worked. As music it is wrong: every other note all but
+vanished, and no player plays an arpeggio like that. One playing it evenly, or leaning into its
+first note, moves within a few decibels. So the shapes sit round the level Same plays at, a little
+under it at the quiet end and a little over at the loud, and the unaccented notes of "first
+loudest" fall just below the accent rather than far beneath it. */
+static const float VELOCITY_QUIET = 0.62f;
+static const float VELOCITY_LOUD = 0.95f;
 /** What the notes that are NOT the accented one drop to, for the shape that stresses one. */
-static const float VELOCITY_UNDER = 0.25f;
+static const float VELOCITY_UNDER = 0.7f;
 
 /** The range of the LENGTH knob, as a fraction of one step. The top is three steps, so that
 overlap can be got well past the point where it merely joins one note to the next. */
@@ -300,6 +297,12 @@ struct ArpModule : Module, NoteSource, NoteSink {
 		Harmony h;
 		if (reader.harmony(h))
 			busPublishHarmony(slot, h);
+		// The pedals, like the harmony, are state: forwarding them is a copy. See NoteBus.hpp.
+		{
+			float sustain, soft;
+			reader.pedals(sustain, soft);
+			busPublishPedals(slot, sustain, soft);
+		}
 	}
 
 	// ---- the notes themselves ----

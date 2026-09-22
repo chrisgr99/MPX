@@ -1,0 +1,1461 @@
+{
+ "title": "Listen to Your Heart",
+ "artist": "Roxette",
+ "style": "MED",
+ "meter": [
+  4,
+  4
+ ],
+ "key": "Am",
+ "pages": [
+  96,
+  97
+ ],
+ "phrases": [
+  {
+   "section": "verse",
+   "notes": [
+    {
+     "bar": 1,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 1.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 2.0,
+     "dur": 0.5,
+     "pitch": 65,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 2.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 1,
+     "beat": 3.5,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 1.75,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 2,
+     "beat": 2.0,
+     "dur": 2.0,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 0.5
+  },
+  {
+   "section": "verse",
+   "notes": [
+    {
+     "bar": 3,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 1.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 2.0,
+     "dur": 0.5,
+     "pitch": 65,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 2.5,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 3,
+     "beat": 3.5,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 67,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 67,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 69,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 1.75,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 2.0,
+     "dur": 1.0,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ","
+    },
+    {
+     "bar": 4,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 4,
+     "beat": 3.25,
+     "dur": 0.75,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 0.5
+  },
+  {
+   "section": "verse",
+   "notes": [
+    {
+     "bar": 5,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 57,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 57,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 1.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 2.0,
+     "dur": 1.0,
+     "pitch": 57,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 3.25,
+     "dur": 0.25,
+     "pitch": 57,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 5,
+     "beat": 3.5,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 1.5,
+     "dur": 1.25,
+     "pitch": 64,
+     "tie": true,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 0.0
+  },
+  {
+   "section": "verse",
+   "notes": [
+    {
+     "bar": 6,
+     "beat": 2.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 3.25,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 3.5,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 6,
+     "beat": 3.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 7,
+     "beat": 0.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 7,
+     "beat": 0.25,
+     "dur": 0.75,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    }
+   ],
+   "restAfter": 1.5
+  },
+  {
+   "section": "verse",
+   "notes": [
+    {
+     "bar": 7,
+     "beat": 2.5,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 7,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 7,
+     "beat": 3.5,
+     "dur": 2.5,
+     "pitch": 69,
+     "tie": true,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 1.0
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 8,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 8,
+     "beat": 3.25,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 8,
+     "beat": 3.5,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 8,
+     "beat": 3.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 9,
+     "beat": 0.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 9,
+     "beat": 0.25,
+     "dur": 1.75,
+     "pitch": 60,
+     "tie": true,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    }
+   ],
+   "restAfter": 1.0
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 9,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 9,
+     "beat": 3.5,
+     "dur": 0.5,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 65,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 1.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 1.25,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "m",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 1.75,
+     "dur": 1.25,
+     "pitch": 62,
+     "tie": true,
+     "syl": "m",
+     "word": "f",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 0.0
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 10,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 3.25,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 3.5,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 10,
+     "beat": 3.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 11,
+     "beat": 0.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 11,
+     "beat": 0.25,
+     "dur": 1.75,
+     "pitch": 60,
+     "tie": true,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ","
+    }
+   ],
+   "restAfter": 0.75
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 11,
+     "beat": 2.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 11,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 11,
+     "beat": 3.25,
+     "dur": 0.75,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 65,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 1.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 1.25,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "m",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 1.75,
+     "dur": 1.25,
+     "pitch": 62,
+     "tie": true,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 0.0
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 12,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 12,
+     "beat": 3.25,
+     "dur": 0.75,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 67,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 67,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 69,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 67,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 1.75,
+     "dur": 1.25,
+     "pitch": 62,
+     "tie": true,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    }
+   ],
+   "restAfter": 0.5
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 13,
+     "beat": 3.5,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 13,
+     "beat": 3.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 0.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 0.5,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "S",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 1.0,
+     "dur": 0.5,
+     "pitch": 65,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 1.5,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 1.75,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 2.0,
+     "dur": 0.75,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 2.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 3.0,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 3.25,
+     "dur": 0.25,
+     "pitch": 64,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 3.5,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 14,
+     "beat": 3.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 15,
+     "beat": 0.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 15,
+     "beat": 0.25,
+     "dur": 1.75,
+     "pitch": 60,
+     "tie": true,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    }
+   ],
+   "restAfter": 1.0
+  },
+  {
+   "section": "chorus",
+   "notes": [
+    {
+     "bar": 15,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 15,
+     "beat": 3.5,
+     "dur": 1.5,
+     "pitch": 59,
+     "tie": true,
+     "syl": "S",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 1.5,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 2.0,
+     "dur": 0.25,
+     "pitch": 62,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 2.25,
+     "dur": 0.5,
+     "pitch": 60,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 2.75,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "u",
+     "word": "f",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 3.0,
+     "dur": 0.5,
+     "pitch": 59,
+     "tie": false,
+     "syl": "m",
+     "word": "f",
+     "wend": true,
+     "punct": ""
+    },
+    {
+     "bar": 16,
+     "beat": 3.5,
+     "dur": 0.5,
+     "pitch": 59,
+     "tie": false,
+     "syl": "u",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 17,
+     "beat": 0.0,
+     "dur": 0.25,
+     "pitch": 60,
+     "tie": false,
+     "syl": "S",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 17,
+     "beat": 0.25,
+     "dur": 0.25,
+     "pitch": 59,
+     "tie": false,
+     "syl": "m",
+     "word": "c",
+     "wend": false,
+     "punct": ""
+    },
+    {
+     "bar": 17,
+     "beat": 0.5,
+     "dur": 2.5,
+     "pitch": 57,
+     "tie": true,
+     "syl": "m",
+     "word": "c",
+     "wend": true,
+     "punct": "."
+    }
+   ],
+   "restAfter": 8
+  }
+ ],
+ "chords": [
+  {
+   "bar": 1,
+   "beat": 0,
+   "symbol": "Asus2"
+  },
+  {
+   "bar": 1,
+   "beat": 1.5,
+   "symbol": "Fsus2"
+  },
+  {
+   "bar": 2,
+   "beat": 0,
+   "symbol": "G"
+  },
+  {
+   "bar": 2,
+   "beat": 1.5,
+   "symbol": "A5"
+  },
+  {
+   "bar": 3,
+   "beat": 0,
+   "symbol": "Asus2"
+  },
+  {
+   "bar": 3,
+   "beat": 1.5,
+   "symbol": "Fsus2"
+  },
+  {
+   "bar": 4,
+   "beat": 0,
+   "symbol": "G"
+  },
+  {
+   "bar": 4,
+   "beat": 1.5,
+   "symbol": "A5"
+  },
+  {
+   "bar": 5,
+   "beat": 0,
+   "symbol": "Am"
+  },
+  {
+   "bar": 5,
+   "beat": 1.5,
+   "symbol": "Fsus2"
+  },
+  {
+   "bar": 6,
+   "beat": 0,
+   "symbol": "G"
+  },
+  {
+   "bar": 6,
+   "beat": 1.5,
+   "symbol": "Am"
+  },
+  {
+   "bar": 7,
+   "beat": 2,
+   "symbol": "Fsus2"
+  },
+  {
+   "bar": 8,
+   "beat": 0,
+   "symbol": "Dm"
+  },
+  {
+   "bar": 9,
+   "beat": 0,
+   "symbol": "Am"
+  },
+  {
+   "bar": 9,
+   "beat": 1,
+   "symbol": "F"
+  },
+  {
+   "bar": 10,
+   "beat": 0,
+   "symbol": "C"
+  },
+  {
+   "bar": 10,
+   "beat": 1.5,
+   "symbol": "G"
+  },
+  {
+   "bar": 11,
+   "beat": 0,
+   "symbol": "Am"
+  },
+  {
+   "bar": 11,
+   "beat": 2,
+   "symbol": "F"
+  },
+  {
+   "bar": 12,
+   "beat": 0,
+   "symbol": "C"
+  },
+  {
+   "bar": 12,
+   "beat": 1.5,
+   "symbol": "G"
+  },
+  {
+   "bar": 13,
+   "beat": 0,
+   "symbol": "C"
+  },
+  {
+   "bar": 13,
+   "beat": 1.5,
+   "symbol": "G"
+  },
+  {
+   "bar": 14,
+   "beat": 0,
+   "symbol": "F"
+  },
+  {
+   "bar": 14,
+   "beat": 1.5,
+   "symbol": "C"
+  },
+  {
+   "bar": 15,
+   "beat": 0,
+   "symbol": "Am"
+  },
+  {
+   "bar": 15,
+   "beat": 2,
+   "symbol": "F"
+  },
+  {
+   "bar": 16,
+   "beat": 0,
+   "symbol": "G"
+  },
+  {
+   "bar": 17,
+   "beat": 0,
+   "symbol": "Am"
+  }
+ ]
+}

@@ -2,7 +2,10 @@
 #include "NoteBus.hpp"
 #include "Layout.hpp"
 #include "ChartLayout.hpp"
+#include "Swing.hpp"
 #include "IReal.hpp"
+#include "ChartExamples.hpp"
+#include "DevMute.hpp"
 
 #include <osdialog.h>
 
@@ -21,6 +24,10 @@ version to migrate, and no way for the stored form to disagree with the parser. 
 small enough to keep inside a patch, which is what makes a patch open on a machine that has
 never seen your playlists. */
 struct LibraryEntry {
+	/** BUILT INTO THE PLUGIN rather than imported: the examples. Never written to the library
+	file — they are the plugin's, and a copy there would outlive a change to them — and never
+	removed by importing a playlist of the same name. */
+	bool builtIn = false;
 	std::string playlist;
 	std::string title;
 	std::string composer;
@@ -37,8 +44,27 @@ static std::string libraryPath() {
 }
 
 
+/** THE EXAMPLES, FIRST IN THE LIST, on every machine whether or not anything has been imported:
+they are what a patch is tested against, and a test that needs an import first is a test that
+does not get run. See ChartExamples.hpp. */
+static void libraryAddExamples() {
+	std::vector<LibraryEntry> examples;
+	for (const ChartExample& x : chartExamples()) {
+		LibraryEntry e;
+		e.builtIn = true;
+		e.playlist = CHART_EXAMPLES_PLAYLIST;
+		e.title = x.title;
+		e.composer = CHART_EXAMPLES_PLAYLIST;
+		e.style = "Pop";
+		e.chunk = chartExampleChunk(x);
+		examples.push_back(e);
+	}
+	gLibrary.insert(gLibrary.begin(), examples.begin(), examples.end());
+}
+
 static void libraryLoad() {
 	gLibraryLoaded = true;
+	libraryAddExamples();
 	FILE* file = std::fopen(libraryPath().c_str(), "r");
 	if (!file)
 		return;
@@ -73,6 +99,8 @@ static void libraryLoad() {
 static void librarySave() {
 	json_t* songsJ = json_array();
 	for (const LibraryEntry& e : gLibrary) {
+		if (e.builtIn)
+			continue;
 		json_t* songJ = json_object();
 		json_object_set_new(songJ, "playlist", json_string(e.playlist.c_str()));
 		json_object_set_new(songJ, "title", json_string(e.title.c_str()));
@@ -138,7 +166,7 @@ static int libraryImport(const std::string& path) {
 		name = system::getStem(path);
 
 	gLibrary.erase(std::remove_if(gLibrary.begin(), gLibrary.end(),
-		[&](const LibraryEntry& e) { return e.playlist == name; }), gLibrary.end());
+		[&](const LibraryEntry& e) { return !e.builtIn && e.playlist == name; }), gLibrary.end());
 
 	int added = 0;
 	for (const std::string& chunk : chunks) {
@@ -159,6 +187,13 @@ static int libraryImport(const std::string& path) {
 }
 
 
+/** THE BPM READOUT SAYS WHAT IS PLAYING. With a clock patched the knob's setting is not used at
+all — the tempo is measured from the clock — and the readout went on showing the setting, so a
+chart running at 72 said 112. While a clock is patched it shows the measured tempo. */
+struct TempoQuantity : ParamQuantity {
+	std::string getDisplayValueString() override;
+};
+
 struct ChartModule : Module, NoteSource {
 	enum ParamId {
 		P_TRANSPOSE,
@@ -176,6 +211,18 @@ struct ChartModule : Module, NoteSource {
 		work through. It is a parameter rather than a setting so it is saved with the patch,
 		appears in Rack's own menu, and can be mapped. */
 		P_SEED,
+		/** HOW HARD THE MUSIC SWINGS, nought to one, and the last thing appended.
+
+		IT LIVES HERE RATHER THAN ON A RHYTHM MODULE because it is how the beat is divided, which
+		is already this module's business — and because two rhythm modules are peers with no cable
+		between them, so a swing control on each could disagree with nothing to say why. What
+		travels on the cable is this amount and the ratios it means at the current tempo. */
+		P_SWING,
+		/** APPENDED. RECORDS THE WHOLE CHAIN: carried on the cable, so every module downstream
+		that keeps a log starts and stops with it. */
+		P_RECORD,
+		/** APPENDED. THE STYLE OF THE WHOLE CHAIN, carried on the cable: see Harmony::style. */
+		P_STYLE,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -213,6 +260,13 @@ struct ChartModule : Module, NoteSource {
 	dsp::SchmittTrigger clockTrigger, resetTrigger, rewindTrigger;
 	float beatSeconds = 0.5f;
 	float sinceLastPulse = 0.f;
+	/** WAITING FOR THE CLOCK TO START FROM. Pressing PLAY, rewinding or jumping to a bar lands
+	between two pulses, and counting on from that moment put the first beat wherever the button
+	was pressed — off the beat of everything else the clock drives — and cut it short, since the
+	next pulse then counted the second. So with a clock patched the chart holds until the next
+	pulse, and that pulse is the beat it starts on. */
+	bool awaitPulse = false;
+	bool wasRunning = false;
 
 	/** WHAT IS LOADED, IN TWO COPIES. Choosing a song happens on the drawing thread while the
 	audio thread is reading the one already there, so the new one is built beside it and the
@@ -233,6 +287,9 @@ struct ChartModule : Module, NoteSource {
 		whole of it. Derived from the changes alone — see phrasesFor — and computed once when a
 		chart is loaded rather than every sample, because nothing about it moves. */
 		std::vector<ChartPhrase> phrases;
+		/** HOW MANY PHRASES THE SONG HAS, when a loop plays only some of them — so the loop's
+		phrases are counted as the song counts them. Nought when the phrases are the whole. */
+		int songPhrases = 0;
 	};
 	Loaded loaded[2];
 	std::atomic<int> live{0};
@@ -299,7 +356,9 @@ struct ChartModule : Module, NoteSource {
 		// input overrides this belongs in the manual and in the clock port's own name.
 		configParam(P_SEED, 0.f, 999.f, 1.f, "Seed");
 		paramQuantities[P_SEED]->snapEnabled = true;
-		configParam(P_TEMPO, 30.f, 300.f, 120.f, "Tempo", " bpm");
+		// NOUGHT BY DEFAULT, so nothing anybody has already patched starts swinging.
+		configParam(P_SWING, 0.f, 1.f, 0.f, "Swing", "%", 0.f, 100.f);
+		configParam<TempoQuantity>(P_TEMPO, 30.f, 300.f, 120.f, "Tempo", " bpm");
 		paramQuantities[P_TEMPO]->snapEnabled = true;
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		configButton(P_REWIND, "Rewind to the start");
@@ -309,6 +368,10 @@ struct ChartModule : Module, NoteSource {
 		configSwitch(P_CHORD_MODE, 0.f, 1.f, 0.f, "Chord symbols",
 			{"Letter names", "Roman numerals"});
 		configButton(P_OPEN, "Open chart window");
+		configSwitch(P_RECORD, 0.f, 1.f, 0.f, "Record the chain",
+			{"Off", "Recording: every module downstream that keeps a log"});
+		configSwitch(P_STYLE, 0.f, 6.f, 0.f, "Style",
+			{"\u2014", "Pop 1", "Pop 2", "Pop 3", "Jazz 1", "Jazz 2", "Jazz 3"});
 		configInput(I_CLOCK, "Clock, which overrides the tempo knob");
 		configInput(I_RESET, "Reset");
 		configOutput(O_MPX, "MPX note out \u2014 goes to an MPX input only");
@@ -361,6 +424,7 @@ struct ChartModule : Module, NoteSource {
 			return;
 		beats = pb.timeline[best].startBeat;
 		playingIndex = best;
+		awaitPulse = true;
 	}
 
 	/** Back to the top AND PLAYING, which is what loading a chart should do.
@@ -383,12 +447,72 @@ struct ChartModule : Module, NoteSource {
 	double lastPos = 0.0;
 
 	void rewind() {
-		epoch++;
+		// BACK TO THE TOP MEANS BACK TO THE TOP, FOR EVERYTHING.
+		//
+		// This used to advance the pass counter, and the counter is what everything downstream
+		// folds into its random draws — so a rewind gave a different rhythm and a different
+		// melody from the take before it. The one thing a rewind is for is hearing the same music
+		// again from a known place.
+		//
+		// A LOOP IS DIFFERENT AND STILL COUNTS. Running off the end of the chart back to its
+		// start is another pass through the form, so the counter advances there (see below, where
+		// the position going backwards on its own is what says so). A rewind is not another pass;
+		// it is the first one again.
+		epoch = 0;
+		lastPos = 0.0;
 		beats = 0.0;
 		playingIndex = 0;
+		awaitPulse = true;
 		// The bass line starts again too, or the same chart played twice gives two different
 		// lines depending on where the last one happened to end.
 		bassWas = -99.f;
+	}
+
+	/** THE LOOP, as written bars, both ends included; -1 for none. Takes priority over a section:
+	a loop is chosen by pointing at the bars themselves. */
+	int loopFirst = -1, loopLast = -1;
+
+	bool looping() const {
+		return loopFirst >= 0;
+	}
+
+	/** Main thread. PLAYS WRITTEN BARS `first` TO `last` OVER AND OVER, phrased as the song
+	phrases them — see chartPhrasesInLoop — and every pass the same as the first, since the wrap
+	is a rewind rather than another pass (see process). */
+	void setLoop(int first, int last) {
+		if (first > last)
+			std::swap(first, last);
+		const int liveNow = live.load();
+		const int spare = 1 - liveNow;
+		loaded[spare] = loaded[liveNow];
+		Loaded& L = loaded[spare];
+		int from = -1;
+		const ChartPlayback loop = chartPlaybackForBars(L.playback, first, last, &from);
+		if (loop.timeline.empty())
+			return;
+		const std::vector<ChartPhrase> whole = chartPhrases(L.chartBars, L.playback);
+		L.playing = loop;
+		L.phrases = chartPhrasesInLoop(whole, L.playback, loop, from);
+		L.songPhrases = (int) whole.size();
+		loopFirst = first;
+		loopLast = last;
+		live.store(spare);
+		rewind();
+	}
+
+	/** Main thread. Back to the section chosen, or the whole chart. */
+	void clearLoop() {
+		loopFirst = loopLast = -1;
+		const int liveNow = live.load();
+		const int spare = 1 - liveNow;
+		loaded[spare] = loaded[liveNow];
+		loaded[spare].songPhrases = 0;
+		loaded[spare].playing = chartPlaybackForLabel(loaded[spare].chartBars,
+			loaded[spare].playback, section);
+		rephrase(spare);
+		live.store(spare);
+		beats = 0.0;
+		playingIndex = 0;
 	}
 
 	/** Main thread. Restricts play to one section's label, or to the whole chart for nought.
@@ -404,6 +528,8 @@ struct ChartModule : Module, NoteSource {
 		// A SECTION IS A DIFFERENT PIECE OF MUSIC as far as phrasing goes: a different length,
 		// different cadences, and its own boundaries. So the phrases are worked out again.
 		rephrase(spare);
+		loaded[spare].songPhrases = 0;
+		loopFirst = loopLast = -1;
 		section = letter;
 		live.store(spare);
 		beats = 0.0;
@@ -430,8 +556,10 @@ struct ChartModule : Module, NoteSource {
 		playlist = fromPlaylist;
 		live.store(spare);
 		haveSong.store(!loaded[spare].playback.timeline.empty());
-		// A new song knows nothing of the old one's sections.
+		// A new song knows nothing of the old one's sections, or of a loop in it.
 		section = 0;
+		loopFirst = loopLast = -1;
+		loaded[spare].songPhrases = 0;
 		// AND IT ARRIVES AT THE TOP AND PLAYING. A chart swapped under a running transport would
 		// otherwise carry on from wherever the beat count happened to be, in the middle of a
 		// piece nobody has looked at yet, so the rewind is not optional. What is optional is
@@ -475,10 +603,19 @@ struct ChartModule : Module, NoteSource {
 			const char letter[2] = {section, 0};
 			json_object_set_new(rootJ, "section", json_string(letter));
 		}
+		if (looping()) {
+			json_t* loopJ = json_array();
+			json_array_append_new(loopJ, json_integer(loopFirst));
+			json_array_append_new(loopJ, json_integer(loopLast));
+			json_object_set_new(rootJ, "loop", loopJ);
+		}
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		// A PATCH NEVER OPENS RECORDING: a take is started on purpose, and a log nobody asked for
+		// grows until somebody notices.
+		params[P_RECORD].setValue(0.f);
 		// Patches written before the mode became a parameter.
 		if (json_t* modeJ = json_object_get(rootJ, "chordMode"))
 			params[P_CHORD_MODE].setValue(json_integer_value(modeJ) ? 1.f : 0.f);
@@ -492,6 +629,10 @@ struct ChartModule : Module, NoteSource {
 			json_t* sectionJ = json_object_get(rootJ, "section");
 			if (json_is_string(sectionJ) && json_string_value(sectionJ)[0] != '\0')
 				setSection(json_string_value(sectionJ)[0]);
+			json_t* loopJ = json_object_get(rootJ, "loop");
+			if (json_is_array(loopJ) && json_array_size(loopJ) == 2)
+				setLoop((int) json_integer_value(json_array_get(loopJ, 0)),
+					(int) json_integer_value(json_array_get(loopJ, 1)));
 		}
 	}
 
@@ -659,6 +800,9 @@ struct ChartModule : Module, NoteSource {
 		const bool running = params[P_PLAY].getValue() > 0.5f;
 
 		sinceLastPulse += args.sampleTime;
+		if (running && !wasRunning)
+			awaitPulse = true;
+		wasRunning = running;
 		if (!running) {
 			// Held where it is. The clock's own timing is still followed so that starting again
 			// picks up in step rather than at whatever phase the button was pressed.
@@ -670,16 +814,29 @@ struct ChartModule : Module, NoteSource {
 				if (sinceLastPulse > 0.001f && sinceLastPulse < 10.f)
 					beatSeconds = sinceLastPulse;
 				sinceLastPulse = 0.f;
-				beats = std::floor(beats) + 1.0;
+				if (awaitPulse) {
+					// The beat it was waiting at, or the next whole one if it stopped part-way.
+					beats = std::ceil(beats - 1e-6);
+					awaitPulse = false;
+				}
+				else {
+					beats = std::floor(beats) + 1.0;
+				}
 			}
-			else if (beatSeconds > 0.f) {
-				beats += args.sampleTime / beatSeconds;
+			else if (beatSeconds > 0.f && !awaitPulse) {
+				// NEVER PAST THE NEXT BEAT BETWEEN PULSES. The time to it is guessed from the last
+				// gap, and a clock's gaps differ by a sample or two: a guess a hair short reached
+				// the next beat before its pulse came, and the pulse then counted a beat on top —
+				// a whole beat skipped, and every note due in it sent at once. So the guess stops
+				// just short of the beat, and only the pulse crosses it.
+				beats = std::fmin(beats + args.sampleTime / beatSeconds, std::floor(beats) + 1.0 - 1e-6);
 			}
 		}
 		else {
 			// Taken from the knob whether or not the transport is running, so the readout is
 			// right while stopped.
 			beatSeconds = 60.f / std::fmax(1.f, params[P_TEMPO].getValue());
+			awaitPulse = false;
 			if (running)
 				beats += args.sampleTime / beatSeconds;
 		}
@@ -695,8 +852,15 @@ struct ChartModule : Module, NoteSource {
 		// THE CHART LOOPING IS A REWIND THAT NOBODY PRESSED. The position runs forward and then
 		// starts again, so a step BACKWARDS is the top of the form coming round — which is the
 		// moment a repeating pattern downstream has to repeat with it.
-		if (pos < lastPos)
-			epoch++;
+		// A LOOP'S WRAP IS A REWIND, NOT ANOTHER PASS: the count stays where it is, the bass starts
+		// again, and everything downstream — which notices the beat going backwards — starts its
+		// lines again, so every time round the loop is the same as the first.
+		if (pos < lastPos) {
+			if (looping())
+				bassWas = -99.f;
+			else
+				epoch++;
+		}
 		lastPos = pos;
 
 		// Which played bar the music is in. A walk rather than a search: the position moves by
@@ -735,14 +899,16 @@ struct ChartModule : Module, NoteSource {
 		// a sample, on a list that is almost never longer than a dozen: the position moves by a
 		// fraction of a beat between frames, so a search would find the same answer it found
 		// last time and cost more to organise than to repeat.
-		h.phrasesPerPass = (uint16_t) std::min<size_t>(65535, L.phrases.size());
+		h.phrasesPerPass = (uint16_t) std::min<size_t>(65535,
+			L.songPhrases > 0 ? (size_t) L.songPhrases : L.phrases.size());
 		for (size_t i = 0; i < L.phrases.size(); i++) {
 			const ChartPhrase& ph = L.phrases[i];
 			if (pos < ph.startBeat || pos >= ph.endBeat)
 				continue;
-			h.phrase = (uint16_t) i;
-			h.phraseBeats = ph.endBeat - ph.startBeat;
-			h.beatsToPhraseEnd = (float) (ph.endBeat - pos);
+			h.phrase = (uint16_t) (ph.number >= 0 ? ph.number : (int) i);
+			// THE WHOLE PHRASE, even where a loop hears only part of it — see chartPhrasesInLoop.
+			h.phraseBeats = ph.fullEnd - ph.fullStart;
+			h.beatsToPhraseEnd = (float) (ph.fullEnd - pos);
 			h.phraseCadence = (uint8_t) ph.cadence;
 			h.section = ph.section;
 			h.sectionAppearance = (uint8_t) std::min(255, ph.sectionAppearance);
@@ -752,10 +918,36 @@ struct ChartModule : Module, NoteSource {
 				ph.changes.size());
 			for (int k = 0; k < h.phraseChangeCount; k++)
 				h.phraseChanges[k] = ph.changes[k];
+			// THE NEXT PHRASE, for a rhythm that begins it before its bar line. After the last
+			// phrase of the form comes the first, one pass on.
+			const size_t n = (i + 1) % L.phrases.size();
+			const ChartPhrase& up = L.phrases[n];
+			Harmony::Upcoming& u = h.upcoming;
+			u.valid = true;
+			u.phrase = (uint16_t) (up.number >= 0 ? up.number : (int) n);
+			u.epoch = epoch + ((n == 0 && !looping()) ? 1u : 0u);
+			u.beats = up.fullEnd - up.fullStart;
+			u.cadence = (uint8_t) up.cadence;
+			u.section = up.section;
+			u.sectionAppearance = (uint8_t) std::min(255, up.sectionAppearance);
+			u.phraseInSection = (uint8_t) std::min(255, up.phraseInSection);
+			u.changeCount = (uint8_t) std::min<size_t>(Harmony::MAX_PHRASE_CHANGES,
+				up.changes.size());
+			for (int k = 0; k < u.changeCount; k++)
+				u.changes[k] = up.changes[k];
 			break;
 		}
 		h.seed = (uint32_t) std::lround(params[P_SEED].getValue());
+		// THE AMOUNT, AND WHAT IT MEANS AT THIS TEMPO. Converted here, once, so that nothing
+		// downstream carries a copy of the curve and two modules cannot read one amount two ways.
+		h.swing = params[P_SWING].getValue();
+		swingRatios(h.swing, 60.f / std::fmax(0.0001f, beatSeconds), h.swingEighth,
+			h.swingSixteenth);
 		h.epoch = epoch;
+		h.record = params[P_RECORD].getValue() > 0.5f;
+		h.style = (uint8_t) std::lround(params[P_STYLE].getValue());
+		h.holding = params[P_PLAY].getValue() <= 0.5f
+			|| (inputs[I_CLOCK].isConnected() && awaitPulse);
 		busPublishHarmony(slot, h);
 		// The same chord, for anything that is not an MPX module.
 		writeChord(h.current, h.key);
@@ -872,7 +1064,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 		nvgFontFaceId(args.vg, body->handle);
 		nvgFontSize(args.vg, 9.f);
 		nvgFillColor(args.vg, PANEL_INK);
-		nvgText(args.vg, x, y, "\u25be", NULL);
+		crispText(args.vg, x, y, "\u25be", NULL);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -906,9 +1098,9 @@ struct ChartDisplay : widget::OpaqueWidget {
 			nvgFontSize(args.vg, 11.f);
 			nvgFillColor(args.vg, PANEL_INK);
 			nvgFontSize(args.vg, 9.f);
-			nvgText(args.vg, 6.f, 16.f, "No chart loaded.", NULL);
-			nvgText(args.vg, 6.f, 36.f, "Press the button to choose", NULL);
-			nvgText(args.vg, 6.f, 48.f, "a chart, or import a playlist.", NULL);
+			crispText(args.vg, 6.f, 16.f, "No chart loaded.", NULL);
+			crispText(args.vg, 6.f, 36.f, "Press the button to choose", NULL);
+			crispText(args.vg, 6.f, 48.f, "a chart, or import a playlist.", NULL);
 			return;
 		}
 
@@ -927,7 +1119,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 			// Where the mark goes: after the last line of the title, whichever line that is.
 			float caretX = 6.f, caretY = 13.f;
 			if (nvgTextBounds(args.vg, 0, 0, title.c_str(), NULL, NULL) <= room) {
-				nvgText(args.vg, 6.f, 13.f, title.c_str(), NULL);
+				crispText(args.vg, 6.f, 13.f, title.c_str(), NULL);
 				caretX = 6.f + nvgTextBounds(args.vg, 0, 0, title.c_str(), NULL, NULL) + 4.f;
 			}
 			else {
@@ -944,9 +1136,9 @@ struct ChartDisplay : widget::OpaqueWidget {
 				}
 				if (at == std::string::npos)
 					at = title.size() / 2;
-				nvgText(args.vg, 6.f, 13.f, title.substr(0, at).c_str(), NULL);
+				crispText(args.vg, 6.f, 13.f, title.substr(0, at).c_str(), NULL);
 				const std::string tail = title.substr(at + 1);
-				nvgText(args.vg, 6.f, 27.f, tail.c_str(), NULL);
+				crispText(args.vg, 6.f, 27.f, tail.c_str(), NULL);
 				caretX = 6.f + nvgTextBounds(args.vg, 0, 0, tail.c_str(), NULL, NULL) + 4.f;
 				caretY = 27.f;
 			}
@@ -961,7 +1153,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 			std::snprintf(head, sizeof(head), "%s %s  \u25be    %d/%d",
 				pitchClassNameIn(key.tonic, key), key.minor ? "minor" : "major",
 				L.song.beats, L.song.unit);
-			nvgText(args.vg, 6.f, 41.f, head, NULL);
+			crispText(args.vg, 6.f, 41.f, head, NULL);
 		}
 
 		// THE NOTATION SWITCH'S CAPTION, drawn here rather than as a panel label: labels are
@@ -974,7 +1166,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 			// ONE LINE, TO THE RIGHT OF THE BUTTON, which sits in the plate's lower left. Two
 			// lines under it put the words where the button was.
-			nvgText(args.vg, 26.f, 94.f, "ROMAN NUMERALS", NULL);
+			crispText(args.vg, 26.f, 94.f, "ROMAN NUMERALS", NULL);
 		}
 
 		const int at = module->playingBar.load();
@@ -1010,7 +1202,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 			const float room = box.size.x - 12.f;
 			if (nvgTextBounds(args.vg, 0, 0, line, NULL, NULL) > room)
 				nvgFontSize(args.vg, 8.f);
-			nvgText(args.vg, 6.f, 53.f, line, NULL);
+			crispText(args.vg, 6.f, 53.f, line, NULL);
 		}
 
 		// The chord sounding now, large — TAKEN FROM THE PLAYER, not from the bar. A measure
@@ -1035,7 +1227,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 				// back, at the seventy-five pixels to the inch Rack draws at.
 				nvgFontSize(args.vg, 28.f);
 				nvgFillColor(args.vg, PANEL_INK);
-				nvgText(args.vg, 6.f, 72.f, text.c_str(), NULL);
+				crispText(args.vg, 6.f, 72.f, text.c_str(), NULL);
 				// The same mark as the other two, at its own size rather than at the chord's —
 				// a triangle set in twenty-eight point would be a shape rather than a hint.
 				drawCaret(args, body,
@@ -1084,12 +1276,19 @@ struct ChartTempoDisplay : widget::Widget {
 		nvgFillColor(args.vg, nvgRGB(0x3d, 0xe0, 0x7a));
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 		nvgFontSize(args.vg, box.size.y * 0.72f);
-		nvgText(args.vg, box.size.x / 2.f, box.size.y / 2.f, text, NULL);
+		crispText(args.vg, box.size.x / 2.f, box.size.y / 2.f, text, NULL);
 	}
 };
 
 
 static void chartWindowShow(ChartModule* module);
+
+std::string TempoQuantity::getDisplayValueString() {
+	ChartModule* chart = dynamic_cast<ChartModule*>(module);
+	if (chart && chart->inputs[ChartModule::I_CLOCK].isConnected())
+		return string::f("%.0f", chart->soundingBpm.load());
+	return ParamQuantity::getDisplayValueString();
+}
 
 /** Closes the window if it is showing this module. A WINDOW IS A VIEW OF A MODULE, so when the
 module goes the window has nothing to show — and its pointer to that module is a dangling one the
@@ -1176,8 +1375,14 @@ struct ChartWindow : widget::OpaqueWidget {
 	ChartModule* module = NULL;
 	/** How far the chart is scrolled, in pixels of the drawn chart. */
 	float scroll = 0.f;
-	/** 0 nothing, 1 moving the window, 2 resizing it. */
+	/** 0 nothing, 1 moving the window, 2 resizing it, 3 pressing or dragging across bars. */
 	int drag = 0;
+	/** A DRAG ACROSS BARS: the bar pressed, the bar the pointer is over now, where the pointer is,
+	and whether it has left the bar it started on — which is what makes it a selection rather than
+	a click. */
+	int selFrom = -1, selTo = -1;
+	math::Vec dragPos;
+	bool selMoved = false;
 	/** Which edges the resize took hold of. See edgesAt. */
 	int edges = 0;
 	/** How tall the whole chart came out last time it was drawn, so scrolling knows its limit
@@ -1493,12 +1698,15 @@ struct ChartWindow : widget::OpaqueWidget {
 				return;
 			}
 
-			// ANYWHERE ELSE IN THE MUSIC MOVES THE PLAY HEAD THERE. Reading along and wanting
-			// to hear a particular bar is the commonest thing anybody does with a chart in
-			// front of them, and pointing at it is how you would ask a band.
+			// ANYWHERE ELSE IN THE MUSIC: A DRAG ACROSS BARS LOOPS THEM, A CLICK ON ONE BAR
+			// EITHER CLEARS THE LOOP OR MOVES THE PLAY HEAD THERE. Which of the two it is is not
+			// known until the button comes up, so it is decided in onDragEnd.
 			const int bar = barAt(e.pos);
 			if (bar >= 0 && module) {
-				module->jumpToBar(bar);
+				drag = 3;
+				selFrom = selTo = bar;
+				dragPos = e.pos;
+				selMoved = false;
 				claim(e, this);
 				return;
 			}
@@ -1508,7 +1716,16 @@ struct ChartWindow : widget::OpaqueWidget {
 
 	void onDragMove(const DragMoveEvent& e) override {
 		// Rack's mouse deltas are in scene pixels already, since this is a child of the scene.
-		if (drag == 1) {
+		if (drag == 3) {
+			dragPos = dragPos.plus(e.mouseDelta);
+			const int bar = barAt(dragPos);
+			if (bar >= 0) {
+				selTo = bar;
+				if (bar != selFrom)
+					selMoved = true;
+			}
+		}
+		else if (drag == 1) {
 			box.pos = box.pos.plus(e.mouseDelta);
 			// Remembered, so the next opening is where you put it rather than where the
 			// placement rule would have chosen.
@@ -1536,7 +1753,19 @@ struct ChartWindow : widget::OpaqueWidget {
 	}
 
 	void onDragEnd(const DragEndEvent& e) override {
+		if (drag == 3 && module) {
+			// A DRAG MADE A LOOP OF THE BARS IT CROSSED. A CLICK clears a loop there is, and
+			// otherwise moves the play head to the bar — reading along and wanting to hear a
+			// particular bar is the commonest thing anybody does with a chart in front of them.
+			if (selMoved)
+				module->setLoop(selFrom, selTo);
+			else if (module->looping())
+				module->clearLoop();
+			else
+				module->jumpToBar(selFrom);
+		}
 		drag = 0;
+		selMoved = false;
 		OpaqueWidget::onDragEnd(e);
 	}
 
@@ -1650,12 +1879,12 @@ struct ChartWindow : widget::OpaqueWidget {
 				nvgFontSize(vg, s * musicScale);
 				// A music glyph sits on the staff's middle line, not on a text baseline, so it
 				// is dropped by its own half-height to line up with the letters.
-				at = nvgText(vg, at, baseline + s * musicScale * 0.30f, run.text.c_str(), NULL);
+				at = crispText(vg, at, baseline + s * musicScale * 0.30f, run.text.c_str(), NULL);
 			}
 			else {
 				nvgFontFaceId(vg, text_->handle);
 				nvgFontSize(vg, s);
-				at = nvgText(vg, at, baseline, run.text.c_str(), NULL);
+				at = crispText(vg, at, baseline, run.text.c_str(), NULL);
 			}
 		}
 	}
@@ -1671,7 +1900,7 @@ struct ChartWindow : widget::OpaqueWidget {
 		nvgFontSize(vg, size * 1.4f);
 		nvgFillColor(vg, CW_INK);
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-		nvgText(vg, x, y, twoBars ? "\ue501" : "\ue500", NULL);
+		crispText(vg, x, y, twoBars ? "\ue501" : "\ue500", NULL);
 	}
 
 	/** A small chevron pointing down: this name opens a list. */
@@ -1745,7 +1974,7 @@ struct ChartWindow : widget::OpaqueWidget {
 		nvgFontSize(args.vg, CW_TITLE * 0.92f);
 		nvgFillColor(args.vg, CW_INK);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-		nvgText(args.vg, rewindBox().pos.x + TBTN + 9.f, CW_TITLE / 2.f, "mpxChart", NULL);
+		crispText(args.vg, rewindBox().pos.x + TBTN + 9.f, CW_TITLE / 2.f, "mpxChart", NULL);
 
 		if (haveSong)
 			drawChart(args, chartTextFont(), body_);
@@ -1754,7 +1983,7 @@ struct ChartWindow : widget::OpaqueWidget {
 			nvgFontSize(args.vg, 12.f);
 			nvgFillColor(args.vg, CW_INK);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, 12.f, CW_TITLE + 24.f,
+			crispText(args.vg, 12.f, CW_TITLE + 24.f,
 				"No chart loaded. Choose one on the module.", NULL);
 		}
 
@@ -1793,7 +2022,27 @@ struct ChartWindow : widget::OpaqueWidget {
 		std::vector<bool> inSection(bars.size(), false);
 		std::vector<bool> sectionStarts(bars.size(), false);
 		std::vector<bool> sectionEnds(bars.size(), false);
-		if (chosen != 0) {
+		// A LOOP, OR ONE BEING DRAGGED OUT, IS BRACKETED THE SAME WAY, and in place of the
+		// section: it is what will be played.
+		int loopA = -1, loopB = -1;
+		if (drag == 3 && selMoved) {
+			loopA = std::min(selFrom, selTo);
+			loopB = std::max(selFrom, selTo);
+		}
+		else if (module->looping()) {
+			loopA = module->loopFirst;
+			loopB = module->loopLast;
+		}
+		const bool bracketed = loopA >= 0 || chosen != 0;
+		if (loopA >= 0) {
+			for (int b = loopA; b <= loopB && b < (int) bars.size(); b++)
+				inSection[b] = true;
+			if (loopA < (int) bars.size())
+				sectionStarts[loopA] = true;
+			if (loopB < (int) bars.size())
+				sectionEnds[loopB] = true;
+		}
+		else if (chosen != 0) {
 			const std::vector<ChartSection> ranges = chartRangesForLabel(bars, chosen);
 			for (size_t r = 0; r < ranges.size(); r++) {
 				for (int b = ranges[r].first; b <= ranges[r].last
@@ -1896,7 +2145,7 @@ struct ChartWindow : widget::OpaqueWidget {
 					break;
 				}
 			}
-			nvgText(args.vg, x, headTop() + TBTN / 2.f, name.c_str(), NULL);
+			crispText(args.vg, x, headTop() + TBTN / 2.f, name.c_str(), NULL);
 		}
 
 
@@ -1919,7 +2168,7 @@ struct ChartWindow : widget::OpaqueWidget {
 				song.composer.c_str(), song.composer.empty() ? "" : "  —  ",
 				song.style.c_str(), pitchClassNameIn(key.tonic, key),
 				key.minor ? "minor" : "major", song.beats, song.unit);
-			nvgText(args.vg, pad, view.pos.y + headH * 0.45f - scroll, head, NULL);
+			crispText(args.vg, pad, view.pos.y + headH * 0.45f - scroll, head, NULL);
 		}
 
 		for (size_t r = 0; r < rows.size(); r++) {
@@ -1941,7 +2190,7 @@ struct ChartWindow : widget::OpaqueWidget {
 				// A DIFFERENT MARK from the one that follows the music — one says what will be
 				// played and the other says what is being played, and they are on screen at the
 				// same time.
-				if (chosen != 0 && inSection[row[c].bar]) {
+				if (bracketed && inSection[row[c].bar]) {
 					const float ry = top + rowH * 0.115f;
 					const float cap = rowH * 0.11f;
 					nvgBeginPath(args.vg);
@@ -2010,7 +2259,7 @@ struct ChartWindow : widget::OpaqueWidget {
 					nvgFillColor(args.vg,
 						(chosen != 0 && bar.section == chosen) ? CW_CHOSEN : CW_SECTION);
 					nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-					nvgText(args.vg, x + rowH * 0.06f, top + rowH * 0.17f, label, NULL);
+					crispText(args.vg, x + rowH * 0.06f, top + rowH * 0.17f, label, NULL);
 				}
 
 				// The ending bracket: a rule over the bar with a downturn at its start.
@@ -2029,7 +2278,7 @@ struct ChartWindow : widget::OpaqueWidget {
 					nvgFontSize(args.vg, markSize);
 					nvgFillColor(args.vg, CW_INK);
 					nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-					nvgText(args.vg, x + 4.f, ey + rowH * 0.10f, n, NULL);
+					crispText(args.vg, x + 4.f, ey + rowH * 0.10f, n, NULL);
 				}
 
 				// A meter change is announced where it happens.
@@ -2040,7 +2289,7 @@ struct ChartWindow : widget::OpaqueWidget {
 					nvgFontSize(args.vg, markSize);
 					nvgFillColor(args.vg, CW_INK);
 					nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-					nvgText(args.vg, x + 4.f, mid, ts, NULL);
+					crispText(args.vg, x + 4.f, mid, ts, NULL);
 				}
 
 				// The signs, above the bar beside the section letter.
@@ -2074,7 +2323,7 @@ struct ChartWindow : widget::OpaqueWidget {
 						nvgFontSize(args.vg, markSize);
 						nvgFillColor(args.vg, CW_INK);
 						nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-						nvgText(args.vg, right, top + rowH * 0.17f, marks.c_str(), NULL);
+						crispText(args.vg, right, top + rowH * 0.17f, marks.c_str(), NULL);
 						right -= nvgTextBounds(args.vg, 0, 0, marks.c_str(), NULL, NULL)
 							+ rowH * 0.06f;
 					}
@@ -2085,7 +2334,7 @@ struct ChartWindow : widget::OpaqueWidget {
 							nvgFontSize(args.vg, markSize * 1.9f);
 							nvgFillColor(args.vg, CW_INK);
 							nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-							nvgText(args.vg, right, top + rowH * 0.22f, signs.c_str(), NULL);
+							crispText(args.vg, right, top + rowH * 0.22f, signs.c_str(), NULL);
 						}
 					}
 				}
@@ -2104,7 +2353,7 @@ struct ChartWindow : widget::OpaqueWidget {
 						nvgFontSize(args.vg, size);
 						nvgFillColor(args.vg, CW_INK);
 						nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-						nvgText(args.vg, cx, mid,
+						crispText(args.vg, cx, mid,
 							slot.simile == ChartSlot::SIMILE_TWO ? "≕" : "⁄.",
 							NULL);
 						continue;
@@ -2114,7 +2363,7 @@ struct ChartWindow : widget::OpaqueWidget {
 						nvgFontSize(args.vg, size * 0.8f);
 						nvgFillColor(args.vg, CW_INK);
 						nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-						nvgText(args.vg, cx, mid,
+						crispText(args.vg, cx, mid,
 							slot.noChord ? "N.C." : (slot.raw.empty() ? "?" : slot.raw.c_str()),
 							NULL);
 						continue;
@@ -2201,7 +2450,45 @@ static void chartShowSongMenu(ChartModule* module) {
 		for (const LibraryEntry& e : gLibrary)
 			count += (e.playlist == name) ? 1 : 0;
 		menu->addChild(createSubmenuItem(name, string::f("%d", count),
-			[self, name](ui::Menu* sub) {
+			[self, name, count](ui::Menu* sub) {
+				// A SHORT PLAYLIST IS ITS OWN LIST. The initials exist to make fourteen hundred
+				// songs choosable; in front of seven they are a press that achieves nothing — and
+				// they hid the Examples entirely, whose titles begin with a number.
+				if (count <= 24) {
+					for (const LibraryEntry& e : gLibrary) {
+						if (e.playlist != name)
+							continue;
+						const std::string chunk = e.chunk;
+						sub->addChild(createMenuItem(e.title, "",
+							[self, chunk, name]() { self->setSong(chunk, name); }));
+					}
+					return;
+				}
+				// AND A TITLE THAT DOES NOT START WITH A LETTER still has somewhere to be. Filing
+				// only A to Z lost every song beginning with a digit or a quotation mark.
+				auto initialOf = [](const std::string& t) {
+					const char c = (char) std::toupper((unsigned char) t[0]);
+					return (c >= 'A' && c <= 'Z') ? c : '#';
+				};
+				{
+					int n = 0;
+					for (const LibraryEntry& e : gLibrary)
+						if (e.playlist == name && !e.title.empty() && initialOf(e.title) == '#')
+							n++;
+					if (n > 0) {
+						sub->addChild(createSubmenuItem("0-9 and others", string::f("%d", n),
+							[self, name, initialOf](ui::Menu* songs) {
+								for (const LibraryEntry& e : gLibrary) {
+									if (e.playlist != name || e.title.empty()
+										|| initialOf(e.title) != '#')
+										continue;
+									const std::string chunk = e.chunk;
+									songs->addChild(createMenuItem(e.title, e.composer,
+										[self, chunk, name]() { self->setSong(chunk, name); }));
+								}
+							}));
+					}
+				}
 				for (char c = 'A'; c <= 'Z'; c++) {
 					int n = 0;
 					for (const LibraryEntry& e : gLibrary) {
@@ -2465,6 +2752,18 @@ static Layout chartLayout() {
 	L.items.push_back(rewind);
 	label("p.rewind.label", 20.5f, 59.5f, "REWIND", Panel::CENTRE, true, 0.f, "p.rewind");
 
+	// SWING, in the band between the transport and the seed. Like the seed it belongs to the
+	// transport rather than to the harmony: it is part of what "play" means to everything
+	// downstream, and every module reading this cable divides the beat by it.
+	{
+		Item i;
+		i.key = "p.swing"; i.kind = Item::PARAM; i.id = ChartModule::P_SWING;
+		i.style = "knob"; i.x = 33.5f; i.y = 72.f;
+		i.ticks = 3; i.tickMarks = {"OFF", "", "FULL"}; i.nameSize = 5.4f;
+		L.items.push_back(i);
+		label("p.swing.label", 33.5f, 83.3f, "SWING", Panel::CENTRE, true, 0.f, "p.swing");
+	}
+
 	// THE SEED, under the transport, because it belongs to the transport: it is what "play"
 	// means to everything downstream that rolls a die. Three figures, and a click opens the
 	// list so a number can be chosen rather than wound to.
@@ -2488,6 +2787,24 @@ static Layout chartLayout() {
 	// editor and squared up here: the two inputs down the left, and the chord beside the MPX
 	// bundle, since those two are the same harmony said in two ways. Under the chord are the
 	// two single notes taken from it — the bass to play, the root to quantize with.
+	// RECORD, for the whole chain: one press starts the logs of every module downstream that
+	// keeps one, and another stops them all.
+	{
+		Item rec;
+		rec.key = "p.record"; rec.kind = Item::PARAM; rec.id = ChartModule::P_RECORD;
+		rec.style = "latch"; rec.diameter = 6.6f; rec.x = 14.f; rec.y = 87.f;
+		L.items.push_back(rec);
+		label("p.record.label", 14.f, 93.5f, "RECORD", Panel::CENTRE, true, 0.f, "p.record");
+	}
+	// THE STYLE OF THE WHOLE CHAIN: chosen here, where the song is, and passed down the cable so
+	// the rhythm and the melody both take it up. Clicking the plate opens the list.
+	{
+		Item style;
+		style.key = "p.style"; style.kind = Item::PARAM; style.id = ChartModule::P_STYLE;
+		style.style = "readout"; style.x = 36.f; style.y = 89.5f; style.chars = 6; style.h = 4.f;
+		L.items.push_back(style);
+		label("p.style.label", 36.f, 95.f, "STYLE", Panel::CENTRE, true, 0.f, "p.style");
+	}
 	jack("out.chord", Item::PORT_OUT, 26.f, 102.f, ChartModule::O_CHORD, "chord", SIG_PITCH);
 	jack("out.mpx", Item::PORT_OUT, 41.f, 102.f, ChartModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 8.f);
 
@@ -2631,6 +2948,8 @@ struct ChartWidget : ModuleWidget {
 		ModuleWidget::step();
 		if (!module)
 			return;
+		// The space-bar mute, on a development machine only — see DevMute.hpp.
+		DevMute::get().step();
 		ChartModule* chart = dynamic_cast<ChartModule*>(module);
 		if (chart) {
 			const float now = chart->params[ChartModule::P_OPEN].getValue();

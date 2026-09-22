@@ -48,7 +48,9 @@ The consequence is that mpxPhrase does nothing without a chart. Nothing on the p
 
 Every control sets how likely something is, never a fixed outcome, and every choice is drawn from a seeded generator. A different seed therefore gives a different phrasing that still obeys every setting, and the same seed always gives the same phrasing back. The controls define the range of what is reasonable; the seed picks one answer within it.
 
-VARIATION sets how far the draws may depart from the most likely outcome. At nought each draw takes the most likely result, so the module produces the most typical phrasing its settings allow and the seed makes no difference. At one each draw samples the full range. It is independent of the controls that say what is drawn: a plain line and an adventurous one can come from the same density, syncopation and group settings.
+VARIATION sets how far the draws may wander from the middle of their range: how long a pause actually lasts against the length asked for, where within its range a group starts, how far a note's length strays. At nought those take their middle value, so a pause is exactly the number of beats set and nothing wanders; at one they use their whole range. It is independent of the controls that say what is drawn: a plain line and an adventurous one can come from the same density, syncopation and group settings.
+
+**It does not touch a plain yes or no, and this was a fault worth recording.** VARIATION used to sharpen those too, so at nought a draw simply asked whether its probability was better than even. Density at a half then sounded every slot above the middle and none below — twelve identical quarter notes in a row, the same in every phrase, with a one-in-six chance of a triplet that never once came up. A probability is already a proportion: density at a half means half the slots whatever else is set. So VARIATION belongs on the magnitudes and on nothing that is a yes or a no, and the seed decides the pattern even with VARIATION at nought.
 
 VARIATION is applied as a temperature on each weighted choice. Every candidate's weight is raised to a power that grows as VARIATION falls, so at nought the heaviest candidate takes all of the probability and at one the weights are used as they are.
 
@@ -56,7 +58,7 @@ VARIATION is applied as a temperature on each weighted choice. Every candidate's
 
 A line is organised at two levels, and they are decided by different things.
 
-**The phrase** runs from one cadence to the next. It decides the kind of ending, the pairing of phrases that drives REPEAT, and what CYCLE counts. Its boundaries come from the harmony, so the chart computes them.
+**The phrase** is a four-bar unit of the form. It decides the kind of ending, the pairing of phrases that drives REPEAT, and what CYCLE counts. The chart computes it, because only the chart holds the form and the harmony.
 
 **The sub-phrase** is a breath group inside a phrase, typically about three seconds long. It decides where the line pauses. Most sub-phrase endings are not cadences, so they cannot come from the harmony; mpxPhrase generates them from time and the metre.
 
@@ -64,7 +66,9 @@ The evidence for this split is set out under Evidence below. In short: in the le
 
 ## Phrases, from the chart
 
-**A phrase ends at a cadence, not at a fixed length.** Phrase length is not assumed to be four or eight bars. Where cadences are found, a phrase is as long as the distance between them. A fixed length is used only as a fallback for harmony with no cadences in it: modal vamps, two-chord grooves and pedal points.
+**A phrase is four bars, counted from the start of its section.** A section whose length is not a multiple of four gives its leftover bars to its last phrase, and a section shorter than four bars is one phrase. The form comes first and the harmony second: in a pop song the phrases fall on the four-bar grid whatever the chords do, and the chords only colour how each one ends.
+
+**How it ends is the cadence formed by its last chord change,** when that change arrives in the phrase's final two bars; otherwise it ends with none. A close earlier in the phrase, or one followed by another chord, is passing.
 
 **Cadence types.** The chart classifies each phrase ending and publishes the type:
 
@@ -74,11 +78,9 @@ The evidence for this split is set out under Evidence below. In short: in the le
 - **tritone substitute** — flat two dominant to the tonic
 - **half** — a phrase ending on the dominant, a pause that expects an answer
 - **deceptive** — dominant to the six chord, a close that is evaded
-- **none** — a boundary found by the fallback, with no cadence at it
+- **none** — a phrase whose last chord change is not a cadence
 
-**Not every tonic arrival is a phrase end.** Counted across 2,137 charts, closing cadences fall most often two bars apart, and one bar apart more than one time in ten. Many of those are the tonic touched in passing, inside a turnaround, not the end of a phrase. A cadence is therefore taken as a phrase end only when it closes a section, or when it comes at least two bars after the previous phrase end. A tonic held for a bar or more does not bypass the two-bar minimum; checked against the lead sheets, allowing it found real breaths no better while making one phrase in six a single bar long.
-
-**A half cadence cannot be read from chords alone.** It is a phrase ending on the dominant, and ending is a melodic fact. The chart's sign for it is a dominant that arrives and is held for a bar or more. Because mpxPhrase generates the rhythm and mpxMelody generates the pitch, both can be told that a half cadence is intended, and between them they make it one: mpxPhrase ends the phrase there, and mpxMelody lands on the second, fifth or seventh degree.
+**A half cadence cannot be read from chords alone.** It is a phrase ending on the dominant, and ending is a melodic fact. The chart's sign for it is a dominant that arrives and is held for a bar or more. Because mpxPhrase generates the rhythm and mpxMelody generates the pitch, both can be told that a half cadence is intended, and between them they make it one: mpxPhrase ends the phrase there, and mpxMelody lands on the dominant's root, the key's fifth degree.
 
 **Sections remain hard boundaries.** A phrase never crosses the start of a section.
 
@@ -89,11 +91,13 @@ Inside each phrase, mpxPhrase divides the time into sub-phrases. The division wo
 **Length is set in seconds, not bars.** In 456 jazz solos, as the tempo rose nearly fourfold, from about 63 to 241 beats per minute, the median phrase grew from 3.5 beats to 9.4 while its duration fell only from 3.4 seconds to 2.3. Players keep a phrase to roughly the same few seconds and fit more beats into it at speed. A cross-cultural study of recorded music likewise finds short phrases to be a statistical universal and attributes them to the need to breathe. A length fixed in bars would give breathless lines at slow tempos and choppy ones at fast tempos.
 
 1. **Divide the phrase into groups** of GROUP seconds, converted to beats at the measured tempo and rounded to the grid. VARY allows the groups to fragment toward the end of the phrase, for example two, two, then one, one, two, which is the sentence form, and occasionally to combine or run long.
-2. **Prefer hypermetric edges.** Bars group into strong and weak positions as beats do. A group boundary is moved, where the division allows, to fall after an even-numbered bar of a four-bar unit rather than an odd one. The measured preference is mild, and this is a weight, not a rule.
+2. **Breathe at a bar line.** Of the two bar lines either side of where the length in seconds would end a group, the nearer is taken — the later when they are as near — as long as the group still sounds for between three fifths and half as long again as asked. A group shorter than a bar and a half breathes at the half bar instead, beat three in four. The group ends in the bar before its boundary and the next line begins in the bar after, on its downbeat or with a pickup into it: a breath that ended wherever the seconds ran out put the next line's entry on the third beat of a bar, where a singer never breathes.
 3. **Draw where the last note of each group falls.** ENDING sets the mix of endings, from landing on a strong beat, to landing off the beat. Each group draws its own ending from that mix, and the extremes favour one kind strongly without making it certain. The range has to be wide: song melodies ended on beat one half the time, jazz solos only one time in eight.
-4. **Hold or release the last note.** HOLD sets how the pause at the end of a group is filled: at nought the last note is short and the pause is silence; at one the last note sustains through it. The last note is longer than the ones before it in most phrases of both corpora, seven in ten for songs and more than half for jazz, so a longer last note is the tendency at every setting of HOLD above nought.
+4. **Hold the last note.** HOLD sets how long a group's held ending is: the notes stop early enough to leave it one beat at nought and two at one — a little longer than the notes before it, as in the pop songs, where it lasted a beat and a half and the note before it an ordinary half beat — and the note that begins it always sounds where it was planned. The last note is longer than the ones before it in most phrases of every corpus — four in five in the pop songs, whose median held ending was a beat and a half; three beats in Killing Me Softly — so it is held more often than not at every setting, and more often the higher HOLD is. In the upper half of its range HOLD also lets the ending ring on into the breath after it, more often the higher it is; below the middle the breath stays silent.
 5. **Leave the pause.** PAUSE sets how long the line stops moving at the end of every group, in beats, and PHRASE PAUSE is added at the end of a phrase. Each pause varies a little around its setting, by an amount scaled by VARIATION. Silence in real lines is frequent and short: the median silence between jazz phrases was 1.9 beats, and a silence of two bars or more happened about once in a hundred. Long pauses are therefore a deliberate choice rather than the norm.
-6. **Draw how the next group starts.** START sets the mix of a pickup before the downbeat, a start on the downbeat, and a start off the beat. Each group draws its own start from that mix. The range has to be wide here too: song melodies started on the downbeat or with a pickup about a third of the time each, while jazz phrases started off the beat more than half the time and on the downbeat only one time in ten.
+6. **Draw how the next group starts.** START sets the mix of a pickup before the downbeat, a start on the downbeat, and a start off the beat. Each group draws its own start from that mix. The range has to be wide here too: in thirty pop songs half the phrases led in from the bar before and only one in six started on the bar line, while jazz phrases started off the beat more than half the time and on the downbeat only one time in ten.
+**A phrase leads in from the phrase before.** A phrase's first group may begin with a pickup of up to two beats before its first bar line. **How each group starts is drawn before the group before it is filled,** and that group ends early enough to leave the pickup room after its breath: the pause is always the silence heard, and the pickup follows it — the held last note, the breath, then the lead-in. Drawing the start inside the group itself left a pickup only whatever silence happened to remain, so a short pause left none and the pickup turned into a late start, which made the breath longer rather than shorter. Across a phrase boundary the ending phrase draws how the next one starts; mpxPhrase then decides the next phrase two beats before it begins, from the chart's description of it, and plays its pickup in the room left for it. The first phrase after a start or a rewind has nothing before it; a pickup drawn for it becomes a late start, since a singer who cannot lead in comes in after the beat rather than on it. A pickup is part of the phrase it leads into: it recurs with that phrase under CYCLE, REPEAT does not overwrite it, and the melody draws it as that phrase's.
+
 7. **Leave whole phrases out** by SILENT PHRASES, the chance that a phrase is not played at all. About one phrase in twenty-five was unsung in the lead sheets.
 
 Chord changes play no part in where a group ends. In the jazz solos a change fell within a beat of a phrase's last note 45 per cent of the time, against 47 per cent for any note; in the song melodies the effect was weak. A control for it is not provided.
@@ -108,19 +112,34 @@ The steps below fill the inside of each group. Every random choice draws from a 
 
 **Onsets.** A slot's onset probability is DENSITY multiplied by a weight derived from its metric strength. SYNCOPATION blends that weight toward its inverse: at nought strong slots are favoured, at one half every slot is equal, and at one weak slots are favoured. This is GXW's rule unchanged.
 
-**Chord changes.** A slot on which the chord changes has its onset probability raised by ON CHANGES.
+**Chord changes.** A slot on which the chord changes has its onset probability raised by ON CHANGES, and ON CHANGES also sets how far the rhythm follows the harmony, as measured in the thirty pop songs with their chords (`python3 research/pop/harmony_rhythm.py`):
+
+- **Quick chords get more notes.** A chord of one beat had two notes under it, one of two to four beats about a note a beat, one held for two bars about six in ten. So DENSITY is scaled by how long the chord sounding lasts — by the square root of two beats over its length, between a half and one and a half.
+- **A note that lands on a change is held.** The note starting on a change lasted a beat, median, against half a beat for other notes. So after a note on a change, on a chord of two beats or more, the slots up to a beat on are left empty — on a quicker chord the line keeps moving.
+- **A fifth of changes are anticipated.** Of 875 changes, 60 per cent had a note start on them, 20 per cent a note half a beat before held across them, and 20 per cent neither. So a change is anticipated three times in ten at the top of the knob, with nothing on the change itself.
+
+At the top of ON CHANGES the generator's changes come out at 62, 20 and 18 per cent, against the songs' 60, 20 and 20.
 
 **The group's first slot** sounds, at the position drawn for it by START.
 
-**No long gaps.** Inside a group a run of empty slots longer than half the group is broken by an onset on the strongest empty slot in it.
+**No long gaps.** Inside a group no silence may be as long as the breath that ends it, or a listener hears the phrase end in the wrong place. A gap is measured as silence, not as the space between onsets: a note sounds on for up to a slot and twice LENGTH again, so a gap between onsets counts as a hole only when it is longer than three quarters of the breath plus that. Measured from onset to onset, a short breath filled every group to a solid run of eighth notes whatever DENSITY said.
 
 **Length.** A note lasts until the next onset, scaled by LENGTH. At nought notes are short and separated; at one they reach the next onset, which is legato within the group.
 
-**Level.** A note's level spreads around a middle value by its slot's metric strength, scaled by DYNAMICS. A note on a chord change receives a small further accent.
+**Level.** Set last, in decibels around a middle value, from four things, all scaled by DYNAMICS:
+
+- **The phrase's own level.** The second phrase of each pair answers a decibel and a half stronger than the first; a contrasting section — any lettered section but A, so a chorus or a bridge — is two decibels louder; the music builds by two decibels across each pass of the form; and each phrase wanders by up to a decibel and a half either way, keyed on its place in the cycle so a returning phrase returns as loud.
+- **The shape across the phrase,** by LOUDNESS SHAPE: at nought a fall from three decibels above to three below; at one an arch, peaking two fifths of the way through, which is how a sung phrase goes. The jazz solos fall the same way, but by three decibels in all on average; an average over eleven thousand phrases is flatter than any one of them, and at that depth nobody could hear a phrase rise and fall.
+- **Stress.** In the pop songs a stressed syllable was the long note and the note on a strong beat, and a quarter of stressed syllables were anticipations. So a note of a beat or more, and a note anticipating a beat, is a decibel and a half louder; the metric pulse under it is light, three quarters of a decibel either way, since in the jazz solos a note on the beat was only a third of a decibel above one off it; and a note on a chord change is half a decibel louder.
+- **The arrival tapers:** a phrase's last note is two decibels softer.
+
+The figures are as written at a DYNAMICS of one half, and twice as deep at one.
 
 ## Repetition
 
 **REPEAT** sets how closely a unit restates the one before it. At nought each is generated fresh; at one the onsets are copied exactly. Between them, each slot keeps the earlier decision with probability equal to REPEAT and is drawn afresh otherwise. REPEAT applies at both levels: a sub-phrase restating the previous sub-phrase, which is the two-bar idea stated twice at the start of a sentence, and a phrase restating the previous phrase. The final group of a phrase is always regenerated, so a restated phrase still ends in its own place.
+
+**Motif.** MOTIF sets the chance that a breath group restates the rhythm of one of the three groups before it — the one just before half the time, the one before that three times in ten, the one before that twice in ten — whether those groups are in this phrase or the one before. In the thirty pop songs a third of the lines restate the rhythm of one of the three lines before them, in that proportion; at a ballad's tempo a phrase is often one line, so the line restated is usually in the phrase before. The copy is the source group's notes up to its ending, moved by whole beats so each note keeps its place in the beat. It runs from the start of the group until it reaches the group's own ending or runs out, and the group then carries on with its own notes. The group's ending and its breath are its own, and a copied note never starts before the group before has finished sounding. Each copied note is marked on the cable with how many notes back the note it restates is, so a melody can bring back the pitches as well: see Echo, below. At the POP presets a third of the lines restate one, as in the songs; the JAZZ presets restate fewer.
 
 **Question and answer.** A phrase ending in a half cadence followed by a phrase ending in a closing cadence is the period form. The second phrase restates the first by REPEAT and ends differently. This uses the cadence types the chart publishes.
 
@@ -146,11 +165,58 @@ The same rule, the same plate and the same button belong on mpxMelody, whose see
 
 ## Recurrence in mpxMelody
 
-mpxMelody's unpatched random draw is at present seeded partly by the chart's pass counter, so every pass through the form produces a different line and the line never recurs. That is corrected as part of this work: the draw takes its variation from the position within a cycle, using the same rule as CYCLE here.
+mpxMelody's unpatched draw is `melodyDraw` in Melodic.hpp: a pure function of the seed, the phrase's position within a cycle of CYCLE phrases, and the position of the note inside that phrase. With CYCLE at four, phrase five draws exactly as phrase one did; at one, every phrase is the same line. Equal cycles on mpxPhrase and mpxMelody bring rhythm and pitch round together, and unequal ones recur only when both coincide — six against four after twelve phrases.
 
-mpxMelody gains a CYCLE setting and an OWN SEED button on its master panel. When mpxPhrase and mpxMelody have equal CYCLE settings, rhythm and pitch recur together. When they differ, the combination recurs only when both cycles coincide; six against four recurs after twelve phrases.
+**Two things are deliberately absent from that hash, and no line recurred while they were in it.** The pass counter, so every time round the form drew differently. And the note's handle, which is unique for the session and counts upward for ever, so even the same beat of the same bar drew differently on the second pass.
 
-mpxMelody's phrase anchor, which exists in the melodic step and is not yet connected, is driven by the cadence type: toward the tonic at a closing cadence, and toward the second, fifth or seventh degree at a half cadence.
+**A rewind restarts the whole chain.** The chart returns its pass counter to nought rather than advancing it, so every module that folds the counter into its draws begins where it began before; mpxPhrase drops its repeat chain, since what a phrase restates is the phrase immediately before it; and mpxMelody clears each voice's last note, because a line carried across a rewind starts with an interval from the previous take. A loop still advances the counter: running off the end of the form and back to the top is another pass through the music.
+
+## Arrival: the phrase anchor
+
+A line that does not know where its phrase ends cannot arrive anywhere, and that is most of what separates a melody from a series of notes in the right rhythm.
+
+The chart publishes how the current phrase ends and how far off that end is. Within two beats of it the melodic step is pulled toward the pitch classes that make an ending sound like one: the tonic at a closing cadence, because that is what closing means and the ear is waiting for it; the dominant's root at a half cadence — the key's fifth degree — because it sits over a dominant without resolving, where its third, the leading tone, its seventh and its fifth, the key's second degree, each leave the line suspended, which is what leaves a phrase open on purpose and makes the next one an answer.
+
+The pull grows as the end approaches — nothing two beats out, strongest on the arrival — and there is none anywhere else in a phrase. A tonic pull applied throughout would make every note the tonic. Measured in `make melodytest`: the anchor puts a phrase end on the tonic in half of all draws, against none without it.
+
+## What the rhythm tells the melody
+
+A melody hears notes one at a time, and a phrase breathes after its last note, so a melody counting down to the phrase's end misses the note that matters: the last note falls two or three beats before the end, and the arrival was never aimed at all. The rhythm source knows which note is which, so it says so. Every note mpxPhrase sends carries flags on the cable:
+
+- **Arrival** — the last note of the phrase. The voice takes it on the tonic at a full close, decisively, and on one of the tones of the dominant actually sounding at a half cadence: in a minor key that dominant is raised, and the natural minor's seventh against it is the one note guaranteed to sound wrong.
+- **Approach** — the note before the arrival, when it is in the same group. Before a full close the voice takes it on the second or the seventh, so the tonic is arrived at rather than leapt to.
+- **Group end** — the last note before a breath inside the phrase. The voice takes it on the root, third or fifth of the chord sounding, never its seventh or added sixth, so every breath is held on a consonance.
+- **Pickup** — a note leading into the next phrase, sounding in the last beats of the one before. It sounds where the voice would otherwise be pulling toward the ending phrase's arrival, so the voice leaves it out of that pull, and draws it from the next phrase's place in the cycle, counted back from that phrase's bar line.
+
+Two numbers ride with the flags:
+
+- **Echo** — how many notes back the note this one restates is, when MOTIF has copied a group's rhythm; nought otherwise. The voice keeps every note it has chosen and looks that far back. Its own MOTIF knob sets how surely it then takes the same pitch. Where that pitch does not fit the chord now sounding, the same step moved to where the line is favoured less strongly, and failing that a move the same way by about as far, so a figure over new harmony is still heard as the same figure. In the pop songs a line restating an earlier line's rhythm takes the same notes a third of the time and new ones half the time; moving the same steps elsewhere is rare.
+- **Along** — how far through its breath group the note falls, nought at the group's first note and one at its last. The voice's CONTOUR knob pulls each group toward the shape of a sung line, measured in the same songs: the high point comes early — a quarter of the way through at the median, and at the very first note in a quarter of the lines — and the line falls about four semitones from it to its last note, which ends about where the line began. So the pull aims four semitones above the group's first note a quarter of the way through, and one below it at the end. At full, a note three semitones from the aim keeps a seventh of its weight.
+
+A rhythm source that sets no flags, such as mpxEuclid or a keyboard, leaves the voice to the countdown it used before, with no echo and no contour.
+
+**Held endings, the key and borrowed chords.** Three rules keep a line sounding right when the harmony leaves the key:
+
+- **An ending held into the next chord belongs to both.** Where a line's last note will still be sounding when the chord changes, it is chosen from the tones of the current chord that are also in the next chord's triad, when there are any: over B flat 7 moving to E flat 6 in F, B flat rather than F.
+- **The melody stays in its key while the harmony borrows.** A note outside the key is a third as likely as it would otherwise be, and a note and its own alteration — A and A flat — a twelfth as likely within two notes of each other, which a listener hears as the melody slipping out of tune.
+- **Over a diminished chord the line moves through its tones and holds only those in the key.** In Michelle the melody over D diminished in F climbs F, A flat, B natural and steps down to G on the C that follows: every tone of the chord, moving. Holding A flat or B, the tones outside the key, is what sounds wrong, so a long note over a diminished chord takes its tones in the key — D and F — and the others are passed through. Every other note of the key lies a semitone from one of its tones, so the palette is the chord.
+- **A borrowed chord's own tones are not outside the key.** The pull away from notes outside the key applies to passing notes, not to the chord sounding: over B flat 7 in F, A flat is the chord.
+- **A line moves through a chord and arrives at the next by step.** A skip of a third to a chord tone carries on the way it started — F, A flat, B over D diminished — rather than turning back as a leap does; and on the note that falls where the chord changes, the new chord's tones a step from the note before are favoured, as Michelle arrives at each chord: A to G onto C.
+- **A long note is a chord tone.** A note held three quarters of a beat or more lands on the root, third or fifth of the chord, whatever CHORD LOCK is set to — a long note is heard against the harmony rather than passing through it.
+
+**The arrival lands on the cadence chord.** In a phrase that ends at a cadence, the last note may not fall before the phrase's last chord change, and where the phrase has already begun to breathe when that chord arrives, the breath gives way: an ending in the right place with a shorter breath is an ending, and an ending over the chord before is not.
+
+## How the chart reads a phrase
+
+**Why the form comes first.** Read from cadence to cadence, pop songs split in the wrong places. In Killing Me Softly a G7 held for a bar looks like a half cadence two bars in, and nothing in the chords marks the end of bar four, where the song's phrase ends; in A Thousand Miles a chorus bar is played three times, each ending in a plagal close. Laid out in fours from each section's start, both come out exactly as they are sung: Killing Me Softly in 1–4, 5–8, 9–12, 13–16, 17–20 and 21–26, and A Thousand Miles in fours throughout. Both are kept as chord text in `research/pop/songs`.
+
+**A phrase is not a breath.** Four bars is often longer than a singer goes without breathing; the breaths inside a phrase are mpxPhrase's groups, set in seconds. In Killing Me Softly each four-bar phrase is two sung lines with a breath between them.
+
+## The examples, and the simulation
+
+**The chart's picker has a built-in Examples playlist:** seven short progressions, all but one in C, each testing one thing — a period with a half cadence and a full close, the pop loop, ii–V–I twice, the same shape at two chords to the bar, a minor period, a single four-bar phrase, and the period twice for repetition to come round in. They are written as plain chord text in iReal Pro's notation and stored exactly as an imported song is, so nothing downstream treats them differently. `make phrasetest` checks every one of them is phrased as a musician reads it.
+
+**`make phrasesim` says in words what a patch would play**: the chart's phrasing, the phrase generator and the voice's choice of note, run on the settings saved in the patch in Downloads, on its own chart or on any example. It runs the same code the modules run — the voice's choice lives in MelodyVoice.cpp so that the module and the simulation call one function rather than two copies — and it names what a listener can only call unmusical: a hole inside a group, a breath filled in, a phrase landing on the wrong degree.
 
 ## Controls
 
@@ -158,13 +224,13 @@ Grouped by what they decide.
 
 **Pitch:** NOTE, a plate showing a note name, C1 to C7, default C4.
 
-**Starting points are presets, not a control.** There is no style control on the panel. SONG and JAZZ ship as factory presets, so they appear in Rack's own Preset menu beside your own saved ones, with Rack's save, open, copy and paste. The two preset files are generated at build time from the same `phraseStyle` the census in `phrasetest` measures, which is what keeps what ships equal to what was measured. A preset carries the whole module, the note and the seed included, as a preset does everywhere else in Rack.
+**Starting points are a style on the chart, and presets.** STYLE on mpxChart travels down the cable; when it changes, mpxPhrase sets its knobs to that style's rhythm and each melody voice to that style's line (see docs/chart.md). POP 1 to 3 and JAZZ 1 to 3 also ship as factory presets, so they appear in Rack's own Preset menu beside your own saved ones, with Rack's save, open, copy and paste. The preset files are generated at build time from the same `phraseStyle` the census in `phrasetest` measures, which is what keeps what ships equal to what was measured. A preset carries the whole module, the note and the seed included, as a preset does everywhere else in Rack.
 
-**Sub-phrases:** GROUP, one to eight seconds. VARY, nought to one. START, bipolar, setting the mix from mostly pickups, through downbeat starts, to mostly off-beat starts. ENDING, nought to one, setting the mix from mostly strong-beat endings to mostly off-beat ones.
+**Sub-phrases:** GROUP, one to eight seconds. VARY, nought to one. START, bipolar, setting the mix from mostly pickups, through downbeat starts, to mostly off-beat starts. ENDING, nought to one, setting the mix from mostly strong-beat endings to mostly off-beat ones. MOTIF, nought to one, the chance a group restates an earlier group's rhythm.
 
-**Pauses:** PAUSE, nought to eight beats, at every group end. PHRASE PAUSE, nought to eight beats, added at a phrase end. HOLD, nought to one. SILENT PHRASES, nought to one. ELIDE, nought to one.
+**Pauses:** GROUP PAUSE, nought to two beats, at every group end. PHRASE PAUSE, nought to four beats — a bar — at a phrase end instead of the group pause, where a phrase holds a single group: one pause per boundary, and a phrase that is one group has no boundary inside it. Both step by half beats, and a pause is the whole of the silence: a late start comes out of it rather than being added to it. In the pop songs a breath between lines was a beat and a half in the middle and seldom over three, and a longer silence inside a phrase is heard as the line having stopped, so the knobs stop there; a patch saved with a longer pause plays at the limit. HOLD, nought to one. SILENT PHRASES, nought to one. ELIDE, nought to one.
 
-**The notes inside a group:** SUBDIVISION, a plate. DENSITY, SYNCOPATION, ON CHANGES, LENGTH and DYNAMICS, each nought to one.
+**The notes inside a group:** SUBDIVISION, a plate. DENSITY, SYNCOPATION, ON CHANGES, LENGTH and DYNAMICS, each nought to one. LOUDNESS SHAPE, nought to one, from a fall to an arch, sits with the controls that act across a whole phrase.
 
 **Repetition and chance:** REPEAT, nought to one. CYCLE, a plate from one to sixteen phrases. SECTIONS, nought to one. VARIATION, nought to one. SEED, a plate from nought to 999, with an OWN SEED button beside it.
 
@@ -172,13 +238,15 @@ Grouped by what they decide.
 
 **Jacks:** CHART IN and NOTES OUT, both MPX. DENSITY CV, a control voltage added to DENSITY, nought to ten volts over the full range. Further control-voltage inputs are deferred until the module has been played.
 
-**Defaults, from the evidence:** GROUP three seconds; VARY low; PAUSE about two beats and PHRASE PAUSE a little longer; HOLD toward silence, so a sustaining synthesizer patch still leaves audible space; SILENT PHRASES near nought; VARIATION near the middle. START and ENDING take their defaults from the SONG style: roughly equal pickups and downbeat starts, and endings favouring the strong beat.
+**Defaults, from the evidence:** GROUP three seconds; VARY low; PAUSE about two beats and PHRASE PAUSE a little longer; HOLD toward silence, so a sustaining synthesizer patch still leaves audible space; SILENT PHRASES near nought; VARIATION near the middle. START and ENDING take their defaults from the SONG style: START at its middle, which is the pop songs' mix of mostly pickups and late starts, and endings favouring the strong beat.
 
-**The two presets, from the two corpora.** SONG: starts divided between pickup and downbeat, endings mostly on strong beats, the last note held. JAZZ: starts mostly off the beat, endings mostly off the beat, a higher DENSITY and SYNCOPATION, and shorter holds. The module's own defaults are the SONG values, from the same place.
+**The presets, in three weights of each.** POP 1 is a ballad — Michelle, Killing Me Softly: few notes, mostly quarters, lines held at their ends and entered late, the loudness arching. POP 2 is the thirty pop songs' own middle. POP 3 is up-tempo: busier, pushed, more pickups and anticipations. JAZZ 1 is a jazz ballad; JAZZ 2 the jazz solos' own figures; JAZZ 3 up-tempo bebop, dense, off the beat, short notes and more triplets. Each ships for mpxPhrase and for mpxVoice under the same name, since a phrase preset's rhythm and a voice preset's line are made to go together. The module's own defaults are SONG, from the lead sheets, which is not a preset.
 
 ## What moves out of mpxVoice
 
-Pauses are decided by mpxPhrase. The BREATH knob on mpxVoice is removed when mpxPhrase is built. It is not repurposed until the question of whether a melody may alter the rhythm's rests has been settled.
+Pauses are decided by mpxPhrase, so BREATH on mpxVoice should be at nought whenever mpxPhrase is upstream: with both turned up the two modules pause on top of each other and every phrase ends twice.
+
+It is kept rather than removed. A voice fed by mpxEuclid, or by any other rhythm source that does not phrase, has no other way to breathe — and removing a parameter renumbers every one after it, which would misread every patch saved before. Whether it goes is still open, and it is tied to the question of whether a melody may alter the rhythm's rests.
 
 ## Additions to the harmony block on the cable
 
@@ -188,12 +256,13 @@ All are computed by mpxChart, which alone holds the whole progression.
 - **The chord changes inside the current phrase**, as a count and up to sixteen offsets in beats from the start of the phrase, so that a phrase can be generated whole.
 - **The number of phrases in one pass of the form**, so that phrases can be counted from the top across passes, which CYCLE depends on.
 - **The section letter** of the current phrase, **which appearance of that section** this is, and **the phrase number within the section**, which SECTIONS depends on.
+- **The next phrase**, described by the same fields — its length, cadence, chord changes, section and place in the form, and the pass it falls in, which is one more than the current pass after the last phrase of the form — so that a phrase can be decided before it begins and lead in with a pickup.
 
-The phrase boundaries themselves change: from the present four-and-eight-bar rule to cadence-driven boundaries with a fallback length.
+The phrase boundaries are four-bar units from each section's start, with each phrase's cadence read from its last chord change.
 
 ## Evidence
 
-Five measurements informed this design, and published research is cited where it bears on a decision. All the measurements can be rerun.
+These measurements informed this design, and published research is cited where it bears on a decision. All the measurements can be rerun.
 
 **Cadences in 2,137 iReal charts.** `make charttest ARGS="--cadences"`, with no phrase-length preference applied.
 
@@ -202,7 +271,7 @@ Five measurements informed this design, and published research is cited where it
 - 169 charts, eight per cent, contain no closing cadence at all.
 - Bars between one closing cadence and the next: two bars 25 per cent, four bars 21, one bar 11, three bars 7, six bars 7, eight bars 6.5.
 
-Closing cadences are therefore more frequent than four- or eight-bar phrases, and many are not phrase ends. That is why a filter is needed before a cadence is taken as a phrase boundary.
+Closing cadences are therefore more frequent than four- or eight-bar phrases, and many are not phrase ends. That is why a phrase's ending is read only from its last chord change.
 
 **Breath groups in 22 MusicXML melodies**, sixteen jazz and Latin lead sheets and six classical pieces. `python3 test/subphrase.py held`. A sub-phrase ends at a rest of an eighth note or longer, or at a held note of at least a half note running straight into the next note. 432 sub-phrases.
 
@@ -218,10 +287,6 @@ Closing cadences are therefore more frequent than four- or eight-bar phrases, an
 - In lead sheets with chord symbols, the harmony at a sub-phrase end was a closing cadence or a dominant in 22 per cent of cases.
 - Of 77 closing cadences in those lead sheets, 65 per cent were followed within a bar by a sub-phrase end.
 
-**The phrasing rule checked against those melodies.** `python3 test/phrasecheck.py` applies the rule to the chord symbols of the seventeen lead sheets that have them and measures the breath found within a beat of each phrase end, against every bar line as a baseline. A substantial breath, a half note or longer, lies within a beat of 40 per cent of bar lines, and of 51 per cent of the phrase ends the rule finds, with the mean breath rising from 1.6 to 2.2 beats. Minimums of three and four bars scored 54 and 56 per cent: slightly higher, within the noise of a sample this size, and at the cost of swallowing two-bar phrases, which the chart census shows to be the commonest cadence spacing. The minimum is two bars.
-
-**The rule over the 2,137 charts.** `make charttest ARGS="--phrases"`. Every chart's phrases cover it with no gaps. Lengths: one bar 8 per cent, two bars 21, three bars 16, four bars 34, five bars 9, six to eight bars 11. Endings: authentic 25 per cent, half 23, plagal 14, backdoor and tritone substitute 3 between them, and none 35 per cent, which are section ends and fallback boundaries.
-
 **Phrases in 456 jazz solos**, from the Weimar Jazz Database: 11,082 phrases marked by the transcribers and 200,809 notes. `python3 test/weimar.py`. The database is 42.5 MB under the Open Database Licence and is kept outside this repository, at `~/Documents/MusicResearch/weimar/wjazzd.db`.
 
 - Length: median 2.7 seconds, middle half 1.5 to 4.4 seconds; median 13 notes, middle half 8 to 24; median 6.8 beats.
@@ -232,6 +297,16 @@ Closing cadences are therefore more frequent than four- or eight-bar phrases, an
 - Last note longer than the notes before it: 56 per cent.
 - A chord change within a beat of the last note: 45 per cent, against 47 per cent for any note.
 
+**Phrases in thirty pop songs**, from a lead-sheet book, transcribed as rhythm, pitch and the stress of each syllable, without the words: 366 phrases and 2,645 notes. `python3 research/pop/analyze.py`; the format is in `research/pop/SCHEMA.md`. A phrase ends at a rest of an eighth note or longer, or where a line of the lyric ends with punctuation.
+
+- Length: sung part median 5 beats, middle half 3.5 to 7; the breath after it median 1.5 beats, middle half 0.5 to 3. With its breath a phrase spans eight beats most often, then four and six.
+- Start, measured from the nearest bar line: a pickup within two beats before it 47 per cent, within a beat after it 29, on it 16, later 8. Pickups are spread from half a beat to two beats.
+- Last note: the longest in the phrase 79 per cent; median a beat and a half; an anticipation, off the beat and held across it, 43 per cent; on beat one 21.
+- Onsets: on a beat 48 per cent, the eighth off the beat 39, a sixteenth 11. One note in five is an anticipation held across the beat.
+- Repetition: a phrase's onsets overlap the phrase before it by more than half 21 per cent of the time, and some earlier phrase in the song 56 per cent.
+- Pitch: repeated notes 29 per cent of intervals, against 5 in the jazz solos; steps about half; a quarter of phrases hold three or more repeated notes in a row; median phrase range five semitones.
+- Prosody: a stressed syllable lasts a beat, median, against half a beat unstressed, and falls on beat one or three 45 per cent of the time against 9. A quarter of stressed syllables land on the eighth before a strong beat. The syllable before a full stop lasts a beat and a half, before a comma a beat. 73 per cent of phrases end on a stressed syllable.
+
 **Published research.**
 
 - On 1,705 German folk songs from the Essen collection, a rule placing a boundary at every rest was correct 99 per cent of the time but found only 45 per cent of annotated phrase boundaries; the best models relied mainly on gaps between onsets, meaning long notes. Pearce, Müllensiefen and Wiggins, ISMIR 2008. This agrees with both corpora above: phrases end more often on a held note than in a rest.
@@ -239,7 +314,7 @@ Closing cadences are therefore more frequent than four- or eight-bar phrases, an
 - Short phrases are among the statistical universals found across 304 recordings from nine regions, attributed to periodic breathing. Savage, Brown, Sakai and Currie, PNAS 2015.
 - The Essen collection's phrase marks were added by its encoders rather than taken from the original sources, which limits how far they can be treated as ground truth.
 
-**Limits of the evidence.** The jazz solos are improvised, almost entirely by wind players, and busier than sung melodies; the findings in seconds should transfer to song-like lines better than those about beat positions, which are the most style-specific. The twenty-two lead sheets are a small sample and mostly jazz standards. Lead sheets differ in how they notate breaths. The held-note threshold was chosen, not derived. The cadence detection is by chord symbol only and cannot see key changes. The figures are strong enough to set defaults and ranges, and not strong enough to fix constants; those are tuned by ear with the recording log.
+**Limits of the evidence.** The jazz solos are improvised, almost entirely by wind players, and busier than sung melodies; the findings in seconds should transfer to song-like lines better than those about beat positions, which are the most style-specific. The twenty-two lead sheets are a small sample and mostly jazz standards. The pop songs were transcribed from printed lead sheets by reading the page, so pitches are less certain than rhythms, and a phrase's first verse only is recorded where verses are stacked. Lead sheets differ in how they notate breaths. The held-note threshold was chosen, not derived. The cadence detection is by chord symbol only and cannot see key changes. The figures are strong enough to set defaults and ranges, and not strong enough to fix constants; those are tuned by ear with the recording log.
 
 **Swing and triplets in the same 456 jazz solos.** `python3 test/swing.py`, over 200,809 notes. The swing ratio is the beat-upbeat ratio: within one beat, how long the first half lasts against the second, where one is even and two is a full triplet feel. It is measured at whichever level the player is dividing the beat — eighths where the beat is in two, sixteenths where it is in four — because measuring only the eighth level made slow tempos look straight: at sixty-five beats a minute almost no beat is divided in two. One figure per solo, so a long solo does not outvote fifty short ones; 22,574 eighth pairs and 7,717 sixteenth pairs, from the 344 solos with at least twenty of either.
 
@@ -260,6 +335,8 @@ Closing cadences are therefore more frequent than four- or eight-bar phrases, an
 
 **The grid stays on mpxPhrase.** Swing has to be shared because a swung line over a straight part is always wrong. A grid need not be: a drum part in sixteenths under a melodic line in eighths is how music is ordinarily built, and the two are peers. A grid on the chart would therefore be a setting every module has to be free to depart from, which is a control with no reliable effect. It also belongs beside the controls it only means anything with — density, length and syncopation, all of which act on the resolution it sets.
 
+**How the deformation is applied.** Placement stays on an even grid, and swing is the last step before the pattern is handed over: both a note's onset and its end go through the same mapping, so a note that reached the next onset still reaches it and a gap stays a gap. A nudge applied to onsets alone would lengthen every second note and shorten every other. The group boundaries are mapped with the notes, or anything reading where a group sounds to would be comparing swung notes against even boundaries.
+
 **Triplets are the middle unit, and they belong to the line.** On a swung line the eighth-note pair already is a triplet — the long part is two units, the short part the third — so a triplet figure is the line also sounding the middle unit that swing skips. That makes it one control on mpxPhrase rather than a second grid: TRIPLETS, an amount, the likelihood that a beat sounds the middle unit. Default about 8 per cent of played beats, from the measurement, applied per figure rather than per group, with the occasional pair or three of consecutive beats the corpus shows. Below a full swing setting the long-short pair does not line up with an even three-per-beat division, so a triplet figure is drawn evenly across its beat and the swing deformation is left off it for that beat.
 
 ## Recording
@@ -274,7 +351,7 @@ The generated statistics at the SONG and JAZZ styles are compared directly with 
 
 ## Build order
 
-1. Cadence-driven phrase boundaries and cadence types in mpxChart, with the census extended to check them against the lead sheets.
+1. Phrase boundaries and cadence types in mpxChart.
 2. The other harmony block additions.
 3. The generator as a pure function, with the command-line test.
 4. The module: panel, timing from the chart, sending notes.
@@ -294,7 +371,7 @@ This is deferred, not designed away. It is written down so the decisions are not
 
 **Hiding the band removes the cables on its jacks.** A hidden jack with a cable in it is an invisible connection, which is worse than losing the cable. Every MPX port already removes cables that cannot work on the frame after they appear, so this behaves as the rest of the plugin does, and it happens at the moment the setting is changed rather than quietly.
 
-**The band on the left, revealed with the mode:** CLOCK and RESET inputs; BEATS IN A BAR; PULSES PER BEAT, since people clock at one pulse a beat, four, or twenty-four; PHRASE LENGTH in bars, which takes the place of cadence-to-cadence phrases and is the fallback the design already has; and FORM LENGTH in phrases, so that every fourth or eighth phrase ends as a close — which keeps PHRASE PAUSE, question and answer, and CYCLE meaningful with no harmony at all.
+**The band on the left, revealed with the mode:** CLOCK and RESET inputs; BEATS IN A BAR; PULSES PER BEAT, since people clock at one pulse a beat, four, or twenty-four; PHRASE LENGTH in bars, which takes the place of the chart's four-bar units; and FORM LENGTH in phrases, so that every fourth or eighth phrase ends as a close — which keeps PHRASE PAUSE, question and answer, and CYCLE meaningful with no harmony at all.
 
 **A band on the right, revealed with it:** GATE, LEVEL and a trigger at each phrase start.
 

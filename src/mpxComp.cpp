@@ -398,6 +398,12 @@ struct CompModule : Module, NoteSource, NoteSink {
 		Harmony h;
 		if (reader.harmony(h))
 			busPublishHarmony(slot, h);
+		// The pedals, like the harmony, are state: forwarding them is a copy. See NoteBus.hpp.
+		{
+			float sustain, soft;
+			reader.pedals(sustain, soft);
+			busPublishPedals(slot, sustain, soft);
+		}
 	}
 
 	/** WHICH TONES GET PLAYED, when there are fewer voices than the chord has tones — which is

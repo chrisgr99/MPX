@@ -51,6 +51,8 @@ expanders take their harmony from it.
 #include "Layout.hpp"
 #include "NoteBus.hpp"
 #include "Melodic.hpp"
+#include "MelodyVoice.hpp"
+#include "ChartLayout.hpp"
 
 using namespace px;
 
@@ -294,6 +296,14 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 		NOT reset the knobs: a role is what the voice is for, and somebody who has set a line up
 		the way they want it should not lose that by saying what it is. */
 		P_ROLE = PP_COUNT,
+		/** APPENDED, NEVER INSERTED. How often the line stays on the note it is on. Outside the
+		part block because the part block's numbers are fixed by patches already saved; see
+		voiceRepeatWeight for what the knob's travel means. */
+		P_REPEAT,
+		/** APPENDED. How surely a restated rhythm brings its pitches back, and how hard each
+		breath group is pulled into a sung line's shape. */
+		P_MOTIF,
+		P_CONTOUR,
 		PARAMS_LEN,
 	};
 	enum InputId { I_RHYTHM, I_RAND, I_PROFILE, INPUTS_LEN };
@@ -326,6 +336,10 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 	Cleared when nothing has been played yet, so the first note of a line is chosen by the
 	register and the harmony rather than by whatever the last patch left behind. */
 	int previous = -1;
+	/** The note before that, so the line knows which way it is going. */
+	int beforePrevious = -1;
+	/** Every note this voice has chosen, for a figure coming back to find. See VoiceMemory. */
+	VoiceMemory memory;
 
 	/** Where this voice fell in the drawing order this sample. Only for the record. */
 	int order = 0;
@@ -340,6 +354,16 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 	bool isSounding = false;
 	float fade = 0.f;
 
+	/** THE VOICE ENDS ITS OWN NOTES. What the rhythm sent says when a note would end; the voice
+	may shorten it, hold it, slur it into the next or cut it at a chord change, so it keeps its
+	own count rather than waiting for the rhythm's. */
+	int ownLeft = 0;
+	bool slur = false;
+	/** A note handed over to the next and still sounding under it, for a moment. */
+	bool tailing = false;
+	int64_t tailHandle = 0;
+	int tailLeft = 0;
+
 	VoiceModule() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		slot = busClaim(&generation);
@@ -348,6 +372,13 @@ struct VoiceModule : Module, NoteSource, NoteSink {
 		configPart(this, P_PART, ROLE_BASS);
 		configSwitch(P_ROLE, 0.f, (float) (NUM_ROLES - 1), (float) ROLE_BASS, "Voice",
 			{"Bass", "Melody", "Inner"});
+		// A QUARTER, WHICH IS THE JAZZ SOLOS' FIGURE: about one interval in twenty a repeated
+		// note. Songs repeat far more, and that is a setting, not a default.
+		configParam(P_REPEAT, 0.f, 1.f, 0.25f, "Repeated notes", "%", 0.f, 100.f);
+		configParam(P_MOTIF, 0.f, 1.f, 0.5f, "Motif: a restated rhythm brings back its pitches", "%",
+			0.f, 100.f);
+		configParam(P_CONTOUR, 0.f, 1.f, 0.5f, "Contour: each line rises early and falls to its end",
+			"%", 0.f, 100.f);
 
 		configInput(I_RHYTHM, "Rhythm in — MPX");
 		// THE WORD CV IS IN THE NAME ON PURPOSE. Clarity colours every port in the rack, and
@@ -418,7 +449,8 @@ struct NoteRecord {
 	effect is subtle, and that is every knob anybody would want to check. */
 	enum Kind : uint8_t { NOTE, SETTINGS };
 	Kind kind = NOTE;
-	float artic = 0.f, accent = 0.f, breath = 0.f, endAtChanges = 0.f;
+	float artic = 0.f, accent = 0.f, breath = 0.f, endAtChanges = 0.f, repeats = 0.f;
+	float motif = 0.f, contour = 0.f;
 	int seed = 0;
 	double seconds = 0.0;
 	int voice = 0;
@@ -438,6 +470,8 @@ struct NoteRecord {
 	bool drawFromJack = false;
 	bool haveHarmony = false;
 	int previous = -1, note = 0;
+	int echo = 0, echoPitch = -1;
+	float along = -1.f;
 	bool strong = false;
 	float level = 0.f, duration = 0.f;
 	int takenCount = 0;
@@ -498,6 +532,12 @@ struct MelodyModule : Module, NoteSink {
 		menu item, because a recording is started and stopped while listening, and the first
 		take showed that a tick in a menu is a thing you have to go looking for to turn off. */
 		P_RECORD,
+		/** APPENDED, NEVER INSERTED. A line that comes round: CYCLE says after how many phrases
+		the whole sequence of variations returns, and OWN SEED whether the chart's own seed still
+		moves this one. Both mean exactly what they mean on mpxPhrase, so setting the two modules
+		alike brings the rhythm and the pitches round together. */
+		P_CYCLE,
+		P_OWN_SEED,
 		PARAMS_LEN,
 	};
 	enum InputId { I_CHART, INPUTS_LEN };
@@ -522,6 +562,13 @@ struct MelodyModule : Module, NoteSink {
 		configParam(P_VARIATION, 0.f, 999.f, 0.f, "Random generator seed");
 		configSwitch(P_RECORD, 0.f, 1.f, 0.f, "Record notes to disk", {"Off", "Recording"});
 		paramQuantities[P_VARIATION]->snapEnabled = true;
+
+		// FOUR PHRASES BY DEFAULT, which is the length of the shortest thing anybody hears as a
+		// unit: state, restate, depart, return. At one every phrase is the same line.
+		configParam(P_CYCLE, 1.f, 16.f, 4.f, "Cycle", " phrases");
+		paramQuantities[P_CYCLE]->snapEnabled = true;
+		configSwitch(P_OWN_SEED, 0.f, 1.f, 0.f, "Seed",
+			{"Added to the chart's seed", "Used alone"});
 
 		configInput(I_CHART, "Chart in \u2014 MPX");
 	}
@@ -574,12 +621,20 @@ struct MelodyModule : Module, NoteSink {
 			out[n++] = static_cast<VoiceModule*>(at);
 			at = at->rightExpander.module;
 		}
+		// THE DRAWING ORDER IS THE ROLE: bass first, because every other line stands on it; then
+		// the melody, because the inner voice fills round it; then the inner voice. Two voices of
+		// one role go lowest first. It was the register alone, which put a low melody under a
+		// high bass and ignored the switch that says which is which.
+		auto rank = [](VoiceModule* v) {
+			const int role = (int) std::lround(v->params[VoiceModule::P_ROLE].getValue());
+			const int order = role == ROLE_BASS ? 0 : role == ROLE_MELODY ? 1 : 2;
+			return (float) order * 1000.f + v->params[VoiceModule::P_PART + PP_REGISTER].getValue();
+		};
 		for (int i = 1; i < n; i++) {
 			VoiceModule* lift = out[i];
-			const float key = lift->params[VoiceModule::P_PART + PP_REGISTER].getValue();
+			const float key = rank(lift);
 			int j = i - 1;
-			while (j >= 0
-				&& out[j]->params[VoiceModule::P_PART + PP_REGISTER].getValue() > key) {
+			while (j >= 0 && rank(out[j]) > key) {
 				out[j + 1] = out[j];
 				j--;
 			}
@@ -623,6 +678,9 @@ struct MelodyModule : Module, NoteSink {
 		r.accent = v->params[base + PP_ACCENT].getValue();
 		r.breath = v->params[base + PP_BREATH].getValue();
 		r.endAtChanges = v->params[base + PP_END].getValue();
+		r.repeats = v->params[VoiceModule::P_REPEAT].getValue();
+		r.motif = v->params[VoiceModule::P_MOTIF].getValue();
+		r.contour = v->params[VoiceModule::P_CONTOUR].getValue();
 		r.separation = sep;
 		r.seed = (int) std::lround(seed);
 		records.push(r);
@@ -644,8 +702,20 @@ struct MelodyModule : Module, NoteSink {
 		params[P_RECORD].setValue(0.f);
 	}
 
+	/** Where the transport was last seen, so a rewind or a loop can be told from playing on. */
+	double transportBeat = -1.0;
+	uint32_t transportEpoch = 0;
+
+	/** BEATS A SECOND, MEASURED FROM THE CHART'S BEAT, because the rhythm sends lengths in seconds
+	and a breath or a chord change is measured in beats. Smoothed, and deaf to the jump of a
+	rewind or of a clock pulse snapping the beat into step — the same rule as mpxPhrase. */
+	float beatsPerSecond = 2.f;
+	/** RECORD on the chart, as last seen, so only a change of it moves this module's switch. */
+	bool chartRecordWas = false;
+	/** STYLE on the chart, as last seen; the first sighting is only noted, as on mpxPhrase. */
+	int chartStyleWas = -1;
+
 	void process(const ProcessArgs& args) override {
-		recording.store(params[P_RECORD].getValue() > 0.5f, std::memory_order_relaxed);
 		VoiceModule* voices[MAX_VOICES];
 		const int n = gatherVoices(voices, MAX_VOICES);
 		hasVoice = n > 0;
@@ -653,6 +723,32 @@ struct MelodyModule : Module, NoteSink {
 		upstream.settle(chart);
 		Harmony h;
 		const bool haveHarmony = chart.harmony(h) && h.valid;
+		// RECORD ON THE CHART starts and stops this module's log too: a change of it is followed,
+		// so this module's own switch still works between changes.
+		if (haveHarmony && h.record != chartRecordWas) {
+			params[P_RECORD].setValue(h.record ? 1.f : 0.f);
+			chartRecordWas = h.record;
+		}
+		recording.store(params[P_RECORD].getValue() > 0.5f, std::memory_order_relaxed);
+		// STYLE ON THE CHART: a change of it sets each MELODY voice's knobs to that style's line.
+		// Only the melody: the styles' lines are melodies, and a bass given a melody's register
+		// and span would stop being a bass.
+		if (haveHarmony && (int) h.style != chartStyleWas) {
+			float v[VOICE_STYLE_PARAMS];
+			if (chartStyleWas >= 0 && voiceStyle(h.style, v)) {
+				for (int i = 0; i < n; i++) {
+					VoiceModule* vm = voices[i];
+					if ((int) std::lround(vm->params[VoiceModule::P_ROLE].getValue()) != ROLE_MELODY)
+						continue;
+					for (int k = 0; k < PP_COUNT; k++)
+						vm->params[VoiceModule::P_PART + k].setValue(v[k]);
+					vm->params[VoiceModule::P_REPEAT].setValue(v[11]);
+					vm->params[VoiceModule::P_MOTIF].setValue(v[12]);
+					vm->params[VoiceModule::P_CONTOUR].setValue(v[13]);
+				}
+			}
+			chartStyleWas = h.style;
+		}
 
 		// WHAT THE VOICES DRAWN SO FAR HAVE TAKEN, in this sample. Emptied each sample rather
 		// than carried: two notes are doubling only if they sound together, and a note the bass
@@ -665,6 +761,37 @@ struct MelodyModule : Module, NoteSink {
 		int takenCount = 0;
 		for (int i = 0; i < n; i++)
 			voices[i]->order = i;
+
+		// A REWIND OR A LOOP STARTS THE LINES AGAIN, TOO.
+		//
+		// A voice's next note depends on its last one, so a line carried across a rewind begins
+		// with an interval from the take before it — and from then on it is a different line,
+		// however carefully the draws have been made to come round. The whole chain has to start
+		// from the same place or none of it does.
+		//
+		// NOTICED FROM THE MUSIC ITSELF: the beat going backwards, or the pass counter changing.
+		// No new signal on the cable, and nothing to keep in step.
+		if (haveHarmony && transportBeat >= 0.0) {
+			const double moved = h.beat - transportBeat;
+			const float instant = (float) (moved / args.sampleTime);
+			if (moved > 0.0 && instant < 50.f)
+				beatsPerSecond += (instant - beatsPerSecond) * 0.0005f;
+		}
+		if (haveHarmony) {
+			const bool wound = (transportBeat >= 0.0 && h.beat < transportBeat - 0.001)
+				|| h.epoch != transportEpoch;
+			if (wound) {
+				for (int i = 0; i < n; i++) {
+					voices[i]->previous = -1;
+					voices[i]->beforePrevious = -1;
+					// And nothing left sounding from the take before.
+					endVoiceNote(voices[i]);
+					endVoiceTail(voices[i]);
+				}
+			}
+			transportBeat = h.beat;
+			transportEpoch = h.epoch;
+		}
 
 		// THE SETTINGS, at the start of a take and whenever they move — BEFORE the notes of this
 		// sample, so a line in the log is always preceded by the settings it was drawn with.
@@ -699,29 +826,118 @@ struct MelodyModule : Module, NoteSink {
 	message that names it afterwards. */
 	void drive(VoiceModule* v, const Harmony& h, bool haveHarmony, const ProcessArgs& args,
 			int* taken, int& takenCount) {
+		const int base = VoiceModule::P_PART;
+		VoiceShapeSettings shape;
+		shape.articulation = v->params[base + PP_ARTIC].getValue();
+		shape.accent = v->params[base + PP_ACCENT].getValue();
+		shape.breath = v->params[base + PP_BREATH].getValue();
+		shape.endAtChanges = v->params[base + PP_END].getValue();
+		const float bps = std::max(0.1f, beatsPerSecond);
+
+		// THE PEDALS go through to the voice's own output as they arrive on its rhythm input:
+		// the melody chooses pitches and has no opinion about the sustain pedal. State, so a copy.
+		{
+			float sustain, soft;
+			v->rhythm.pedals(sustain, soft);
+			busPublishPedals(v->slot, sustain, soft);
+		}
+
 		Event e;
 		while (v->rhythm.next(e)) {
 			if (e.kind == Event::ON) {
 				e.pitch = pitchFor(v, h, haveHarmony, e, taken, takenCount,
 					params[P_SEPARATION].getValue());
+				const int note = (int) std::lround(e.pitch * 12.f) + 60;
+
+				// HOW LONG AND HOW HARD, AND WHETHER AT ALL — see voiceShape. Worked in beats,
+				// because a breath and a chord change are measured in beats; the rhythm sends
+				// seconds, and the tempo the voice measures converts between them.
+				if (haveHarmony) {
+					const float draw = melodyDraw(h.seed, 0x5eedu, false, 1, 0, 1, h.phrase,
+						std::max(0.f, h.phraseBeats - h.beatsToPhraseEnd) + 0.37f);
+					const VoiceShape sh = voiceShape(h, shape, note, e.duration * bps, e.level,
+						voiceStrongBeat(h), e.flags, draw);
+					if (sh.drop)
+						continue;
+					e.duration = sh.beats / bps;
+					e.level = sh.level;
+					handOver(v, args.sampleRate);
+					v->slur = sh.slur;
+				}
+				else {
+					handOver(v, args.sampleRate);
+					v->slur = false;
+				}
+
 				// WHAT THIS VOICE HAS JUST TAKEN, for the voices drawn after it. A pitch class
 				// rather than a note: two lines an octave apart are doubling as surely as two
 				// in unison, and it is the doubling that separation is about.
 				if (takenCount < MAX_VOICES)
-					taken[takenCount++] = (int) std::lround(e.pitch * 12.f) + 60;
+					taken[takenCount++] = note;
 				v->isSounding = true;
 				v->sounding = e.handle;
+				v->ownLeft = std::max(1, (int) (e.duration * args.sampleRate));
 				v->fade = 1.f;
+				busPush(v->slot, e);
 			}
-			else if (e.kind == Event::OFF && e.handle == v->sounding) {
-				v->isSounding = false;
+			else if (e.kind == Event::OFF) {
+				// THE RHYTHM'S OWN END is honoured only while the voice is not holding the note
+				// longer than the rhythm meant. Held or slurred, the voice ends it; an end for a
+				// note the voice did not play — one dropped into a breath, or one already handed
+				// over — has nothing to end.
+				if (v->isSounding && e.handle == v->sounding && shape.articulation <= 0.f)
+					endVoiceNote(v);
 			}
-			busPush(v->slot, e);
+			else {
+				busPush(v->slot, e);
+			}
 		}
+
+		if (v->isSounding && --v->ownLeft <= 0)
+			endVoiceNote(v);
+		if (v->tailing && --v->tailLeft <= 0)
+			endVoiceTail(v);
+
 		// THE LAMP FADES rather than switching off with the note, because a sixteenth at speed
 		// is two milliseconds of light and nobody sees it.
 		v->fade = std::fmax(0.f, v->fade - args.sampleTime * 6.f);
 		v->lights[VoiceModule::L_PART].setBrightness(v->fade);
+	}
+
+	/** A NEW NOTE ARRIVING WHILE THE LAST STILL SOUNDS: the last is handed over rather than cut,
+	sounding under the new one for a moment, so a slurred or legato line stays joined through any
+	downstream voice. Two notes sounding together for longer than that would be two lines, and a
+	voice is one. */
+	static constexpr float HAND_OVER = 0.02f;
+
+	void handOver(VoiceModule* v, float sampleRate) {
+		if (!v->isSounding)
+			return;
+		endVoiceTail(v);
+		v->tailing = true;
+		v->tailHandle = v->sounding;
+		v->tailLeft = std::max(1, std::min(v->ownLeft, (int) (HAND_OVER * sampleRate)));
+		v->isSounding = false;
+	}
+
+	void endVoiceNote(VoiceModule* v) {
+		if (!v->isSounding)
+			return;
+		Event off;
+		off.kind = Event::OFF;
+		off.handle = v->sounding;
+		busPush(v->slot, off);
+		v->isSounding = false;
+	}
+
+	void endVoiceTail(VoiceModule* v) {
+		if (!v->tailing)
+			return;
+		Event off;
+		off.kind = Event::OFF;
+		off.handle = v->tailHandle;
+		busPush(v->slot, off);
+		v->tailing = false;
 	}
 
 	/** WHAT NOTE TO PLAY: the palette, the weighting and the draw, for one voice.
@@ -736,69 +952,55 @@ struct MelodyModule : Module, NoteSink {
 		const float* p = NULL;
 		(void) p;
 		const int base = VoiceModule::P_PART;
-		const int centre = (int) std::lround(v->params[base + PP_REGISTER].getValue());
 		const int span = (int) std::lround(v->params[base + PP_SPAN].getValue());
+		// THE PROFILE: a voltage moving the register while the line plays, five volts either way
+		// being half the span. An arch over a phrase, or a slow climb through a chorus.
+		int centre = (int) std::lround(v->params[base + PP_REGISTER].getValue());
+		if (v->inputs[VoiceModule::I_PROFILE].isConnected()) {
+			const float volts = math::clamp(v->inputs[VoiceModule::I_PROFILE].getVoltage(), -5.f, 5.f);
+			centre = math::clamp(centre + (int) std::lround(volts / 5.f * (float) span / 2.f),
+				24, 108);
+		}
 
 		// THE PROFILE, GENERATED FROM TWO KNOBS. The register is given as a low note and a
 		// width, so the knob that names the centre is turned into the bottom of the window.
-		MelodyProfile profile = melodyProfile(v->params[base + PP_SMOOTH].getValue(),
-			v->params[base + PP_LOCK].getValue(), centre - span / 2, span);
-		profile.lead = v->params[base + PP_LEADING].getValue();
-
-		// WITHOUT A CHART THERE IS NO HARMONY AND NO SCALE. Rather than refuse, the line plays
-		// the register centre, which says plainly on the first note that the chart is missing.
+		// THE CHOICE ITSELF IS IN MelodyVoice.cpp, pure, so that a simulation predicting this
+		// module calls the same code rather than a copy of it.
 		if (!haveHarmony)
 			return ((float) centre - 60.f) / 12.f;
+		VoiceSettings vs;
+		vs.smooth = v->params[base + PP_SMOOTH].getValue();
+		vs.lock = v->params[base + PP_LOCK].getValue();
+		vs.centre = centre;
+		vs.span = span;
+		vs.leading = v->params[base + PP_LEADING].getValue();
+		vs.scale = (int) std::lround(v->params[base + PP_SCALE].getValue());
+		vs.repeats = v->params[VoiceModule::P_REPEAT].getValue();
+		vs.motif = v->params[VoiceModule::P_MOTIF].getValue();
+		vs.contour = v->params[VoiceModule::P_CONTOUR].getValue();
+		const VoiceLine line = v->memory.lineFor(e.echo, e.along);
+		const float dice = drawFor(v, h, e);
 
-		int scale[7];
-		const int scaleCount = melodyScalePitchClasses(h.key,
-			(int) std::lround(v->params[base + PP_SCALE].getValue()), scale);
+		const bool rec = recording.load(std::memory_order_relaxed);
+		MelodyReport report;
 
-		int chord[MAX_CHORD_TONES], next[MAX_CHORD_TONES];
-		const int chordCount = chordPitchClasses(h.current, h.key, chord);
-		const int nextCount = h.next.valid ? chordPitchClasses(h.next, h.key, next) : 0;
-
-		MelodyAsk ask;
-		ask.previous = v->previous;
-		ask.scale = scale;
-		ask.scaleCount = scaleCount;
-		ask.chord = chord;
-		ask.chordCount = chordCount;
-		ask.rootPc = chordRootPitchClass(h.current, h.key);
-		ask.nextChord = next;
-		ask.nextChordCount = nextCount;
-		ask.beatsToNext = h.beatsToNext;
-		// A STRONG BEAT IS A WHOLE BEAT AT THE FRONT OF THE BAR OR HALFWAY THROUGH IT. Asked of
-		// the bar rather than of a count of notes, because what makes a beat strong is where it
-		// falls in the music and not how many notes have gone by.
-		//
-		// TO THE NEAREST BEAT, NOT THE ONE BEFORE. A rhythm source on its own clock arrives a
-		// hair early or late, and rounding down turned a note two hundredths of a beat before
-		// beat three into the tail of beat two. The first recording showed nought strong beats
-		// in 351 notes, which meant the strong-beat chord pull and the root pull had never
-		// applied to anything. A note within a quarter of a beat either side counts as on it,
-		// and a note just before the next bar's downbeat is on that downbeat.
-		{
+		const int previous = v->previous;
+		// HOW LONG IT WILL SOUND, in beats, so an ending held into the next chord can be chosen
+		// to fit both.
+		const float heldBeats = e.duration * std::max(0.1f, beatsPerSecond);
+		const int note = voiceNoteFor(h, vs, previous, dice, taken, takenCount, separation,
+			rec ? &report : NULL, e.flags, v->beforePrevious, heldBeats, &line);
+		v->memory.remember(note, e.along);
+		v->beforePrevious = v->previous;
+		v->previous = note;
+		const bool strongBeat = [&]() {
 			const float inBar = h.beatInBar;
 			int whole = (int) std::lround(inBar);
 			const float off = std::fabs(inBar - (float) whole);
 			if (h.barBeats > 0 && whole >= h.barBeats)
 				whole -= h.barBeats;
-			ask.strong = off < 0.25f && (whole % 2) == 0;
-		}
-		ask.dice = drawFor(v, h, e);
-		ask.taken = taken;
-		ask.takenCount = takenCount;
-		ask.separation = separation;
-
-		const bool rec = recording.load(std::memory_order_relaxed);
-		MelodyReport report;
-		if (rec)
-			ask.report = &report;
-
-		const int previous = v->previous;
-		const int note = melodicStep(ask, profile);
-		v->previous = note;
+			return off < 0.25f && (whole % 2) == 0;
+		}();
 
 		if (rec) {
 			NoteRecord r;
@@ -822,12 +1024,15 @@ struct MelodyModule : Module, NoteSink {
 			r.lock = v->params[base + PP_LOCK].getValue();
 			r.leading = v->params[base + PP_LEADING].getValue();
 			r.separation = separation;
-			r.draw = ask.dice;
+			r.draw = dice;
 			r.drawFromJack = v->inputs[VoiceModule::I_RAND].isConnected();
 			r.haveHarmony = true;
 			r.previous = previous;
 			r.note = note;
-			r.strong = ask.strong;
+			r.echo = e.echo;
+			r.echoPitch = line.echoPitch;
+			r.along = e.along;
+			r.strong = strongBeat;
 			r.level = e.level;
 			r.duration = e.duration;
 			r.takenCount = std::min(takenCount, MAX_VOICES);
@@ -854,17 +1059,21 @@ struct MelodyModule : Module, NoteSink {
 	float drawFor(VoiceModule* v, const Harmony& h, const Event& e) {
 		if (v->inputs[VoiceModule::I_RAND].isConnected())
 			return math::clamp(v->inputs[VoiceModule::I_RAND].getVoltage() / 10.f, 0.f, 1.f);
-		uint32_t x = h.seed
-			+ (uint32_t) std::lround(params[P_VARIATION].getValue()) * 7919u
-			+ (uint32_t) (h.epoch * 104729u)
-			+ (uint32_t) std::lround(h.beat * 96.0) * 2654435761u
-			+ (uint32_t) (e.handle & 0xffff) * 40503u;
-		// A cheap integer hash: three rounds of shift and multiply, which is enough to turn a
-		// counter into something that does not look like one.
-		x ^= x >> 16; x *= 0x7feb352du;
-		x ^= x >> 15; x *= 0x846ca68bu;
-		x ^= x >> 16;
-		return (float) (x >> 8) / 16777216.f;
+		// THE POSITION IN THE CYCLE, NOT THE PASS COUNT, AND NOT THE NOTE'S NAME — see melodyDraw
+		// in Melodic.hpp, where the reasoning and the arithmetic live so that recurrence can be
+		// checked from a command line rather than listened for.
+		const uint32_t own = (uint32_t) std::lround(params[P_VARIATION].getValue());
+		const bool alone = params[P_OWN_SEED].getValue() > 0.5f || h.seed == 0;
+		const int cycle = (int) std::lround(params[P_CYCLE].getValue());
+		// A PICKUP IS DRAWN AS PART OF THE PHRASE IT LEADS INTO, counted back from that phrase's
+		// bar line, so a phrase that comes round comes round with its pickup.
+		if ((e.flags & Event::PICKUP) && h.upcoming.valid && h.phraseBeats > 0.f)
+			return melodyDraw(h.seed, own, alone, cycle, h.upcoming.epoch, h.phrasesPerPass,
+				h.upcoming.phrase, -h.beatsToPhraseEnd);
+		const float intoPhrase = h.phraseBeats > 0.f
+			? std::max(0.f, h.phraseBeats - h.beatsToPhraseEnd) : (float) h.beat;
+		return melodyDraw(h.seed, own, alone, cycle, h.epoch, h.phrasesPerPass, h.phrase,
+			intoPhrase);
 	}
 };
 
@@ -1086,6 +1295,29 @@ static Layout melodyLayout() {
 			0.f, "g.var");
 	}
 
+	// HOW OFTEN THE LINE COMES ROUND, and whether the chart's seed still moves it. Under the
+	// seed because that is what they qualify: the seed says which line, the cycle says how often
+	// it returns, and LOCK SEED whether the chart has a hand in it.
+	//
+	// PLACED AROUND THE ARRANGEMENT ALREADY MADE in the panel editor, which put the seed plate at
+	// seventy and a half: the captions here are measured to clear it by a millimetre, and to
+	// clear the chart jack's name below by more than that.
+	{
+		Item i;
+		i.key = "g.cycle"; i.kind = Item::PARAM; i.id = MelodyModule::P_CYCLE;
+		i.x = mid; i.y = 82.5f; i.style = "readout"; i.chars = 2; i.h = 3.4f;
+		L.items.push_back(i);
+		addLabel(L, "g.cycle.label", mid, 76.5f, "PHRASES\nRECYCLE", Panel::CENTRE, true, 0.f,
+			"g.cycle");
+	}
+	{
+		Item i;
+		i.key = "g.own"; i.kind = Item::PARAM; i.id = MelodyModule::P_OWN_SEED;
+		i.x = mid; i.y = 90.5f; i.style = "latch"; i.diameter = 6.6f;
+		L.items.push_back(i);
+		addLabel(L, "g.own.label", mid, 97.5f, "LOCK\nSEED", Panel::CENTRE, true, 0.f, "g.own");
+	}
+
 	// AT THE FOOT, below the knobs, where a cable leaves the panel without crossing anything.
 	addJack(L, "in.chart", Item::PORT_IN, mid, 112.f, MelodyModule::I_CHART, "CHART\nIN",
 		NOTE_CABLE, 5.4f);
@@ -1118,6 +1350,15 @@ static Layout voiceLayout() {
 
 	// AN ORPHAN LOOKS EXACTLY LIKE A WORKING ONE — same panel, same jacks, and a cable out of it
 	// that carries nothing. Lit while something is driving it.
+	// REPEATED NOTES: part of which note is played, but that row is full, so it takes the free
+	// place beside ACCENT.
+	addKnob(L, "v.repeat", 13.5f, 99.5f, VoiceModule::P_REPEAT, "REPEATED\nNOTES", 3,
+		{"0", "", "1"});
+	// MOTIF AND CONTOUR, between REPEATED NOTES and ACCENT: the room there is for two knobs
+	// without printed marks, whose names are one word each.
+	addKnob(L, "v.motif", 27.5f, 99.5f, VoiceModule::P_MOTIF, "MOTIF", 3);
+	addKnob(L, "v.contour", 39.f, 99.5f, VoiceModule::P_CONTOUR, "CONTOUR", 3);
+
 	addLamp(L, "g.linked", 45.f, 100.f, VoiceModule::L_LINKED);
 	addLabel(L, "g.linked.label", 45.f, 105.f, "LINKED", Panel::CENTRE, true, 0.f, "g.linked");
 
@@ -1238,7 +1479,9 @@ static std::string recordLine(const NoteRecord& r) {
 		o += string::f(",\"smoothness\":%.3f,\"chordLock\":%.3f,\"voiceLeading\":%.3f",
 			r.smooth, r.lock, r.leading);
 		o += string::f(",\"articulation\":%.3f,\"accent\":%.3f,\"breath\":%.3f"
-			",\"endAtChanges\":%.3f", r.artic, r.accent, r.breath, r.endAtChanges);
+			",\"endAtChanges\":%.3f,\"repeatedNotes\":%.3f", r.artic, r.accent, r.breath, r.endAtChanges,
+			r.repeats);
+		o += string::f(",\"motif\":%.3f,\"contour\":%.3f", r.motif, r.contour);
 		o += string::f(",\"separation\":%.3f,\"seed\":%d}", r.separation, r.seed);
 		return o;
 	}
@@ -1279,6 +1522,11 @@ static std::string recordLine(const NoteRecord& r) {
 	o += ",\"previous\":" + (r.previous >= 0 ? "\"" + noteName(r.previous) + "\"" : std::string("null"));
 	o += ",\"note\":\"" + noteName(r.note) + "\"";
 	o += ",\"interval\":" + (r.previous >= 0 ? std::to_string(r.note - r.previous) : std::string("null"));
+	if (r.echo > 0)
+		o += string::f(",\"echoesBack\":%d,\"echoOf\":\"%s\"", r.echo,
+			r.echoPitch >= 0 ? noteName(r.echoPitch).c_str() : "");
+	if (r.along >= 0.f)
+		o += string::f(",\"along\":%.2f", r.along);
 	o += string::f(",\"chordTone\":%s,\"strongBeat\":%s",
 		isChordTone(r.note) ? "true" : "false", r.strong ? "true" : "false");
 	o += string::f(",\"level\":%.2f,\"duration\":%.3f", r.level, r.duration);
@@ -1422,7 +1670,7 @@ struct MelodyWidget : MelodyPanelWidget {
 		const float mid = box.size.x / 2.f;
 		const char* said[] = {"ADD VOICE", "MODULES", "TO THE", "RIGHT"};
 		for (int i = 0; i < 4; i++)
-			nvgText(args.vg, mid, mm2px(80.f + i * 4.6f), said[i], NULL);
+			crispText(args.vg, mid, mm2px(80.f + i * 4.6f), said[i], NULL);
 	}
 };
 

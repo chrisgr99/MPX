@@ -92,15 +92,33 @@ phrasetest:
 # THE FACTORY PRESETS, GENERATED. Rack's own Preset menu is what offers SONG and JAZZ, and their
 # values are the two measured styles — see tools/presetgen.cpp for why they are not typed in.
 presets:
-	@mkdir -p build presets/mpxPhrase
-	@c++ -std=c++11 -O1 -Wall tools/presetgen.cpp src/Phrasing.cpp -o build/presetgen
-	@./build/presetgen "$(VERSION)" presets/mpxPhrase
+	@mkdir -p build presets/mpxPhrase presets/mpxMelodyVoice
+	@rm -f presets/mpxPhrase/*.vcvm presets/mpxMelodyVoice/*.vcvm
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		tools/presetgen.cpp src/Phrasing.cpp src/MelodyVoice.cpp src/Melodic.cpp src/Chord.cpp \
+		src/ChartLayout.cpp -o build/presetgen -L$(RACK_DIR) -lRack
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/presetgen "$(VERSION)" presets
+
+# WHAT A PATCH WOULD PLAY, IN WORDS. The chart's phrasing, the phrase generator and the voice's
+# choice of note, run on the settings saved in a patch — see tools/phrasesim.cpp.
+#   make phrasesim                    the patch in Downloads, its own chart
+#   make phrasesim EXAMPLE=1 NOTES=1  the first built-in example, every note listed
+PATCH ?= $(HOME)/Downloads/mpxphrase-musical.vcv
+EXAMPLE ?= 0
+NOTES ?= 0
+phrasesim:
+	@mkdir -p build
+	@zstd -q -d -c "$(PATCH)" | tar -xO patch.json > build/sim-patch.json
+	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		tools/phrasesim.cpp src/Phrasing.cpp src/ChartLayout.cpp src/IReal.cpp src/Chord.cpp \
+		src/Melodic.cpp src/MelodyVoice.cpp -o build/phrasesim -L$(RACK_DIR) -lRack
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/phrasesim build/sim-patch.json $(EXAMPLE) $(NOTES)
 
 melodytest:
 	@c++ -std=c++11 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
-		test/melodytest.cpp src/Melodic.cpp src/Chord.cpp \
+		test/melodytest.cpp src/Melodic.cpp src/MelodyVoice.cpp src/Chord.cpp \
 		-o build/melodytest -L$(RACK_DIR) -lRack
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/melodytest $(ARGS)
 
 
-.PHONY: test presets
+.PHONY: test presets phrasesim
