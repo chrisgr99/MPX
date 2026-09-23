@@ -594,7 +594,6 @@ static Layout arpLayout() {
 	Layout L;
 	L.hp = 14.f;
 	L.title = "mpxArp";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	static const float NAME_HALF = 1.22f;
 	static const float KNOB_EDGE = 4.8f;

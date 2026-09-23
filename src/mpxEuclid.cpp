@@ -314,7 +314,6 @@ static Layout euclidLayout() {
 	Layout L;
 	L.hp = 20.f;
 	L.title = "mpxEuclid";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const std::string& key, float x, float y, const std::string& text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,

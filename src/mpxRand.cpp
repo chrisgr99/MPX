@@ -525,7 +525,6 @@ static Layout randLayout() {
 	Layout L;
 	L.hp = 6.f;
 	L.title = "mpxRand";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	static const float NAME_HALF = 1.22f;
 	static const float KNOB_EDGE = 3.84f;   /**< RoundSmallBlackKnob is 7.68 mm across. */

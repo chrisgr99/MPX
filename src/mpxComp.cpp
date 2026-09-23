@@ -91,8 +91,19 @@ static const char* COLOUR_NAMES[NUM_COLOURS] = {"Triad", "Sevenths", "Extensions
 
 /** WHICH VOICES SOUND ON EACH STEP. A pattern is nothing more than that: the rhythm decides
 when a step falls and the pattern decides who plays on it. */
-static const char* PATTERN_NAMES[] = {"Block", "Broken up", "Broken down", "Alberti", "Waltz"};
+/** HOW THE CHORD IS PLAYED, held or as a figure. Held was a switch of its own called Rhythm, on
+or off, which said nothing about what either did: this is the list of ways to play a chord and
+holding it is one of them. Everything below Held is a figure and wants a rate; Held wants none. */
+static const char* PATTERN_NAMES[] = {"Held", "Block", "Broken up", "Broken down", "Alberti",
+	"Waltz"};
 static const int NUM_PATTERNS = (int) (sizeof(PATTERN_NAMES) / sizeof(PATTERN_NAMES[0]));
+
+/** HOW MANY VOICES FROM THE BOTTOM ARE HELD while the ones above them play the figure. A hand
+comping keeps the bottom of the chord down and moves the top of it; without this every voice the
+pattern named was struck afresh, so nothing could be kept down. A held voice is struck once and
+then left alone — across chord changes too, where the voicing lets it keep its note. */
+static const char* HOLD_NAMES[] = {"None", "Bass", "Bass and next"};
+static const int NUM_HOLDS = (int) (sizeof(HOLD_NAMES) / sizeof(HOLD_NAMES[0]));
 
 static const char* ACCENT_NAMES[] = {"Even", "Metric", "Downbeat", "Backbeat", "Offbeat", "Push"};
 static const int NUM_ACCENTS = (int) (sizeof(ACCENT_NAMES) / sizeof(ACCENT_NAMES[0]));
@@ -134,8 +145,12 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// an old patch is opened — a saved Pattern arriving as the Rhythm switch, and so on. New
 		// controls go on the end however untidy that reads.
 		P_STRUM,
+		P_HOLD,
+		P_PEDAL,
 		P_BALANCE,
-		P_RHYTHM,
+		/** WAS THE RHYTHM SWITCH, off or on. Held is an entry in Pattern now, which says what it
+		does; the number stays so a patch saved with it still loads. */
+		P_UNUSED_RHYTHM,
 		P_RATE,
 		NUM_PARAMS
 	};
@@ -184,13 +199,19 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// tied — a voice that does not move is never re-struck — which is the module's other
 		// half and what somebody feeding a pad wants. Turning the rhythm on trades the tie for
 		// a figure, and that is a musical choice rather than a completeness.
-		configSwitch(P_RHYTHM, 0.f, 1.f, 0.f, "Rhythm", {"Off", "On"});
+		configSwitch(P_UNUSED_RHYTHM, 0.f, 1.f, 0.f, "Rhythm", {"Off", "On"});
 		configSwitch(P_RATE, 0.f, (float) (NUM_RATES - 1), 2.f, "Rate",
 			{RATE_NAMES[0], RATE_NAMES[1], RATE_NAMES[2], RATE_NAMES[3], RATE_NAMES[4],
 			RATE_NAMES[5]});
+		// THE SUSTAIN PEDAL, PUT DOWN BY THIS MODULE and sent along the cable, so anything
+		// reading MPX — the piano does — hears it with nothing patched. Part way is a real
+		// position: a pedal half down lets the strings ring without holding them.
+		configParam(P_PEDAL, 0.f, 1.f, 0.f, "Pedal", "%", 0.f, 100.f);
+		configSwitch(P_HOLD, 0.f, (float) (NUM_HOLDS - 1), 0.f, "Hold",
+			{HOLD_NAMES[0], HOLD_NAMES[1], HOLD_NAMES[2]});
 		configSwitch(P_PATTERN, 0.f, (float) (NUM_PATTERNS - 1), 0.f, "Pattern",
 			{PATTERN_NAMES[0], PATTERN_NAMES[1], PATTERN_NAMES[2], PATTERN_NAMES[3],
-			PATTERN_NAMES[4]});
+			PATTERN_NAMES[4], PATTERN_NAMES[5]});
 		configParam(P_GATE, 0.05f, 1.f, 0.9f, "Gate length", "%", 0.f, 100.f);
 		configSwitch(P_ACCENT, 0.f, (float) (NUM_ACCENTS - 1), 1.f, "Accent",
 			{ACCENT_NAMES[0], ACCENT_NAMES[1], ACCENT_NAMES[2], ACCENT_NAMES[3],
@@ -386,6 +407,13 @@ struct CompModule : Module, NoteSource, NoteSink {
 	a note on an MPX cable carries its level and its duration — an accented downbeat is one event
 	rather than three simultaneous cables the far end has to reassemble. Until then the notes it
 	would emit are held chords, which the polyphonic output already carries. */
+	/** HOW LONG THE PEDAL IS UP AT A CHORD CHANGE. A player lifts as the new chord is struck and
+	puts the pedal back down under it, or the chord before would ring on through it. A twentieth
+	of a second is long enough for the dampers to reach the strings and short enough not to be
+	heard as a gap. */
+	static constexpr float PEDAL_LIFT = 0.05f;
+	float pedalUpFor = 0.f;
+
 	void forwardBus() {
 		outputs[O_MPX].setChannels(1);
 		outputs[O_MPX].setVoltage(0.f);
@@ -401,7 +429,10 @@ struct CompModule : Module, NoteSource, NoteSink {
 		{
 			float sustain, soft;
 			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			// OUR OWN PEDAL AS WELL, whichever is further down — the one on the cable or the one
+			// this module is holding. Lifted for a moment at each chord change: see PEDAL_LIFT.
+			const float ours = (pedalUpFor > 0.f) ? 0.f : params[P_PEDAL].getValue();
+			busPublishPedals(slot, std::fmax(sustain, ours), soft);
 		}
 	}
 
@@ -564,7 +595,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 	bool playsOn(int pattern, int step, int voice, int n) const {
 		if (n <= 0)
 			return false;
-		switch (pattern) {
+		switch (pattern) {   // Held is not here: it never reaches a step.
 			case 1:  return voice == (step % n);                    // broken, upward
 			case 2:  return voice == (n - 1 - (step % n));          // broken, downward
 			case 3: {                                               // Alberti
@@ -610,7 +641,9 @@ struct CompModule : Module, NoteSource, NoteSink {
 	/** A STEP FALLS. Whoever is sounding and playing again is ended first; whoever is starting is
 	queued, immediately or a strum's distance apart. */
 	void startStep(int64_t step, const Harmony& h, float stepBeats, float stepSeconds) {
-		const int pattern = (int) std::round(params[P_PATTERN].getValue());
+		// One off the list, since Held sits at the top of it and never gets this far.
+		const int pattern = (int) std::round(params[P_PATTERN].getValue()) - 1;
+		const int hold = (int) std::round(params[P_HOLD].getValue());
 		const int accent = (int) std::round(params[P_ACCENT].getValue());
 		const float amount = params[P_AMOUNT].getValue();
 		const float human = params[P_HUMAN].getValue();
@@ -629,6 +662,11 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// this a tied voice from a block chord would go on sounding under a broken figure that
 		// never mentions it again.
 		for (int v = 0; v < MAX_VOICES; v++) {
+			// A HELD VOICE IS NOT THE STEP'S TO END. It was struck once and stays down while the
+			// voices above it play; the chord change is what moves it, and the voicing decides
+			// whether it has to move at all.
+			if (v < hold && v < voices)
+				continue;
 			if (v >= voices || !playsOn(pattern, (int) step, v, voices)) {
 				if (endIn[v] < 0.f && sounding[v] != 0 && startIn[v] < 0.f)
 					endIn[v] = 0.0001f;
@@ -637,6 +675,8 @@ struct CompModule : Module, NoteSource, NoteSink {
 
 		int order = 0;
 		for (int v = 0; v < voices; v++) {
+			if (v < hold)
+				continue;   // held: see above
 			if (!playsOn(pattern, (int) step, v, voices))
 				continue;
 			// The top voice is the melody, so it carries a little more of the level than the
@@ -720,6 +760,8 @@ struct CompModule : Module, NoteSource, NoteSink {
 			for (int i = 0; i < n; i++)
 				reader.add(wantSlots[i].load(), wantGenerations[i].load());
 		}
+		if (pedalUpFor > 0.f)
+			pedalUpFor = std::fmax(0.f, pedalUpFor - args.sampleTime);
 		forwardBus();
 		measureTempo(args);
 
@@ -744,7 +786,10 @@ struct CompModule : Module, NoteSource, NoteSink {
 		const bool settingsChanged = (sig != hadSig);
 		hadSig = sig;
 
-		const bool rhythmOn = params[P_RHYTHM].getValue() > 0.5f;
+		// HELD IS A PATTERN NOW. Anything but the first entry is a figure, and a figure is what
+		// the rhythm switch used to turn on.
+		const bool rhythmOn = (int) std::round(params[P_PATTERN].getValue()) > 0;
+		const int holdVoices = (int) std::round(params[P_HOLD].getValue());
 
 		if (count > 0 && (chordChanged || settingsChanged)) {
 			// KEPT, so that what each voice was playing can be compared with what it is to play
@@ -777,8 +822,12 @@ struct CompModule : Module, NoteSource, NoteSink {
 						sendHeld(v);
 				}
 			}
-			if (chordChanged)
+			if (chordChanged) {
 				lightFade = 1.f;
+				// The pedal comes up as the new chord is struck, and goes back down under it.
+				if (params[P_PEDAL].getValue() > 0.f)
+					pedalUpFor = PEDAL_LIFT;
+			}
 		}
 		// ---- the rhythm, or the held chord it replaces ----
 		//
@@ -793,6 +842,18 @@ struct CompModule : Module, NoteSource, NoteSink {
 			if (!rhythmOn) {
 				for (int v = 0; v < voices; v++)
 					sendHeld(v);
+			}
+		}
+
+		// THE HELD VOICES, WHILE A FIGURE RUNS. Nothing in the figure ever strikes them, so they
+		// are struck here: once, and again only when the voicing moves them somewhere else.
+		if (rhythmOn && count > 0) {
+			for (int v = 0; v < holdVoices && v < voices; v++) {
+				if (sounding[v] != 0 && std::fabs(soundingPitch[v] - voice[v]) < 1e-4f)
+					continue;
+				if (sounding[v] != 0)
+					sendOff(v);
+				sendHeld(v);
 			}
 		}
 
@@ -839,7 +900,6 @@ static Layout compLayout() {
 	Layout L;
 	L.hp = 20.f;
 	L.title = "mpxComp";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const std::string& key, float x, float y, const std::string& text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,
@@ -856,6 +916,9 @@ static Layout compLayout() {
 	// made the knob names look pressed against the knob and the jack names float away from the
 	// jack, since a knob and a jack are not the same size.
 	static const float NAME_HALF = 1.22f;    /**< Half the height of a ten-point name. */
+	/** How tall a ten-point name stands, which is the size these plates are named at: twice
+	NAME_HALF, and the height the figures on a plate are set to match it. */
+	static const float NAME_MM = 2.44f;
 	static const float KNOB_EDGE = 4.8f;     /**< RoundBlackKnob, from its SVG. */
 	static const float PORT_EDGE = 4.01f;    /**< PJ301M, from its SVG. */
 	static const float GAP = 2.f;
@@ -886,70 +949,103 @@ static Layout compLayout() {
 			size > 0.f, size, key);
 	};
 
-	// A CHOICE BETWEEN NAMED THINGS IS NOT A KNOB. Voices, Span, Spread, Pattern and Accent each
-	// pick one of a short list, and a knob with a pointer at eleven o'clock says nothing about
-	// which. They are lamp columns instead: one lamp a choice, its name beside it, and the group
-	// named above. A column is placed by its TOP LEFT CORNER, not its centre, because it is a
-	// list; its width is the longest name and its height is the pitch times the lamps.
-	auto radio = [&](const std::string& key, float x, float y, int id, const std::string& group,
-			const std::vector<std::string>& names, float pitch) {
-		// A lamp column's top edge is its corner, since it is placed by the corner.
-		label(key + ".group", x, y - GAP - NAME_HALF, group, Panel::LEFT, true, 0.f, key);
+	// A CHOICE BETWEEN NAMED THINGS IS A PLATE. Root, Span, Spread, Chord tones, Rhythm, Rate,
+	// Pattern and Accent each pick one of a short list. They were columns of lamps, one lamp a
+	// choice, which said everything at once and took the height of the list to say it: eight
+	// lists filled the panel. A plate shows the choice in force, the wheel steps through them and
+	// a click opens the list. It is placed by its CENTRE, with its name under it.
+	auto plate = [&](const std::string& key, float x, float y, int id, const std::string& group,
+			int chars) {
 		Item i;
-		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = "lamps";
-		i.names = names; i.horizontal = false; i.pitch = pitch;
-		i.labelSide = Panel::RIGHT;
+		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = "readout";
+		// AS TALL AS ITS NAME. The figures on a plate were set at four millimetres, half as tall
+		// again as the name above them. They stand exactly as tall as that name instead.
+		i.chars = chars; i.h = NAME_MM;
+		L.items.push_back(i);
+		// THE NAME ABOVE, a millimetre clear of the plate's top edge: the plate is what the eye
+		// goes to, and a name under it is read as belonging to whatever is below.
+		label(key + ".group", x, y - (NAME_MM + 1.f) / 2.f - 1.f - NAME_MM / 2.f, group,
+			Panel::CENTRE, true, 0.f, key);
+	};
+
+	/** A COLUMN OF LAMPS, each with its name to the right of it, placed by the CENTRE of the
+	lamps themselves — not of the whole group, whose width depends on how long the names are, so
+	a column would slide sideways as its names were reworded. A millimetre of clear panel between
+	one lamp and the next, which is as close as they go without touching. */
+	auto col = [&](const std::string& key, float x, float y, int id, const std::string& group,
+			const std::vector<std::string>& names, float pitch = 0.f) {
+		const float lampR = 6.5f / 2.9528f;
+		const float step = (pitch > 0.f) ? pitch : (2.f * lampR + 1.f);
+		const float h = 2.f * lampR + step * (float) (names.size() - 1);
+		Item i;
+		i.key = key; i.kind = Item::PARAM; i.id = id; i.style = "lamps";
+		i.x = x - lampR; i.y = y - h / 2.f; i.names = names; i.horizontal = false;
+		i.pitch = step; i.labelSide = Panel::RIGHT;
+		L.items.push_back(i);
+		label(key + ".group", x, i.y - 0.5f - NAME_MM / 2.f, group, Panel::CENTRE, true, 0.f,
+			key);
+	};
+
+	/** A DIVIDING LINE ACROSS THE PANEL, which is what marks one band off from the next. */
+	auto rule = [&](const std::string& key, float y) {
+		Item i;
+		i.key = key; i.kind = Item::RULE; i.x = 5.f; i.y = y; i.horizontal = true;
+		i.w = 101.6f - 10.f;
 		L.items.push_back(i);
 	};
 
-	// TWENTY HP IS 101.6 MM, and it is twenty rather than sixteen because of the rule above.
-	// Names two millimetres clear of what they name, and a Voices knob wearing a number at every
-	// detent, need the height; four narrower columns hold it where three wider ones could not.
+	// THREE BANDS, IN THE ORDER THE DECISIONS ARE MADE. A panel of twenty-odd controls in
+	// columns asks the reader to work out what belongs with what; in bands it says so. What the
+	// chord is made of comes first, because nothing about time means anything until the notes
+	// are settled; how it is played comes next; how it feels comes last, since those are the
+	// controls set by ear once the rest is right.
 	//
-	// Every position here was checked rather than eyed: each control's visible extent worked out
-	// from the component sizes, and no two of them closer than a millimetre.
-	//
-	// VOICES IS A KNOB WITH SIX DETENTS rather than a column of lamps: it is a count, and a
-	// count reads round a dial the way a number reads. It carries a number at every detent, so
-	// the count can be set by looking at it.
-	knob("p.voices", 15.f, 30.f, CompModule::P_VOICES, "VOICES", 6,
+	// The positions in the first band are the ones arrived at in the panel editor and folded
+	// back in here. A column is placed by the CENTRE of its lamps, so a position saved by the
+	// editor — which records the corner — has the lamp radius and half the column's height
+	// added back.
+
+	// ---- the notes ----
+	rule("rule.notes", 21.f);
+	label("h.notes", 50.8f, 24.f, "THE NOTES", Panel::CENTRE, true, 0.f);
+
+	knob("p.voices", 14.f, 19.5f, CompModule::P_VOICES, "VOICES", 6,
 		{"1", "2", "3", "4", "5", "6"});
-	knob("p.centre", 15.f, 49.f, CompModule::P_CENTRE, "REGISTER", 3);
-	radio("p.bass", 6.f, 65.2f, CompModule::P_BASS, "ROOT",
-		{"ROOTLESS", "CHORD HAS\nTHE ROOT"}, 6.5f);
+	knob("p.centre", 32.f, 20.f, CompModule::P_CENTRE, "REGISTER", 3);
+	col("p.span", 45.2f, 21.1f, CompModule::P_SPAN, "SPAN", {"1", "2", "3"});
+	col("p.spread", 57.2f, 20.6f, CompModule::P_SPREAD, "SPREAD",
+		{"CLOSED", "DROP 2", "OPEN"});
+	col("p.colour", 78.2f, 20.6f, CompModule::P_COLOUR, "COMPLEXITY",
+		{"TRIAD", "7THS", "EXT"});
+	knob("p.lead", 15.5f, 41.f, CompModule::P_LEAD, "VOICE LEADING", 2);
+	col("p.bass", 40.7f, 43.4f, CompModule::P_BASS, "ROOT", {"ROOTLESS", "WITH ROOT"});
 
-	radio("p.span", 32.f, 24.f, CompModule::P_SPAN, "SPAN",
-		{"1 OCT", "2 OCT", "3 OCT"}, 5.5f);
-	radio("p.spread", 32.f, 45.f, CompModule::P_SPREAD, "SPREAD",
-		{"CLOSE", "DROP 2", "OPEN"}, 5.5f);
+	// ---- the playing ----
+	rule("rule.playing", 52.5f);
+	label("h.playing", 50.8f, 55.5f, "THE PLAYING", Panel::CENTRE, true, 0.f);
 
-	knob("p.lead", 72.f, 28.f, CompModule::P_LEAD, "VOICE LEADING", 2);
+	// PATTERN FIRST, because Held is one of its entries and nothing else in the band does
+	// anything while it is chosen.
+	col("p.rate", 7.7f, 71.7f, CompModule::P_RATE, "RATE",
+		{"BAR", "2 BEATS", "1/BEAT", "2/BEAT", "3/BEAT", "4/BEAT"});
+	col("p.hold", 33.7f, 66.6f, CompModule::P_HOLD, "HOLD", {"NONE", "BASS", "BASS & NEXT"});
+	plate("p.pattern", 67.f, 62.f, CompModule::P_PATTERN, "PATTERN", 11);
+	// ACCENT IS PART OF THE PLAYING rather than of the feel: it says which step is struck hard,
+	// and a step is what the band above it is about. How much of an accent is the feel's, and
+	// that knob is in the band below.
+	col("p.accent", 81.7f, 88.2f, CompModule::P_ACCENT, "ACCENT",
+		{"EVEN", "METRIC", "DOWNBEAT", "BACKBEAT", "OFFBEAT", "PUSH"});
+	knob("p.gate", 33.f, 83.5f, CompModule::P_GATE, "GATE", 2);
+	knob("p.strum", 57.f, 83.5f, CompModule::P_STRUM, "STRUM", 2);
 
-	// HOW MUCH OF THE CHORD, under the leading knob, because it is the other half of what a
-	// style of accompaniment is as far as the notes are concerned.
-	radio("p.colour", 56.f, 45.f, CompModule::P_COLOUR, "CHORD",
-		{"TRIAD", "SEVENTHS", "EXTENSIONS"}, 5.5f);
+	// ---- the feel ----
+	rule("rule.feel", 99.f);
+	label("h.feel", 50.8f, 102.f, "THE FEEL", Panel::CENTRE, true, 0.f);
 
-	label("h.rhythm", 45.f, 76.3f, "RHYTHM", Panel::CENTRE, false, 7.f);
-
-	// THE FOUR THE RHYTHM NEEDED THAT THE PANEL DID NOT YET HAVE. Placed where there was room
-	// rather than where they belong — the arrangement is a thing to do by eye in the editor.
-	radio("p.rhythm", 52.f, 64.f, CompModule::P_RHYTHM, "RHYTHM", {"OFF", "ON"}, 5.5f);
-	radio("p.rate", 68.f, 64.f, CompModule::P_RATE, "PER BEAT", {"1", "2", "3", "4"}, 5.f);
-	knob("p.strum", 88.f, 66.f, CompModule::P_STRUM, "STRUM", 2);
-	knob("p.balance", 88.f, 100.f, CompModule::P_BALANCE, "BALANCE", 2);
-
-	// UP AND DOWN RATHER THAN BROKEN UP AND BROKEN DOWN. The group is called Pattern and the
-	// entry above them is Block, which says what kind of thing they are; the longer wording made
-	// the column wide enough to reach the one beside it.
-	radio("p.pattern", 6.f, 83.f, CompModule::P_PATTERN, "PATTERN",
-		{"BLOCK", "UP", "DOWN", "ALBERTI", "WALTZ"}, 4.2f);
-	radio("p.accent", 30.f, 83.f, CompModule::P_ACCENT, "ACCENT",
-		{"EVEN", "METRIC", "DOWNBEAT", "BACKBEAT", "OFFBEAT", "PUSH"}, 4.2f);
-
-	knob("p.gate", 60.f, 86.f, CompModule::P_GATE, "GATE", 2);
-	knob("p.amount", 78.f, 86.f, CompModule::P_AMOUNT, "AMOUNT", 2);
-	knob("p.human", 94.f, 86.f, CompModule::P_HUMAN, "HUMAN", 2);
+	knob("p.amount", 14.f, 110.f, CompModule::P_AMOUNT, "AMOUNT", 2);
+	knob("p.human", 33.f, 110.f, CompModule::P_HUMAN, "HUMAN", 2);
+	knob("p.balance", 52.f, 110.f, CompModule::P_BALANCE, "BALANCE", 2);
+	knob("p.pedal", 71.f, 110.f, CompModule::P_PEDAL, "PEDAL", 2);
 
 	// TWO JACKS, one in and one out, at opposite ends of the row so that a chain reads left to
 	// right. Everything the module is handed and everything it plays travels on those two.

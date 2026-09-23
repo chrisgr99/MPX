@@ -1,4 +1,6 @@
 #include "plugin.hpp"
+
+#include <algorithm>
 #include <cmath>
 
 namespace px {
@@ -111,16 +113,21 @@ void Panel::draw(const DrawArgs& args) {
 
 	// The title band sits inside the border rather than under it: drawn to the panel's edge it
 	// covered the line along the top, which read as a border someone had forgotten to finish.
+	//
+	// SHALLOWER WITH NOTHING ABOVE THE NAME. The band was tall enough for two lines because it
+	// carried the maker's name over the module's; with the module's name alone it is as tall as
+	// that name needs, and the panel below it gains what is left.
+	const float bandH = titleAbove.empty() ? 17.f : 25.f;
 	nvgBeginPath(args.vg);
-	nvgRect(args.vg, 4.f, 4.f, box.size.x - 8.f, 25.f);
+	nvgRect(args.vg, 4.f, 4.f, box.size.x - 8.f, bandH);
 	nvgFillColor(args.vg, nvgRGB(0x24, 0x2a, 0x33));
 	nvgFill(args.vg);
 
 	nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle : font->handle);
 	nvgFillColor(args.vg, PANEL_INK);
 	if (titleAbove.empty()) {
-		nvgFontSize(args.vg, 15);
-		panelText(args.vg, box.size.x / 2, 16, title.c_str(), crisp);
+		nvgFontSize(args.vg, 13.5f);
+		panelText(args.vg, box.size.x / 2, 4.f + bandH / 2.f, title.c_str(), crisp);
 	}
 	else {
 		nvgFontSize(args.vg, 8.f);
@@ -318,6 +325,8 @@ void JackPaint::draw(const DrawArgs& args) {
 
 /** In pixels. Large enough to read as a lamp at rack distance rather than as a dot. */
 static const float LAMP_R = 6.5f;
+/** How far a name under a lamp sits from the lamp's edge: close, so the two read as one. */
+static const float NAME_GAP = 1.5f;
 
 /** Room for the longest name, estimated from its characters: a text width wants a font and a
 drawing context, and a target that is a little generous costs nothing. */
@@ -759,13 +768,26 @@ math::Vec Lamps::lampPos(int i) {
 		: math::Vec(lead + LAMP_R, LAMP_R + i * pitch);
 }
 
+/** A ROW OF LAMPS WITH ITS NAMES UNDERNEATH, which is what CENTRE means on a horizontal group:
+a row of numbered positions reads as a row, with each number under the lamp it belongs to, and
+nothing beside the row to make it wider than the lamps themselves. */
+bool Lamps::namesBelow() const {
+	return horizontal && labelSide == Panel::CENTRE;
+}
+
 void Lamps::fit() {
 	const int n = std::max(1, (int) names.size());
 	const float along = 2.f * LAMP_R + (n - 1) * pitch;
 	const float names_w = lampsNamesWidth(names, nameSize);
 	const bool sided = (labelSide == Panel::RIGHT)
 		|| (!horizontal && labelSide == Panel::LEFT);
-	const float across = 2.f * LAMP_R + (sided ? names_w : 0.f);
+	float across = 2.f * LAMP_R + (sided ? names_w : 0.f);
+	if (namesBelow()) {
+		size_t lines = 1;
+		for (const std::string& name : names)
+			lines = std::max(lines, (size_t) std::count(name.begin(), name.end(), '\n') + 1);
+		across = 2.f * LAMP_R + NAME_GAP + panelLineStep(nameSize) * (float) lines;
+	}
 	box.size = horizontal ? math::Vec(along, across) : math::Vec(across, along);
 }
 
@@ -838,6 +860,24 @@ void Lamps::draw(const DrawArgs& args) {
 		// A NAME MAY BE SEVERAL LINES, split on the newlines the slash rule writes, and set
 		// about the lamp's own line rather than downward from it. Short lines beside a lamp
 		// read better than one long one that pushes the panel wider than it needs to be.
+		if (namesBelow()) {
+			// A NAME MAY BE SEVERAL LINES here as well, written down from under the lamp.
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			const float step = panelLineStep(nameSize);
+			float ty = c.y + LAMP_R + NAME_GAP + step / 2.f;
+			size_t from = 0;
+			while (true) {
+				const size_t brk = names[i].find('\n', from);
+				const std::string line = names[i].substr(from,
+					brk == std::string::npos ? std::string::npos : brk - from);
+				panelText(args.vg, c.x, ty, line.c_str(), true);
+				if (brk == std::string::npos)
+					break;
+				from = brk + 1;
+				ty += step;
+			}
+			continue;
+		}
 		const bool onLeft = labelsOutward ? (i == 0) : (labelSide == Panel::LEFT);
 		const float tx = onLeft ? c.x - LAMP_R - 5.f : c.x + LAMP_R + 5.f;
 		nvgTextAlign(args.vg, (onLeft ? NVG_ALIGN_RIGHT : NVG_ALIGN_LEFT) | NVG_ALIGN_MIDDLE);
@@ -856,6 +896,14 @@ void Lamps::draw(const DrawArgs& args) {
 		for (size_t k = 0; k < lines.size(); k++)
 			panelText(args.vg, tx, top + step * (float) k, lines[k].c_str(), true);
 	}
+}
+
+void Lamps::onEnter(const EnterEvent& e) {
+	(void) e;   // not passed on: see plugin.hpp
+}
+
+void Lamps::onLeave(const LeaveEvent& e) {
+	(void) e;
 }
 
 void Lamps::onButton(const ButtonEvent& e) {

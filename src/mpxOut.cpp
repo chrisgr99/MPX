@@ -572,7 +572,6 @@ static Layout mpxOutLayout() {
 	Layout L;
 	L.hp = 8.f;
 	L.title = "mpxOut";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,

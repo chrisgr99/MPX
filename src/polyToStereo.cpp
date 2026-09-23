@@ -154,7 +154,6 @@ static Layout polyStereoLayout() {
 	Layout L;
 	L.hp = 8.f;
 	L.title = "polyToStereo";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	static const float NAME_HALF = 1.22f, KNOB_EDGE = 4.8f, PORT_EDGE = 4.01f, GAP = 2.f;
 

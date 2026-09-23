@@ -346,7 +346,6 @@ static Layout monitorLayout() {
 	Layout L;
 	L.hp = 14.f;
 	L.title = "mpxMonitor";
-	L.titleAbove = "DREAMER DEVELOPMENT";
 
 	auto label = [&](const std::string& key, float x, float y, const std::string& text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,

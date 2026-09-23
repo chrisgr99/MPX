@@ -308,6 +308,14 @@ struct Lamps : ParamWidget {
 	something an author should have to work out. The names are covered too, so clicking one
 	chooses it — a word beside a lamp is part of the same control. */
 	void fit();
+	/** Whether the names go under the lamps rather than beside them. */
+	bool namesBelow() const;
+	/** NO TOOLTIP. Every other control needs one: a knob's position is a number nobody can read
+	off the panel. A lamp group already shows its choices in words and lights the one in force,
+	so a tooltip repeats what is under it — and, drawn large, covers the very lamps being read.
+	Skipping the enter and leave events is what stops one being made at all. */
+	void onEnter(const EnterEvent& e) override;
+	void onLeave(const LeaveEvent& e) override;
 };
 
 /** Painted OVER the ports rather than behind them, because a jack's colour belongs on the jack.
