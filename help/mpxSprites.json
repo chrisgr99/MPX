@@ -1,28 +1,137 @@
 {
   "plugin": "DreamerMPX",
   "module": "mpxSprites",
-  "description": "Moves one to four sprites over a picture and reads a force field from the picture's colours to steer them. The picture is drawn on the panel and the sprites are seen crossing it. Load a picture from the right-click menu; the picture itself is saved in the patch, so a patch sent to somebody else looks the same.",
+  "description": "Moves one to four sprites over a picture, steers them with a force field read from the picture's colours, and plays a note for each sprite whenever its own timer fires. What a sprite reads becomes the note's contour, and the harmony on the cable decides what that contour means, so the same picture plays the same shape on different harmony. The picture is drawn on the panel and the sprites are seen crossing it. Load one from the right-click menu; it is saved in the patch itself, so a patch sent to somebody else looks and sounds the same.",
   "params": [
-    {"ids": [0], "name": "Sprites", "text": "How many sprites move over the picture, one to four. Each has its own position, heading and colour, and each is placed and aimed separately. Sprites above the number chosen keep their positions and start again from them when the number is raised."},
-    {"ids": [1], "name": "Top speed", "text": "Puts a ceiling on how fast a sprite may travel. A sprite going slower than the ceiling is not touched by this knob at all: it accelerates and turns exactly as the picture tells it to. One that reaches the ceiling goes no faster, however hard the picture pushes. Lowering it while the sprites are running clips back whatever is already going faster than the new ceiling, and raising it again lets the force build their speed back up."},
-    {"ids": [2], "name": "Drift", "text": "A small random wander added to each sprite's heading. It is there to stop a sprite becoming stuck in a region where the picture pushes it nowhere, and for nothing else. At the full turn it moves a sprite's speed by a few per cent in a second, which is felt over half a minute rather than seen over one. What makes a sprite move is the picture."},
-    {"ids": [3], "name": "Run", "text": "Holds the sprites still or lets them go. Held, they keep their positions and headings and nothing is lost. Placing and aiming a sprite works either way."},
-    {"ids": [4], "name": "Rewind", "text": "Puts every sprite back where it started. Started again, each retraces exactly the path it took before, the drift included: the random stream the drift uses is wound back with the sprites. The starting point is taken afresh whenever you place or aim a sprite by hand."},
-    {"ids": [5], "name": "Field", "text": "How the force on a sprite is read from the picture. Colour: the hue of the region under the sprite gives the direction and its saturation gives the strength, with the picture's own average push subtracted so that what steers a sprite is how a region differs from the picture rather than what the picture mostly is. Slope: the direction in which brightness changes fastest, taken from the pixels either side, which follows the edges in the picture and has no average push in it at all."},
-    {"ids": [6], "name": "Force", "text": "How hard the picture pushes. At nought the sprites travel in straight lines and bounce off the walls. At the full turn a strongly coloured region takes a sprite from standing to its top speed in about a sixth of a second, so the picture throws the sprites about rather than nudging them."},
-    {"ids": [7], "name": "Along", "text": "Turns the force through a right angle, from across whatever the picture says to along it. At nought a sprite runs straight at an edge or a colour boundary; at the full turn it runs along one, orbiting a bright shape or following a horizon, and cannot settle in a corner. Part way is the spiral between the two, which is usually the most interesting."},
-    {"ids": [8], "name": "Turn", "text": "Rotates the whole field, so a picture whose colours all push one way can be made to push another. Minus 180 to 180 degrees."}
+    {
+      "ids": [
+        0
+      ],
+      "name": "Sprites",
+      "text": "How many sprites move over the picture, one to four. Each has its own position, heading and colour, and each is placed and aimed separately. Sprites above the number chosen keep their positions and start again from them when the number is raised."
+    },
+    {
+      "ids": [
+        1
+      ],
+      "name": "Top speed",
+      "text": "Puts a ceiling on how fast a sprite may travel. A sprite going slower than the ceiling is not touched by this knob at all: it accelerates and turns exactly as the picture tells it to. One that reaches the ceiling goes no faster, however hard the picture pushes. Lowering it while the sprites are running clips back whatever is already going faster than the new ceiling, and raising it again lets the force build their speed back up."
+    },
+    {
+      "ids": [
+        2
+      ],
+      "name": "Drift",
+      "text": "A small random wander added to each sprite's heading. It is there to stop a sprite becoming stuck in a region where the picture pushes it nowhere, and for nothing else. At the full turn it moves a sprite's speed by a few per cent in a second, which is felt over half a minute rather than seen over one. What makes a sprite move is the picture."
+    },
+    {
+      "ids": [
+        3
+      ],
+      "name": "Run",
+      "text": "Holds the sprites still or lets them go. Held, they keep their positions and headings and nothing is lost. Placing and aiming a sprite works either way."
+    },
+    {
+      "ids": [
+        4
+      ],
+      "name": "Rewind",
+      "text": "Puts every sprite back where it started. Started again, each retraces exactly the path it took before, the drift included: the random stream the drift uses is wound back with the sprites. The starting point is taken afresh whenever you place or aim a sprite by hand."
+    },
+    {
+      "ids": [
+        5
+      ],
+      "name": "Field",
+      "text": "How the force on a sprite is read from the picture. Colour: the hue of the region under the sprite gives the direction and its saturation gives the strength, with the picture's own average push subtracted so that what steers a sprite is how a region differs from the picture rather than what the picture mostly is. Slope: the direction in which brightness changes fastest, taken from the pixels either side, which follows the edges in the picture and has no average push in it at all."
+    },
+    {
+      "ids": [
+        6
+      ],
+      "name": "Force",
+      "text": "How hard the picture pushes. At nought the sprites travel in straight lines and bounce off the walls. At the full turn a strongly coloured region takes a sprite from standing to its top speed in about a sixth of a second, so the picture throws the sprites about rather than nudging them."
+    },
+    {
+      "ids": [
+        7
+      ],
+      "name": "Along",
+      "text": "Turns the force through a right angle, from across whatever the picture says to along it. At nought a sprite runs straight at an edge or a colour boundary; at the full turn it runs along one, orbiting a bright shape or following a horizon, and cannot settle in a corner. Part way is the spiral between the two, which is usually the most interesting."
+    },
+    {
+      "ids": [
+        8
+      ],
+      "name": "Turn",
+      "text": "Rotates the whole field, so a picture whose colours all push one way can be made to push another. Minus 180 to 180 degrees."
+    },
+    {
+      "ids": [
+        9
+      ],
+      "name": "Slowest",
+      "text": "The slowest a sprite's timer may run, in notes a second. This is the rate a sprite settles to over the darkest part of the picture. It has no effect while a cable is in the gate input."
+    },
+    {
+      "ids": [
+        10
+      ],
+      "name": "Fastest",
+      "text": "The fastest a sprite's timer may run, in notes a second. This is the rate a sprite reaches over the brightest part of the picture. The two limits are spaced geometrically, so halfway between them is a ratio rather than an average. It has no effect while a cable is in the gate input."
+    },
+    {
+      "ids": [
+        11
+      ],
+      "name": "Depth",
+      "text": "How far the picture moves a sprite's rate between the two limits. At nought every sprite fires at the middle rate whatever it is standing on. Turned up, a dark region slows the sprite towards the slowest setting and a bright one quickens it towards the fastest, which is where the sudden changes come from: a sprite crosses a boundary rather than easing over it. This has no effect while a cable is in the gate input, which takes the timers over entirely."
+    },
+    {
+      "ids": [
+        12
+      ],
+      "name": "Level",
+      "text": "How hard each note is sent, which the instrument at the far end reads as loudness or as touch."
+    },
+    {
+      "ids": [
+        13
+      ],
+      "name": "Register",
+      "text": "Moves the whole range the sprites play in, up or down two volts. It is the centre of the range; how wide the range is comes from Spread over, in the right-click menu."
+    }
   ],
   "inputs": [
-    {"ids": [0], "name": "MPX IN", "text": "The MPX chart: notes, harmony, chord voicing and pedals from an upstream module. It passes straight through to the output. The harmony on it will decide what the sprites play once they send notes."}
+    {
+      "ids": [
+        0
+      ],
+      "name": "MPX IN",
+      "text": "The MPX chart: notes, harmony, chord voicing and pedals from an upstream module. Everything on it passes straight through to the output, and the harmony on it decides what the sprites play."
+    },
+    {
+      "ids": [
+        1
+      ],
+      "name": "Gate",
+      "text": "Plays the sprites from outside. A note starts when this gate rises and ends when it falls, so a clock with a gate length decides both when each sprite sounds and how long for. While a cable is here the sprites' own timers are put aside entirely, and the slowest, fastest and depth knobs have nothing to do with it. Polyphonic, a channel for each sprite: channel one is sprite one, and a cable with a single channel speaks for all of them. Gates play whether or not the sprites are running, since run says whether they wander rather than whether they sound — so four sprites standing still on chosen spots of a picture can be played from a sequencer. Which note sounds still comes from the picture under the sprite and the harmony on the chart."
+    }
   ],
   "outputs": [
-    {"ids": [0], "name": "MPX OUT", "text": "The MPX chart, carrying everything that came in. The sprites do not yet add notes of their own."}
+    {
+      "ids": [
+        0
+      ],
+      "name": "MPX OUT",
+      "text": "The MPX chart, carrying everything that came in and the sprites' own notes with it. So this module can sit anywhere in a chain rather than only at the head of one."
+    }
   ],
   "notes": [
     "Drag a sprite to place it. It is held still while your hand is on it and carries on from wherever you let go, and that is also where rewind will put it back to.",
     "A sprite is drawn in the colour of the picture underneath it, so the colour that is steering it and the way it is moving are on the screen together. The ring round it is what keeps it visible when it is standing on its own colour: its tone is set a fixed distance away from the brightness of the picture just outside the sprite, light on a dark region and dark on a pale one, and it slides from one to the other over about a fifth of a second rather than switching, so a sprite crossing a boundary does not blink.",
     "Any image file is resampled to a square of 1024 by 1024 when it is loaded, whatever shape it was, by averaging each block rather than by sampling it. The field and the drawing therefore always work in the same square.",
+    "A sprite's ring thickens for a moment when it sounds a note, so which sprite played what is visible with four of them wandering about.",
     "A bounce off a wall does nothing but turn the sprite round: no note and no trigger. It also flips the sign the picture's force is multiplied by for that axis, so a region that drove a sprite into a wall drives it away from that wall afterwards rather than pinning it there."
   ],
   "menu": [
@@ -30,10 +139,17 @@
     "Take the picture out: leaves the module with no picture. The sprites keep moving; nothing pushes them.",
     "Reduce glare: takes the brightness out of large pale regions of the picture, leaving small bright things and local contrast alone. Off, gentle, normal or strong. It changes how the picture looks and nothing else — the force field always reads the original.",
     "Direction from: which of a pixel's numbers gives the direction of the force in colour mode. Hue by default, since a region's hue is what a person would call its colour.",
-    "Strength from: which number gives the strength of the force, and which one the slope is taken of in slope mode. Saturation by default."
+    "Strength from: which number gives the strength of the force, and which one the slope is taken of in slope mode. Saturation by default.",
+    "Note from: which number a sprite reads when its timer fires. That reading is the note's contour and also drives the rate. Value by default, which is how light or dark a region is.",
+    "Spread over: how many octaves the contour is spread across, one to five. Two by default. The register knob moves that range up and down."
   ],
   "expects": {
-    "inputs": {"0": "MPX chart · from any MPX module"},
-    "outputs": {"0": "MPX chart · to any MPX module"}
+    "inputs": {
+      "0": "MPX chart · from any MPX module",
+      "1": "gate · high above 1V · polyphonic, one channel a sprite"
+    },
+    "outputs": {
+      "0": "MPX chart · to any MPX module"
+    }
   }
 }

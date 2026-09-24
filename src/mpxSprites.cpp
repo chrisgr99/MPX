@@ -5,9 +5,13 @@ each sprite sending a note when its own timer fires. The picture is on the panel
 are watched moving across it, which is half the point: a path that looks interesting sounds
 interesting. See docs/sprites.md.
 
-THIS IS THE THIRD STAGE: the picture, one to four sprites moving over it under a force field read
-from its colours, a transport that can rewind them to retrace a path exactly, and the drift.
-Nothing sounds yet: the note timers come in the stage after this.
+THIS IS THE FOURTH STAGE: the picture, the sprites and the field that drives them, the transport
+that can rewind a run so it retraces exactly, and now the notes — a timer on each sprite, its rate
+between two limits and moved by what the sprite reads, the reading carried as a contour and turned
+into a pitch by the harmony on the cable.
+
+STILL TO COME: a sprite taking a voice of the chord instead of a contour, and per-sprite controls
+that follow a selection.
 */
 #include "plugin.hpp"
 #include "NoteBus.hpp"
@@ -134,8 +138,9 @@ struct Sprite {
 
 struct SpritesModule : Module, NoteSource, NoteSink {
 	enum ParamId { P_COUNT, P_SPEED, P_DRIFT, P_RUN, P_REWIND,
-		P_FIELD, P_FORCE, P_BLEND, P_TURN, NUM_PARAMS };
-	enum InputId { I_CHART, NUM_INPUTS };
+		P_FIELD, P_FORCE, P_BLEND, P_TURN,
+		P_SLOW, P_FAST, P_DEPTH, P_LEVEL, P_REGISTER, NUM_PARAMS };
+	enum InputId { I_CHART, I_GATE, NUM_INPUTS };
 	enum OutputId { O_NOTES, NUM_OUTPUTS };
 	enum LightId { NUM_LIGHTS };
 
@@ -205,6 +210,12 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	column has no room for three more choosers. */
 	std::atomic<int> steerChannel{CH_HUE};
 	std::atomic<int> pushChannel{CH_SAT};
+	/** What a sprite reads when its timer fires, which becomes the note's contour and drives its
+	rate. Value by default: how light or dark a region is, which is what the eye follows. */
+	std::atomic<int> readChannel{CH_VAL};
+	/** How many octaves the contour is spread across. A menu setting: chosen once, and the
+	register knob is what moves the line about while playing. */
+	std::atomic<int> spanOctaves{2};
 
 	/** THE PICTURE'S OWN AVERAGE PUSH, taken off every colour reading.
 
@@ -327,6 +338,14 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		configParam(P_FORCE, 0.f, 1.f, 0.5f, "Force", "%", 0.f, 100.f);
 		configParam(P_BLEND, 0.f, 1.f, 0.f, "Across to along", "%", 0.f, 100.f);
 		configParam(P_TURN, -180.f, 180.f, 0.f, "Turn", "°");
+		// THE TWO LIMITS THE TIMER LIVES BETWEEN, in notes a second, set as the logarithm of the
+		// rate so that the slow end of each knob is not crowded into a few degrees of its turn.
+		configParam(P_SLOW, std::log2(0.05f), std::log2(8.f), std::log2(0.5f), "Slowest");
+		configParam(P_FAST, std::log2(0.2f), std::log2(40.f), std::log2(6.f), "Fastest");
+		configParam(P_DEPTH, 0.f, 1.f, 0.7f, "Rate from the picture", "%", 0.f, 100.f);
+		configParam(P_LEVEL, 0.f, 1.f, 0.7f, "Level", "%", 0.f, 100.f);
+		configParam(P_REGISTER, -2.f, 2.f, 0.f, "Register", " V");
+		configInput(I_GATE, "Gate");
 		configInput(I_CHART, "MPX chart");
 		configOutput(O_NOTES, "MPX note");
 		scatter();
@@ -522,6 +541,8 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		json_object_set_new(rootJ, "glare", json_integer(glare));
 		json_object_set_new(rootJ, "steerChannel", json_integer(steerChannel.load()));
 		json_object_set_new(rootJ, "pushChannel", json_integer(pushChannel.load()));
+		json_object_set_new(rootJ, "readChannel", json_integer(readChannel.load()));
+		json_object_set_new(rootJ, "spanOctaves", json_integer(spanOctaves.load()));
 		if (!picture.file.empty()) {
 			json_object_set_new(rootJ, "picture",
 				json_string(bytesToText(picture.file).c_str()));
@@ -568,6 +589,10 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			steerChannel.store(math::clamp((int) json_integer_value(v), 0, NUM_CHANNELS - 1));
 		if (json_t* v = json_object_get(rootJ, "pushChannel"))
 			pushChannel.store(math::clamp((int) json_integer_value(v), 0, NUM_CHANNELS - 1));
+		if (json_t* v = json_object_get(rootJ, "readChannel"))
+			readChannel.store(math::clamp((int) json_integer_value(v), 0, NUM_CHANNELS - 1));
+		if (json_t* v = json_object_get(rootJ, "spanOctaves"))
+			spanOctaves.store(math::clamp((int) json_integer_value(v), 1, 5));
 		const char* text = json_string_value(json_object_get(rootJ, "picture"));
 		const char* called = json_string_value(json_object_get(rootJ, "pictureName"));
 		if (!text)
@@ -591,6 +616,173 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	}
 
 	dsp::SchmittTrigger rewindTrigger;
+
+	/** WHAT EACH SPRITE LAST READ, taken on the physics clock rather than every sample. The
+	reading needs a colour conversion and nothing musical happens between two of them. */
+	float lastRead[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+	/** How far through its interval each sprite's timer has got, nought to one. */
+	float notePhase[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+	/** The note each sprite has sounding, and how long is left of it. */
+	int64_t noteHandle[MAX_SPRITES] = {0, 0, 0, 0};
+	float noteEndIn[MAX_SPRITES] = {-1.f, -1.f, -1.f, -1.f};
+	std::atomic<float> firing[MAX_SPRITES];   /**< Flashes on a note, for the panel. */
+	/** The gate input, a sprite at a time: its state, whether it was high last sample, and how
+	long it has been held, which becomes the hint offered with the next note. */
+	dsp::SchmittTrigger gateTrigger[MAX_SPRITES];
+	bool gateWas[MAX_SPRITES] = {false, false, false, false};
+	float gateHeld[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+
+	/** HOW OFTEN A SPRITE FIRES, in notes a second.
+
+	BETWEEN A FLOOR AND A CEILING, and geometrically rather than evenly between them: rate is
+	heard as a ratio, so halfway between half a note a second and eight should be two and not four
+	and a quarter.
+
+	WHERE BETWEEN THEM is what the sprite reads. The middle of the two limits is where the depth
+	knob leaves it with nothing to say, and the reading swings it from there by as much as that
+	knob allows: a dark region towards the floor and a bright one towards the ceiling. */
+	float rateFor(int i) {
+		const float slow = std::exp2(params[P_SLOW].getValue());
+		float fast = std::exp2(params[P_FAST].getValue());
+		if (fast < slow)
+			fast = slow;
+		const float depth = params[P_DEPTH].getValue();
+		const float where = math::clamp(0.5f + depth * (lastRead[i] - 0.5f) * 2.f, 0.f, 1.f);
+		return slow * std::pow(fast / slow, where);
+	}
+
+	/** THE PITCH A READING MEANS.
+
+	THE READING IS A CONTOUR, NOT A NOTE. Nought is the bottom of the line's range and one the
+	top, and the harmony on the cable says what lies between: the notes of the chord sounding,
+	stacked up through however many octaves the span is set to. The same sprite over a different
+	chart plays the same shape on different harmony, which is the whole point of reading a picture
+	rather than writing a tune.
+
+	WITH NO CHART there is no chord to ask, so it falls back to a major scale from C. A module
+	that went silent when nothing was patched to it would be a module nobody could try. */
+	float pitchFor(float contour, const Harmony& h) {
+		int pcs[16];
+		int n = 0;
+		if (h.valid)
+			n = chordPitchClasses(h.current, h.key, pcs);
+		if (n <= 0) {
+			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
+			for (int i = 0; i < 7; i++)
+				pcs[i] = MAJOR[i];
+			n = 7;
+		}
+		const int span = math::clamp(spanOctaves.load(), 1, 5);
+		const int steps = n * span;
+		const float low = params[P_REGISTER].getValue() - 0.5f * (float) span;
+		const int baseOct = (int) std::floor(low);
+		int k = (int) std::floor(math::clamp(contour, 0.f, 1.f) * steps);
+		k = math::clamp(k, 0, steps - 1);
+		return (float) baseOct + (float) (k / n) + (float) pcs[k % n] / 12.f;
+	}
+
+	void endNote(int i) {
+		if (slot >= 0 && noteHandle[i] != 0) {
+			Event off;
+			off.kind = Event::OFF;
+			off.handle = noteHandle[i];
+			busPush(slot, off);
+		}
+		noteHandle[i] = 0;
+		noteEndIn[i] = -1.f;
+	}
+
+	/** One sprite's note. */
+	void fire(int i, float seconds, const Harmony& h) {
+		if (slot < 0)
+			return;
+		endNote(i);
+		Event e;
+		e.kind = Event::ON;
+		e.handle = noteHandle[i] = mintHandle();
+		e.contour = math::clamp(lastRead[i], 0.f, 1.f);
+		e.pitch = pitchFor(e.contour, h);
+		e.level = math::clamp(params[P_LEVEL].getValue(), 0.f, 1.f);
+		// LONG ENOUGH TO BE HEARD AND SHORT ENOUGH TO GET OUT OF THE WAY. Most of the gap to the
+		// next note, so a quick sprite runs and a slow one sustains, with a lid on it: a sprite
+		// firing once every ten seconds should not hold a note for nine of them.
+		e.duration = math::clamp(seconds * 0.85f, 0.01f, 4.f);
+		busPush(slot, e);
+		// WHO ENDS IT is the caller's business: a note of the timer's own ends after its time, a
+		// gated one when the gate falls.
+		noteEndIn[i] = -1.f;
+		firing[i].store(1.f);
+	}
+
+	/** THE TIMERS, one a sprite, stepped every sample so a note lands where it should rather than
+	on the nearest physics tick.
+
+	OR NOT THE TIMERS AT ALL. With a cable in the gate input the sprites' own timers are put aside
+	entirely and the gates say when each note begins and how long it lasts: a note starts when its
+	gate rises and ends when the gate falls. A clock with a gate length then plays the sprites
+	directly, and the two rate knobs and the depth knob have nothing to do with it.
+
+	A CHANNEL PER SPRITE: channel one is sprite one, and a cable with a single channel speaks for
+	all of them.
+
+	AND IT PLAYS WHETHER OR NOT THE SPRITES ARE MOVING. Run says whether they wander, which is a
+	different question from whether they sound; four sprites standing still on chosen spots of a
+	picture, played by gates, is a reasonable thing to want. The sprites' own timers do stop with
+	them, because those timers are part of the wandering. */
+	void stepNotes(const ProcessArgs& args, const Harmony& h, bool running) {
+		const int count = spriteCount();
+		const bool gated = inputs[I_GATE].isConnected();
+		const int channels = gated ? std::max(1, inputs[I_GATE].getChannels()) : 0;
+
+		for (int i = 0; i < MAX_SPRITES; i++) {
+			if (firing[i].load() > 0.f)
+				firing[i].store(std::max(0.f, firing[i].load() - args.sampleTime * 6.f));
+
+			if (i >= count) {
+				endNote(i);
+				continue;
+			}
+
+			if (gated) {
+				const int c = (channels <= 1) ? 0 : std::min(i, channels - 1);
+				// The Schmitt is for its hysteresis, so a gate with a slow edge or a little noise
+				// on it does not chatter; the rise and fall are taken from its state.
+				gateTrigger[i].process(inputs[I_GATE].getVoltage(c), 0.1f, 1.f);
+				const bool high = gateTrigger[i].isHigh();
+				if (high && !gateWas[i]) {
+					// HOW LONG THE NOTE WILL LAST IS NOT KNOWN YET — the gate has only just
+					// risen. The last gate's length is offered as the hint, since a clock's
+					// gates are all much of a muchness, and the note is ended by the gate falling
+					// whatever the hint said.
+					fire(i, gateHeld[i] > 0.f ? gateHeld[i] : 0.25f, h);
+					gateHeld[i] = 0.f;
+				}
+				if (high)
+					gateHeld[i] += args.sampleTime;
+				else if (gateWas[i])
+					endNote(i);
+				gateWas[i] = high;
+				continue;
+			}
+			gateWas[i] = false;
+
+			if (noteEndIn[i] >= 0.f) {
+				noteEndIn[i] -= args.sampleTime;
+				if (noteEndIn[i] <= 0.f)
+					endNote(i);
+			}
+			if (!running)
+				continue;
+			const float rate = rateFor(i);
+			notePhase[i] += rate * args.sampleTime;
+			if (notePhase[i] >= 1.f) {
+				notePhase[i] -= std::floor(notePhase[i]);
+				fire(i, 1.f / std::max(rate, 0.01f), h);
+				// The gate is what ends a gated note; a note of the timer's own ends on time.
+				noteEndIn[i] = std::min(1.f / std::max(rate, 0.01f) * 0.85f, 4.f);
+			}
+		}
+	}
 
 	void stepPhysics(const ProcessArgs& args) {
 		// THE TRANSPORT, looked at every sample so a button press is never missed, whatever the
@@ -631,6 +823,8 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 				for (int n = 0; n < due; n++)
 					tick(i, dt, limit, drift, force);
 			}
+			lastRead[i] = picture.has()
+				? channelAt(picture, sprites[i].x, sprites[i].y, readChannel.load()) : 0.f;
 			publish(i);
 		}
 	}
@@ -643,16 +837,18 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			for (int i = 0; i < n; i++)
 				reader.add(wantSlots[i].load(), wantGenerations[i].load());
 		}
-		// THE CHART PASSES THROUGH while this module has nothing of its own to send: the notes
-		// come in the fourth stage.
+		// THE CHART PASSES THROUGH, and the sprites' own notes go out with it, so this module can
+		// sit anywhere in a chain rather than only at the head of one.
 		outputs[O_NOTES].setChannels(1);
 		outputs[O_NOTES].setVoltage(0.f);
 		Event e;
 		while (reader.next(e))
 			busPush(slot, e);
 		Harmony h;
-		if (reader.harmony(h))
+		const bool haveHarmony = reader.harmony(h);
+		if (haveHarmony)
 			busPublishHarmony(slot, h);
+		stepNotes(args, h, params[P_RUN].getValue() > 0.5f);
 		ChordVoicing v;
 		if (reader.voicing(v))
 			busPublishVoicing(slot, v);
@@ -882,8 +1078,13 @@ struct PictureFrame : widget::OpaqueWidget {
 			nvgCircle(args.vg, at.x, at.y, DOT_R);
 			nvgFillColor(args.vg, worn);
 			nvgFill(args.vg);
+			// THE RING THICKENS WHEN THE SPRITE SOUNDS, and thins again over a sixth of a second.
+			// Which sprite played which note is otherwise impossible to tell with four of them
+			// wandering about, and it is the one thing the eye needs that the motion does not
+			// already say.
+			const float flash = module->firing[i].load();
 			nvgStrokeColor(args.vg, edge);
-			nvgStrokeWidth(args.vg, 2.f);
+			nvgStrokeWidth(args.vg, 2.f + 3.f * math::clamp(flash, 0.f, 1.f));
 			nvgStroke(args.vg);
 		}
 	}
@@ -951,11 +1152,12 @@ struct PictureFrame : widget::OpaqueWidget {
 tall as the panel. A rack module is 128.5 millimetres high, so with a hair off the top and bottom
 for the panel's own green border to show, the square is 125.5 across whatever the module's width.
 
-THE WIDTH IS THEN CHOSEN FOR THE COLUMN, not for the picture. At 30 HP the column came to five HP,
-which will not hold a rate knob, a floor and a ceiling, a sprite count, a field mode, a blend and
-the channel choices. At 36 HP it is 54.4 millimetres, which will. */
+THE WIDTH IS THEN CHOSEN FOR THE COLUMN, not for the picture. Thirty HP left five for the column,
+36 left ten, and neither holds what the module turned out to need: ten knobs, two rows of lamps,
+two buttons and three jacks. At 42 HP the column is 84.9 millimetres, which takes three knobs
+abreast and leaves the rows far enough apart to read. */
 static const float PANEL_H = 128.5f;
-static const float PANEL_HP = 36.f;
+static const float PANEL_HP = 42.f;
 static const float PANEL_W = PANEL_HP * 5.08f;
 static const float INSET = 1.5f;
 static const float SQUARE = PANEL_H - 2.f * INSET;
@@ -979,11 +1181,13 @@ static Layout spritesLayout() {
 	};
 
 	auto jack = [&](const std::string& key, Item::Kind kind, float x, float y, int id,
-			const std::string& name) {
+			const std::string& name, bool mpx = true) {
 		Item i;
-		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y; i.ring = NOTE_CABLE;
+		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y;
+		if (mpx)
+			i.ring = NOTE_CABLE;
 		L.items.push_back(i);
-		label(key + ".label", x, y + 6.99f, name, 7.f, key);
+		label(key + ".label", x, y + 6.4f, name, 7.f, key);
 	};
 
 	// THE SQUARE, the whole height of the panel bar the border, running past the title band and
@@ -1039,26 +1243,45 @@ static Layout spritesLayout() {
 	// edge to along it, so "along the slope" is this chooser on Slope and that knob at its full.
 	{
 		const float step = 2.f * LAMP_MM + 1.f;
-		const float h = 2.f * LAMP_MM + step;
+		const float w = 2.f * LAMP_MM + step;
 		Item i;
 		i.key = "p.field"; i.kind = Item::PARAM; i.id = SpritesModule::P_FIELD;
 		i.style = "lamps";
-		i.x = mid - 13.f; i.y = 47.f - h / 2.f;
+		i.x = mid - w / 2.f; i.y = 46.f - LAMP_MM;
 		i.names = std::vector<std::string>{"colour", "slope"};
-		i.horizontal = false; i.pitch = step; i.labelSide = Panel::RIGHT;
+		i.horizontal = true; i.pitch = step; i.labelSide = Panel::CENTRE;
 		L.items.push_back(i);
 		label("p.field.group", mid, 40.f, "the field", 0.f, "p.field");
 	}
 
-	knob("p.force", mid - 12.f, 64.f, SpritesModule::P_FORCE, "force");
-	knob("p.blend", mid + 12.f, 64.f, SpritesModule::P_BLEND, "along");
-	knob("p.turn", mid - 12.f, 84.f, SpritesModule::P_TURN, "turn");
-	knob("p.speed", mid + 12.f, 84.f, SpritesModule::P_SPEED, "speed");
-	knob("p.drift", mid, 101.f, SpritesModule::P_DRIFT, "drift");
+	// THREE ABREAST, in bands: what the picture does to a sprite, how a sprite moves, and what it
+	// plays. A knob is found by the company it keeps rather than by reading every name.
+	const float col = 27.f;
+	knob("p.force", mid - col, 60.f, SpritesModule::P_FORCE, "force");
+	knob("p.blend", mid, 60.f, SpritesModule::P_BLEND, "along");
+	knob("p.turn", mid + col, 60.f, SpritesModule::P_TURN, "turn");
 
-	// THE JACKS SIDE BY SIDE at the foot of the column.
-	jack("in.chart", Item::PORT_IN, mid - 9.f, 117.f, SpritesModule::I_CHART, "mpx\nIN");
-	jack("out.notes", Item::PORT_OUT, mid + 9.f, 117.f, SpritesModule::O_NOTES, "mpx\nOUT");
+	knob("p.speed", mid - col, 77.f, SpritesModule::P_SPEED, "speed");
+	knob("p.drift", mid, 77.f, SpritesModule::P_DRIFT, "drift");
+	knob("p.register", mid + col, 77.f, SpritesModule::P_REGISTER, "register");
+
+	knob("p.slow", mid - col, 94.f, SpritesModule::P_SLOW, "slowest");
+	knob("p.fast", mid, 94.f, SpritesModule::P_FAST, "fastest");
+	knob("p.depth", mid + col, 94.f, SpritesModule::P_DEPTH, "depth");
+
+	// THE FOOT: the level a note is sent at, then the three jacks. Four across rather than a knob
+	// row and a jack row, which the height below the knobs will not take.
+	const float foot = 113.f;
+	const float wide = 21.f;
+	knob("p.level", mid - 1.5f * wide, foot, SpritesModule::P_LEVEL, "level");
+	jack("in.chart", Item::PORT_IN, mid - 0.5f * wide, foot, SpritesModule::I_CHART, "mpx in");
+	jack("in.gate", Item::PORT_IN, mid + 0.5f * wide, foot, SpritesModule::I_GATE, "gate", false);
+	jack("out.notes", Item::PORT_OUT, mid + 1.5f * wide, foot, SpritesModule::O_NOTES, "mpx out");
+	// THE LABELS ARE TIED TO WHAT THEY NAME. Each one's offset from its control is taken from
+	// the positions above, so that moving a control in the panel editor takes its name with it.
+	// Without this every offset is nought, and the first layout anybody saves puts every name
+	// underneath the control it belongs to, where it cannot be seen.
+	L.bindOffsets();
 	return L;
 }
 
@@ -1126,6 +1349,13 @@ struct SpritesWidget : ModuleWidget {
 		menu->addChild(createIndexSubmenuItem("Strength from", channels,
 			[=]() { return m->pushChannel.load(); },
 			[=](int i) { m->pushChannel.store(i); }));
+		menu->addChild(createIndexSubmenuItem("Note from", channels,
+			[=]() { return m->readChannel.load(); },
+			[=](int i) { m->readChannel.store(i); }));
+		menu->addChild(createIndexSubmenuItem("Spread over",
+			{"1 octave", "2 octaves", "3 octaves", "4 octaves", "5 octaves"},
+			[=]() { return math::clamp(m->spanOctaves.load(), 1, 5) - 1; },
+			[=](int i) { m->spanOctaves.store(i + 1); }));
 	}
 
 	/** What the picture's average was last measured for, so it is measured again only when
