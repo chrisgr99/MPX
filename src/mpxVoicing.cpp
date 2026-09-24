@@ -384,6 +384,11 @@ static Layout voicingLayout() {
 	lamp.key = "lamp.change"; lamp.kind = Item::LIGHT; lamp.id = VoicingModule::L_CHANGE;
 	lamp.x = 25.5f; lamp.y = 114.f;
 	L.items.push_back(lamp);
+	// THE LABELS ARE TIED TO WHAT THEY NAME. Each one's offset from its control is taken from
+	// the positions above, so that moving a control in the panel editor takes its name with it.
+	// Without this every offset is nought, and the first layout anybody saves puts every name
+	// underneath the control it belongs to, where it cannot be seen.
+	L.bindOffsets();
 	return L;
 }
 

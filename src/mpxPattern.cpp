@@ -553,6 +553,11 @@ static Layout patternLayout() {
 	lamp.key = "lamp.step"; lamp.kind = Item::LIGHT; lamp.id = PatternModule::L_STEP;
 	lamp.x = 60.f; lamp.y = 118.f;
 	L.items.push_back(lamp);
+	// THE LABELS ARE TIED TO WHAT THEY NAME. Each one's offset from its control is taken from
+	// the positions above, so that moving a control in the panel editor takes its name with it.
+	// Without this every offset is nought, and the first layout anybody saves puts every name
+	// underneath the control it belongs to, where it cannot be seen.
+	L.bindOffsets();
 	return L;
 }
 
