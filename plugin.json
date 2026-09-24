@@ -76,6 +76,16 @@
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
     },
     {
+      "slug": "mpxVoicing",
+      "name": "mpxChordVoicing",
+      "description": "Decides where the notes of the chord on an MPX cable go — how many voices, where they sit, how far apart and how little they move — and publishes that voicing for everything downstream",
+      "tags": [
+        "Polyphonic",
+        "Utility",
+        "Arpeggiator"
+      ]
+    },
+    {
       "slug": "mpxComp",
       "name": "mpxComp",
       "description": "Chordal accompaniment: voices a chord and leads the voices between changes",
@@ -83,6 +93,24 @@
         "Polyphonic",
         "Utility",
         "Arpeggiator"
+      ]
+    },
+    {
+      "slug": "mpxGroove",
+      "name": "mpxGroove",
+      "description": "Holds the rhythm for a whole chain: a style, a feel, how busy it is and what happens at the end of a phrase, played as drums and offered to the players so several of them lock together",
+      "tags": [
+        "Polyphonic",
+        "Utility",
+        "Arpeggiator"
+      ]
+    },
+    {
+      "slug": "mpxDrums",
+      "name": "mpxDrums",
+      "description": "A kit played from an MPX cable, so every stroke carries how hard it was struck and how long it rings; the pitch says which drum, on the General MIDI map",
+      "tags": [
+        "Drum"
       ]
     },
     {
@@ -140,6 +168,26 @@
       "slug": "mpxPhrase",
       "name": "mpxPhrase",
       "description": "A rhythm that phrases: notes placed against the bars, chord changes and cadences of the chart on the cable, in breath groups with pauses between them",
+      "tags": [
+        "Sequencer",
+        "Rhythm",
+        "Random"
+      ]
+    },
+    {
+      "slug": "mpxPattern",
+      "name": "mpxPattern",
+      "description": "A rhythm written as text: where the notes fall, how strong each is and how high it aims, each row cycling at its own length; it chooses no pitches, which mpxMelody does from the harmony",
+      "tags": [
+        "Sequencer",
+        "Rhythm",
+        "Random"
+      ]
+    },
+    {
+      "slug": "mpxSprites",
+      "name": "mpxSprites",
+      "description": "Sprites move over a picture, pushed about by a force field read from its colours, each sending notes as it goes; the picture is on the panel and the motion is watched as well as heard",
       "tags": [
         "Sequencer",
         "Rhythm",

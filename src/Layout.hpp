@@ -159,6 +159,10 @@ struct Item {
 struct Layout {
 	float hp = 20.f;
 	std::string title, titleAbove;
+	/** HOW WIDE THE NAME'S BAND IS, in millimetres from the left edge, or nought for the whole
+	width. For a module whose panel is filled by one large thing, so that its name sits over the
+	column of controls beside it rather than across the top of the picture. */
+	float titleWidth = 0.f;
 	std::vector<Item> items;
 
 	Item* find(const std::string& key);
@@ -200,6 +204,13 @@ void layoutPlaceDisplay(ModuleWidget* mw, Layout& layout, const std::string& key
 void layoutRefreshPanel(Panel* panel, Layout& layout);
 
 /** The right-click entries: edit, save, reload, reset. */
+/** A RECORD BUTTON IN THE TITLE BAR, at the right-hand end of it. Every module that keeps a log
+puts one here rather than in its menu: a take is started while the patch is playing, often while
+listening for the very thing being recorded, and a menu is two movements and a read. The bar is
+the one strip of panel every module has in the same place, so the button is in the same place on
+all of them. */
+void layoutAddRecordButton(Layout& L, int paramId);
+
 void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* layout,
 	const std::string& slug);
 

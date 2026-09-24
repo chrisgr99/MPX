@@ -482,6 +482,7 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 	panel->box.size = mw->box.size;
 	panel->title = layout.title;
 	panel->titleAbove = layout.titleAbove;
+	panel->titleBandWidth = layout.titleWidth > 0.f ? mm2px(layout.titleWidth) : 0.f;
 
 	for (Item& item : layout.items) {
 		const math::Vec pos = mm2px(math::Vec(item.x, item.y));
@@ -1808,6 +1809,21 @@ static void layoutAddRule(Panel* panel, Layout* layout, const std::string& slug,
 	// was made and never dragged would not have had one.
 	layoutSaveUser(slug, *layout);
 }
+
+void layoutAddRecordButton(Layout& L, int paramId) {
+	Item i;
+	i.key = "p.record.bar";
+	i.kind = Item::PARAM;
+	i.id = paramId;
+	i.style = "latch";
+	i.diameter = 3.6f;
+	// The title band runs from 1.35 to 7.1 millimetres down the panel; this sits in the middle
+	// of it, a clear three millimetres in from the right-hand edge.
+	i.x = L.hp * 5.08f - 4.6f;
+	i.y = 4.2f;
+	L.items.push_back(i);
+}
+
 
 void layoutAppendMenu(ui::Menu* menu, ModuleWidget* mw, Panel* panel, Layout* layout,
 		const std::string& slug) {

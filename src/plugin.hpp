@@ -11,6 +11,11 @@ extern Model* modelProgression;
 extern Model* modelMonitor;
 extern Model* modelChart;
 extern Model* modelMpxComp;
+extern Model* modelMpxVoicing;
+extern Model* modelMpxGroove;
+extern Model* modelMpxDrums;
+extern Model* modelMpxPattern;
+extern Model* modelMpxSprites;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
 extern Model* modelMpxRand;
@@ -69,6 +74,13 @@ void crispTextBox(NVGcontext* vg, float x, float y, float width, const char* tex
 struct Panel : widget::Widget {
 	std::string titleAbove;
 	std::string title;
+	/** HOW MUCH OF THE TOP OF THE PANEL THE NAME GETS, in pixels from the left edge. Nought, and
+	the band runs the whole width, which is what nearly every module wants.
+
+	A module that fills its panel with one large thing — a picture, a chart — has no top edge to
+	spare, so its name goes over the column of controls beside that thing instead and the band is
+	as wide as the column. The name is shrunk if it will not fit, rather than being cut. */
+	float titleBandWidth = 0.f;
 
 	enum Align { LEFT, CENTRE, RIGHT };
 

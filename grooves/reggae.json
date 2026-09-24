@@ -1,0 +1,114 @@
+[
+ {
+  "name": "Reggae one drop",
+  "genre": "Reggae",
+  "bars": 1,
+  "beats": 4,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "kick",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "snare",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "stick",
+    "weight": 0.3
+   }
+  ]
+ },
+ {
+  "name": "Reggae steppers",
+  "genre": "Reggae",
+  "bars": 1,
+  "beats": 4,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "kick",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "kick",
+    "weight": 0.8
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "kick",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "kick",
+    "weight": 0.8
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "snare",
+    "weight": 0.85
+   }
+  ]
+ }
+]

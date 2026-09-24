@@ -118,24 +118,42 @@ void Panel::draw(const DrawArgs& args) {
 	// carried the maker's name over the module's; with the module's name alone it is as tall as
 	// that name needs, and the panel below it gains what is left.
 	const float bandH = titleAbove.empty() ? 17.f : 25.f;
+	// The whole width unless the module has asked for a column of it.
+	const float bandRight = (titleBandWidth > 0.f)
+		? std::min(titleBandWidth, box.size.x) : box.size.x;
+	const float bandW = std::max(8.f, bandRight - 8.f);
+	const float bandMid = 4.f + bandW / 2.f;
 	nvgBeginPath(args.vg);
-	nvgRect(args.vg, 4.f, 4.f, box.size.x - 8.f, bandH);
+	nvgRect(args.vg, 4.f, 4.f, bandW, bandH);
 	nvgFillColor(args.vg, nvgRGB(0x24, 0x2a, 0x33));
 	nvgFill(args.vg);
 
 	nvgFontFaceId(args.vg, (face && face->handle >= 0) ? face->handle : font->handle);
 	nvgFillColor(args.vg, PANEL_INK);
+	// AS LARGE AS FITS, up to the size it would otherwise be. A narrow band is the point of the
+	// setting, so a name that will not go in it is shrunk rather than cut off or spilled.
+	auto sized = [&](float want, const std::string& text) {
+		nvgFontSize(args.vg, want);
+		if (text.empty())
+			return;
+		float bounds[4] = {0.f, 0.f, 0.f, 0.f};
+		nvgTextBounds(args.vg, 0.f, 0.f, text.c_str(), NULL, bounds);
+		const float wide = bounds[2] - bounds[0];
+		const float room = bandW - 4.f;
+		if (wide > room && wide > 0.f)
+			nvgFontSize(args.vg, std::max(6.f, want * room / wide));
+	};
 	if (titleAbove.empty()) {
-		nvgFontSize(args.vg, 13.5f);
-		panelText(args.vg, box.size.x / 2, 4.f + bandH / 2.f, title.c_str(), crisp);
+		sized(13.5f, title);
+		panelText(args.vg, bandMid, 4.f + bandH / 2.f, title.c_str(), crisp);
 	}
 	else {
-		nvgFontSize(args.vg, 8.f);
+		sized(8.f, titleAbove);
 		nvgFillColor(args.vg, PANEL_INK);
-		panelText(args.vg, box.size.x / 2, 9, titleAbove.c_str(), crisp);
+		panelText(args.vg, bandMid, 9, titleAbove.c_str(), crisp);
 		nvgFillColor(args.vg, PANEL_INK);
-		nvgFontSize(args.vg, 14);
-		panelText(args.vg, box.size.x / 2, 21, title.c_str(), crisp);
+		sized(14.f, title);
+		panelText(args.vg, bandMid, 21, title.c_str(), crisp);
 	}
 
 	for (float y : rules) {

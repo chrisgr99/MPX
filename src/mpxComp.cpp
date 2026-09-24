@@ -45,6 +45,7 @@ None of it needs a clock: the metre is on the cable. See comp.md.
 #include "NoteBus.hpp"
 #include "Layout.hpp"
 #include "Voicing.hpp"
+#include "NoteLog.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -102,8 +103,11 @@ static const int NUM_PATTERNS = (int) (sizeof(PATTERN_NAMES) / sizeof(PATTERN_NA
 comping keeps the bottom of the chord down and moves the top of it; without this every voice the
 pattern named was struck afresh, so nothing could be kept down. A held voice is struck once and
 then left alone — across chord changes too, where the voicing lets it keep its note. */
-static const char* HOLD_NAMES[] = {"None", "Bass", "Bass and next"};
+static const char* HOLD_NAMES[] = {"None", "Bass", "Bass and next", "Bass through changes"};
 static const int NUM_HOLDS = (int) (sizeof(HOLD_NAMES) / sizeof(HOLD_NAMES[0]));
+/** The last entry: the bottom voice keeps its note across chord changes rather than being
+re-voiced with the rest. */
+static const int HOLD_THROUGH = NUM_HOLDS - 1;
 
 static const char* ACCENT_NAMES[] = {"Even", "Metric", "Downbeat", "Backbeat", "Offbeat", "Push"};
 static const int NUM_ACCENTS = (int) (sizeof(ACCENT_NAMES) / sizeof(ACCENT_NAMES[0]));
@@ -147,6 +151,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 		P_STRUM,
 		P_HOLD,
 		P_PEDAL,
+		P_RECORD,
 		P_BALANCE,
 		/** WAS THE RHYTHM SWITCH, off or on. Held is an entry in Pattern now, which says what it
 		does; the number stays so a patch saved with it still loads. */
@@ -208,7 +213,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// position: a pedal half down lets the strings ring without holding them.
 		configParam(P_PEDAL, 0.f, 1.f, 0.f, "Pedal", "%", 0.f, 100.f);
 		configSwitch(P_HOLD, 0.f, (float) (NUM_HOLDS - 1), 0.f, "Hold",
-			{HOLD_NAMES[0], HOLD_NAMES[1], HOLD_NAMES[2]});
+			{HOLD_NAMES[0], HOLD_NAMES[1], HOLD_NAMES[2], HOLD_NAMES[3]});
 		configSwitch(P_PATTERN, 0.f, (float) (NUM_PATTERNS - 1), 0.f, "Pattern",
 			{PATTERN_NAMES[0], PATTERN_NAMES[1], PATTERN_NAMES[2], PATTERN_NAMES[3],
 			PATTERN_NAMES[4], PATTERN_NAMES[5]});
@@ -225,6 +230,8 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// top voice louder so the melody sits above its own harmony; accent varies the beats and
 		// cannot do this, because in a block chord every voice of it is accented alike.
 		configParam(P_BALANCE, 0.f, 1.f, 0.3f, "Balance", "%", 0.f, 100.f);
+
+		configSwitch(P_RECORD, 0.f, 1.f, 0.f, "Record what it plays", {"Off", "Recording"});
 
 		configInput(I_MPX, "MPX note");
 		configOutput(O_MPX, "MPX note");
@@ -297,6 +304,8 @@ struct CompModule : Module, NoteSource, NoteSink {
 	again. One number rather than a copy of each, because all that is ever asked is whether
 	anything moved. */
 	float hadSig = 0.f;
+	/** The voicing last taken from the cable, so the same one read again changes nothing. */
+	uint32_t hadVoicingChange = 0;
 	float lightFade = 0.f;
 
 	/** THE NOTE EACH VOICE IS SOUNDING, or nought for a voice that is silent.
@@ -345,7 +354,67 @@ struct CompModule : Module, NoteSource, NoteSink {
 		e.level = math::clamp(level, 0.f, 1.f);
 		e.duration = math::clamp(duration, 0.005f, 30.f);
 		busPush(slot, e);
+		writeToLog(v, e);
 	}
+
+	/** WHAT WAS PLAYED, WRITTEN DOWN while a take is running — see NoteLog.hpp. Every note goes
+	in with the beat it fell on and the chord it was played against, which is what makes it
+	possible to say afterwards whether it belonged there. */
+	NoteLog noteLog;
+	std::atomic<bool> logging{false};
+	SettingsWatcher settingsWatch;
+
+	/** THE CHORD THIS MODULE IS PLAYING FROM, written down whenever it changes: read from the
+	cable where a voicing module set it, or placed here where none did. A note that sits wrong is
+	either a bad note from a good chord or a good note from a bad one, and the log has to say
+	which. */
+	void writeVoicingToLog() {
+		if (!logging.load(std::memory_order_relaxed))
+			return;
+		LogNote n;
+		n.kind = LogNote::VOICING;
+		n.seconds = logSeconds;
+		n.count = voices;
+		for (int i = 0; i < voices && i < 8; i++)
+			n.pitches[i] = voice[i];
+		Harmony h;
+		if (reader.harmony(h) && h.valid) {
+			n.haveChord = true;
+			n.key = h.key;
+			n.chord = h.current;
+			n.beat = h.beat;
+			const int barBeats = std::max(1, (int) h.barBeats);
+			n.bar = (int) std::floor(h.beat / (double) barBeats);
+			n.beatInBar = (float) (h.beat - (double) n.bar * barBeats);
+		}
+		noteLog.push(n);
+	}
+
+	void writeToLog(int v, const Event& e) {
+		if (!logging.load(std::memory_order_relaxed))
+			return;
+		LogNote n;
+		n.seconds = logSeconds;
+		n.voice = v;
+		n.pitch = e.pitch;
+		n.level = e.level;
+		n.duration = e.duration;
+		Harmony h;
+		if (reader.harmony(h) && h.valid) {
+			n.haveChord = true;
+			n.key = h.key;
+			n.chord = h.current;
+			n.beat = h.beat;
+			const int barBeats = std::max(1, (int) h.barBeats);
+			n.bar = (int) std::floor(h.beat / (double) barBeats);
+			n.beatInBar = (float) (h.beat - (double) n.bar * barBeats);
+		}
+		noteLog.push(n);
+	}
+
+	/** Seconds since this take started, kept by the engine because it is the only clock that
+	knows how much audio has actually gone by. */
+	double logSeconds = 0.0;
 
 	/** A HELD NOTE, which is what a chord with no rhythm is. The duration is the rest of the
 	chord with a little over: this module sends its own note-off when a voice moves, and the
@@ -357,7 +426,24 @@ struct CompModule : Module, NoteSource, NoteSink {
 			if (reader.harmony(h) && h.valid && h.beatsToNext > 0.f)
 				duration = h.beatsToNext / beatsPerSecond * 1.2f;
 		}
-		sendOn(v, LEVEL_NOMINAL / 10.f, duration);
+		sendOn(v, heldLevel(v) / 10.f, duration);
+	}
+
+	/** HOW HARD A HELD NOTE IS STRUCK. It used to be one number for every voice and every chord,
+	which is what made a held bass a thump: the lowest notes of the chord arrived at exactly the
+	weight of everything else, every time the harmony turned over, whatever the balance knob said.
+
+	It is built the way a struck note's level is built — the balance lifting the top voice and
+	dropping the bottom, the humanising taking a little off at random — minus the accent, which
+	belongs to a step falling on a beat and a held note does not fall on one. */
+	float heldLevel(int v) {
+		const float balance = params[P_BALANCE].getValue();
+		const float human = params[P_HUMAN].getValue();
+		const float top = (voices > 1) ? (float) v / (float) (voices - 1) : 1.f;
+		const float level = LEVEL_NOMINAL
+			+ (top - 0.5f) * balance * BALANCE_LIFT
+			- dice() * human * HUMAN_DROP;
+		return math::clamp(level, 0.f, 10.f);
 	}
 
 	void sendOff(int v) {
@@ -436,96 +522,6 @@ struct CompModule : Module, NoteSource, NoteSink {
 		}
 	}
 
-	/** WHICH TONES GET PLAYED, when there are fewer voices than the chord has tones — which is
-	the ordinary case rather than the awkward one.
-
-	Taking the lowest ranks is the whole rule, because the ranks were written to be taken in
-	order: the tone that says which quality this is, then the seventh, then the colour, then the
-	root, and the plain fifth last of all. Three voices under a thirteenth chord therefore play
-	the third, the seventh and the thirteenth, which is what a pianist plays and what no amount
-	of arithmetic on a polyphonic cable could have worked out.
-
-	MORE VOICES THAN TONES doubles from the same order, so the sixth voice of a triad doubles the
-	third rather than whatever happened to be first in the list.
-
-	Writes the pitch classes IN STACK ORDER — the root first and the rest as they rise above it,
-	which is what the voicing wants — and returns how many. */
-	int chooseTones(const ChordTone* tones, int count, int want, bool ownBass, int colour,
-			int* pcs) {
-		if (count <= 0)
-			return 0;
-		int rootPc = tones[0].pc;
-		for (int i = 0; i < count; i++)
-			if (tones[i].degree == 1)
-				rootPc = tones[i].pc;
-
-		// HOW MUCH OF THE CHORD TO PLAY. A triad is the degrees a triad has, which includes the
-		// fourth and the second a sus chord puts where its third would be; sevenths adds the
-		// seventh and the sixth; extensions is everything the quality implies.
-		int keep[MAX_CHORD_TONES];
-		int n = 0;
-		for (int i = 0; i < count; i++) {
-			const int d = tones[i].degree;
-			bool take = true;
-			if (colour == COLOUR_TRIAD)
-				take = (d == 1 || d == 3 || d == 4 || d == 5 || (d == 9 && tones[i].rank == 0));
-			else if (colour == COLOUR_SEVENTHS)
-				take = (d != 11 && d != 13 && !(d == 9 && tones[i].rank != 0));
-			if (take)
-				keep[n++] = i;
-		}
-		// A chord can be left with nothing to play — a fifth chord asked for a third. Whatever
-		// the quality does have is better than silence.
-		if (n == 0) {
-			for (int i = 0; i < count; i++)
-				keep[n++] = i;
-		}
-
-		int above[MAX_CHORD_TONES];
-		int rank[MAX_CHORD_TONES];
-		// THE ELEVENTH IS WHY THE THIRD WAS RANKED LAST. Take the eleventh away and the third
-		// is an ordinary third again, so the table's ranking has to be undone here rather than
-		// leaving an eleventh chord played as a rootless fifth.
-		bool hasEleven = false;
-		for (int k = 0; k < n; k++)
-			hasEleven = hasEleven || (tones[keep[k]].degree == 11);
-		for (int k = 0; k < n; k++) {
-			const ChordTone& t = tones[keep[k]];
-			above[k] = ((t.pc - rootPc) % 12 + 12) % 12;
-			// PLAYING ITS OWN BOTTOM MAKES THE ROOT ESSENTIAL. The table ranks it fourth
-			// because a bass usually has it; when nothing else does, it is the first tone
-			// kept and the first tone doubled.
-			if (ownBass && t.degree == 1)
-				rank[k] = -1;
-			else if (!hasEleven && t.degree == 3 && t.rank > 4)
-				rank[k] = 0;
-			else
-				rank[k] = t.rank;
-		}
-		count = n;
-
-		// The keep order: rank first, and the lower tone first where two are ranked alike.
-		int order[MAX_CHORD_TONES];
-		for (int i = 0; i < count; i++)
-			order[i] = i;
-		std::sort(order, order + count, [&](int a, int b) {
-			if (rank[a] != rank[b])
-				return rank[a] < rank[b];
-			return above[a] < above[b];
-		});
-
-		// Take that many, doubling round the same order when there are more voices than tones,
-		// then put them back into stack order for the voicing.
-		int chosen[MAX_VOICES];
-		const int take = std::min(want, MAX_VOICES);
-		for (int v = 0; v < take; v++)
-			chosen[v] = order[v % count];
-		std::sort(chosen, chosen + take, [&](int a, int b) { return above[a] < above[b]; });
-		for (int v = 0; v < take; v++)
-			pcs[v] = tones[keep[chosen[v]]].pc;
-		return take;
-	}
-
 	/** THE VOICING. The search itself is in Voicing.cpp, which is arithmetic and can be tested
 	without a running Rack; this is what the panel means, handed to it. */
 	void revoice(const ChordTone* tones, int count, float lead) {
@@ -536,7 +532,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 		const bool ownBass = params[P_BASS].getValue() > 0.5f;
 		int pcs[MAX_VOICES];
 		const int colour = (int) std::round(params[P_COLOUR].getValue());
-		const int n = chooseTones(tones, count, want, ownBass, colour, pcs);
+		const int n = voiceChooseTones(tones, count, want, ownBass, colour, pcs);
 		if (n <= 0)
 			return;
 
@@ -641,9 +637,27 @@ struct CompModule : Module, NoteSource, NoteSink {
 	/** A STEP FALLS. Whoever is sounding and playing again is ended first; whoever is starting is
 	queued, immediately or a strum's distance apart. */
 	void startStep(int64_t step, const Harmony& h, float stepBeats, float stepSeconds) {
+		// A HELD VOICE WHOSE NOTE CHANGED IS STRUCK HERE, on the step, rather than at the moment
+		// the harmony turned over — see heldWaiting.
+		if (heldWaiting) {
+			heldWaiting = false;
+			const int held = (int) std::round(params[P_HOLD].getValue());
+			const int holds = (held == HOLD_THROUGH) ? 1 : held;
+			for (int v = 0; v < holds && v < voices; v++) {
+				if (sounding[v] != 0 && std::fabs(soundingPitch[v] - voice[v]) < 1e-4f)
+					continue;
+				if (sounding[v] != 0)
+					sendOff(v);
+				sendHeld(v);
+			}
+		}
 		// One off the list, since Held sits at the top of it and never gets this far.
 		const int pattern = (int) std::round(params[P_PATTERN].getValue()) - 1;
-		const int hold = (int) std::round(params[P_HOLD].getValue());
+		// HOW MANY VOICES ARE HELD, counted the same way the rest of the module counts them:
+		// Bass through changes is one voice held as a pedal, not three. Read as the raw setting,
+		// it skipped the bottom three voices of every step and left the part playing one note.
+		const int holdSetting = (int) std::round(params[P_HOLD].getValue());
+		const int hold = (holdSetting == HOLD_THROUGH) ? 1 : holdSetting;
 		const int accent = (int) std::round(params[P_ACCENT].getValue());
 		const float amount = params[P_AMOUNT].getValue();
 		const float human = params[P_HUMAN].getValue();
@@ -703,6 +717,10 @@ struct CompModule : Module, NoteSource, NoteSink {
 		tieing = (gate > 0.99f);
 	}
 
+	/** A held voice whose note has changed, waiting for the next step of the figure to be struck
+	on rather than being struck the instant the harmony turned over. */
+	bool heldWaiting = false;
+
 	/** How long a note started now is held. Set when the step starts, spent when it fires. */
 	float gateSeconds = 0.1f;
 	/** Whether this step's notes hold rather than end. */
@@ -754,6 +772,19 @@ struct CompModule : Module, NoteSource, NoteSink {
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (logging.load(std::memory_order_relaxed)) {
+			logSeconds += args.sampleTime;
+			// Every control, as it is now: written when the take starts and again when one moves.
+			float values[NUM_PARAMS];
+			for (int i = 0; i < NUM_PARAMS; i++)
+				values[i] = params[i].getValue();
+			settingsWatch.step(noteLog, values, NUM_PARAMS, logSeconds);
+		}
+		else {
+			logSeconds = 0.0;
+			settingsWatch.reset();
+		}
+
 		if (relink.exchange(false)) {
 			reader.clear();
 			const int n = wantCount.load();
@@ -789,9 +820,51 @@ struct CompModule : Module, NoteSource, NoteSink {
 		// HELD IS A PATTERN NOW. Anything but the first entry is a figure, and a figure is what
 		// the rhythm switch used to turn on.
 		const bool rhythmOn = (int) std::round(params[P_PATTERN].getValue()) > 0;
-		const int holdVoices = (int) std::round(params[P_HOLD].getValue());
+		// HOW MANY VOICES ARE HELD, and whether the lowest keeps its note through a chord change.
+		// Bass through changes is a pedal: the bottom note stays where it is while the harmony
+		// moves over it, which is what a turnaround usually sits on.
+		const int holdSetting = (int) std::round(params[P_HOLD].getValue());
+		const bool pedalBass = (holdSetting == HOLD_THROUGH);
+		const int holdVoices = pedalBass ? 1 : holdSetting;
 
-		if (count > 0 && (chordChanged || settingsChanged)) {
+		// A VOICING ON THE CABLE IS THE VOICING. Where a mpxVoicing module is in the chain it has
+		// already decided where the notes go, and everything reading that cable plays the same
+		// ones; this module's own voicing controls then say nothing and are not asked. Without
+		// one it places the chord itself, which is what it always did. See docs/players.md.
+		ChordVoicing fromCable;
+		const bool voicedUpstream = reader.voicing(fromCable) && fromCable.count > 0;
+		if (voicedUpstream) {
+			const bool moved = (fromCable.change != hadVoicingChange)
+				|| (fromCable.count != voices);
+			hadVoicingChange = fromCable.change;
+			if (moved) {
+				float was[MAX_VOICES];
+				const int wasVoices = voices;
+				for (int v = 0; v < wasVoices; v++)
+					was[v] = voice[v];
+				voices = std::min(fromCable.count, MAX_VOICES);
+				for (int v = 0; v < voices; v++)
+					voice[v] = fromCable.pitch[v];
+				chordChanged = true;
+				// The held chord follows at once; with a figure running, the next step plays it.
+				if (!rhythmOn) {
+					for (int v = 0; v < MAX_VOICES; v++) {
+						const bool had = (v < wasVoices);
+						const bool has = (v < voices);
+						if (had && has && sounding[v] != 0
+							&& std::fabs(voice[v] - was[v]) < 1e-4f)
+							continue;
+						if (sounding[v] != 0)
+							sendOff(v);
+						if (has)
+							sendHeld(v);
+					}
+				}
+				lightFade = 1.f;
+				writeVoicingToLog();
+			}
+		}
+		else if (count > 0 && (chordChanged || settingsChanged)) {
 			// KEPT, so that what each voice was playing can be compared with what it is to play
 			// now. A voice whose pitch has not changed is not sent again, and that is the tie.
 			float was[MAX_VOICES];
@@ -828,6 +901,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 				if (params[P_PEDAL].getValue() > 0.f)
 					pedalUpFor = PEDAL_LIFT;
 			}
+			writeVoicingToLog();
 		}
 		// ---- the rhythm, or the held chord it replaces ----
 		//
@@ -845,15 +919,22 @@ struct CompModule : Module, NoteSource, NoteSink {
 			}
 		}
 
+		// A PEDAL BASS KEEPS ITS NOTE. The voicing moved the bottom voice with the chord; this
+		// puts it back where it was sounding, so the harmony changes over a note that does not.
+		if (pedalBass && voices > 0 && sounding[0] != 0)
+			voice[0] = soundingPitch[0];
+
 		// THE HELD VOICES, WHILE A FIGURE RUNS. Nothing in the figure ever strikes them, so they
-		// are struck here: once, and again only when the voicing moves them somewhere else.
+		// are struck here — once, and again only when the voicing moves them somewhere else.
+		//
+		// NOT AT THE MOMENT THE CHORD TURNS OVER, THOUGH. A held note struck on the change is a
+		// thump in front of the beat, three to the bar in a turnaround; the figure's next step is
+		// where the new chord is heard, so that is where the held voices are struck too.
 		if (rhythmOn && count > 0) {
 			for (int v = 0; v < holdVoices && v < voices; v++) {
 				if (sounding[v] != 0 && std::fabs(soundingPitch[v] - voice[v]) < 1e-4f)
 					continue;
-				if (sounding[v] != 0)
-					sendOff(v);
-				sendHeld(v);
+				heldWaiting = true;
 			}
 		}
 
@@ -898,7 +979,7 @@ struct CompModule : Module, NoteSource, NoteSink {
 
 static Layout compLayout() {
 	Layout L;
-	L.hp = 20.f;
+	L.hp = 16.f;
 	L.title = "mpxComp";
 
 	auto label = [&](const std::string& key, float x, float y, const std::string& text,
@@ -990,77 +1071,66 @@ static Layout compLayout() {
 	auto rule = [&](const std::string& key, float y) {
 		Item i;
 		i.key = key; i.kind = Item::RULE; i.x = 5.f; i.y = y; i.horizontal = true;
-		i.w = 101.6f - 10.f;
+		i.w = 16.f * 5.08f - 10.f;
 		L.items.push_back(i);
 	};
 
-	// THREE BANDS, IN THE ORDER THE DECISIONS ARE MADE. A panel of twenty-odd controls in
-	// columns asks the reader to work out what belongs with what; in bands it says so. What the
-	// chord is made of comes first, because nothing about time means anything until the notes
-	// are settled; how it is played comes next; how it feels comes last, since those are the
-	// controls set by ear once the rest is right.
-	//
-	// The positions in the first band are the ones arrived at in the panel editor and folded
-	// back in here. A column is placed by the CENTRE of its lamps, so a position saved by the
-	// editor — which records the corner — has the lamp radius and half the column's height
-	// added back.
+	// TWO BANDS NOW, THE PLAYING AND THE FEEL. Where the notes go is mpxVoicing's, and this
+	// module reads that from the cable — see docs/players.md. The seven controls that decided it
+	// are still in the module, off the panel, and are what it falls back on when nothing in the
+	// chain has published a voicing; a patch made before the split therefore sounds as it did.
 
-	// ---- the notes ----
-	rule("rule.notes", 21.f);
-	label("h.notes", 50.8f, 24.f, "THE NOTES", Panel::CENTRE, true, 0.f);
-
-	knob("p.voices", 14.f, 19.5f, CompModule::P_VOICES, "VOICES", 6,
-		{"1", "2", "3", "4", "5", "6"});
-	knob("p.centre", 32.f, 20.f, CompModule::P_CENTRE, "REGISTER", 3);
-	col("p.span", 45.2f, 21.1f, CompModule::P_SPAN, "SPAN", {"1", "2", "3"});
-	col("p.spread", 57.2f, 20.6f, CompModule::P_SPREAD, "SPREAD",
-		{"CLOSED", "DROP 2", "OPEN"});
-	col("p.colour", 78.2f, 20.6f, CompModule::P_COLOUR, "COMPLEXITY",
-		{"TRIAD", "7THS", "EXT"});
-	knob("p.lead", 15.5f, 41.f, CompModule::P_LEAD, "VOICE LEADING", 2);
-	col("p.bass", 40.7f, 43.4f, CompModule::P_BASS, "ROOT", {"ROOTLESS", "WITH ROOT"});
+	// A RECORD BUTTON IN THE TITLE BAR: see layoutAddRecordButton.
+	layoutAddRecordButton(L, CompModule::P_RECORD);
 
 	// ---- the playing ----
-	rule("rule.playing", 52.5f);
-	label("h.playing", 50.8f, 55.5f, "THE PLAYING", Panel::CENTRE, true, 0.f);
+	rule("rule.playing", 21.f);
+	label("h.playing", 40.6f, 24.f, "THE PLAYING", Panel::CENTRE, true, 0.f);
 
 	// PATTERN FIRST, because Held is one of its entries and nothing else in the band does
 	// anything while it is chosen.
-	col("p.rate", 7.7f, 71.7f, CompModule::P_RATE, "RATE",
+	plate("p.pattern", 40.f, 32.f, CompModule::P_PATTERN, "PATTERN", 11);
+	col("p.hold", 56.f, 48.f, CompModule::P_HOLD, "HOLD",
+		{"NONE", "BASS", "BASS & NEXT", "BASS THROUGH"});
+	col("p.rate", 8.f, 55.f, CompModule::P_RATE, "RATE",
 		{"BAR", "2 BEATS", "1/BEAT", "2/BEAT", "3/BEAT", "4/BEAT"});
-	col("p.hold", 33.7f, 66.6f, CompModule::P_HOLD, "HOLD", {"NONE", "BASS", "BASS & NEXT"});
-	plate("p.pattern", 67.f, 62.f, CompModule::P_PATTERN, "PATTERN", 11);
-	// ACCENT IS PART OF THE PLAYING rather than of the feel: it says which step is struck hard,
-	// and a step is what the band above it is about. How much of an accent is the feel's, and
-	// that knob is in the band below.
-	col("p.accent", 81.7f, 88.2f, CompModule::P_ACCENT, "ACCENT",
+	col("p.accent", 32.f, 55.f, CompModule::P_ACCENT, "ACCENT",
 		{"EVEN", "METRIC", "DOWNBEAT", "BACKBEAT", "OFFBEAT", "PUSH"});
-	knob("p.gate", 33.f, 83.5f, CompModule::P_GATE, "GATE", 2);
-	knob("p.strum", 57.f, 83.5f, CompModule::P_STRUM, "STRUM", 2);
+	knob("p.gate", 62.f, 68.f, CompModule::P_GATE, "GATE", 2);
+	knob("p.strum", 62.f, 84.f, CompModule::P_STRUM, "STRUM", 2);
 
 	// ---- the feel ----
-	rule("rule.feel", 99.f);
-	label("h.feel", 50.8f, 102.f, "THE FEEL", Panel::CENTRE, true, 0.f);
+	rule("rule.feel", 92.f);
+	label("h.feel", 40.6f, 95.f, "THE FEEL", Panel::CENTRE, true, 0.f);
 
-	knob("p.amount", 14.f, 110.f, CompModule::P_AMOUNT, "AMOUNT", 2);
-	knob("p.human", 33.f, 110.f, CompModule::P_HUMAN, "HUMAN", 2);
-	knob("p.balance", 52.f, 110.f, CompModule::P_BALANCE, "BALANCE", 2);
-	knob("p.pedal", 71.f, 110.f, CompModule::P_PEDAL, "PEDAL", 2);
+	knob("p.amount", 12.f, 103.f, CompModule::P_AMOUNT, "AMOUNT", 2);
+	knob("p.human", 31.f, 103.f, CompModule::P_HUMAN, "HUMAN", 2);
+	knob("p.balance", 50.f, 103.f, CompModule::P_BALANCE, "BALANCE", 2);
+	knob("p.pedal", 69.f, 103.f, CompModule::P_PEDAL, "PEDAL", 2);
 
 	// TWO JACKS, one in and one out, at opposite ends of the row so that a chain reads left to
 	// right. Everything the module is handed and everything it plays travels on those two.
-	jack("in.mpx", Item::PORT_IN, 12.f, 114.f, CompModule::I_MPX, "mpx\nIN", NOTE_CABLE, 7.f);
-	jack("out.mpx", Item::PORT_OUT, 89.f, 114.f, CompModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 7.f);
+	jack("in.mpx", Item::PORT_IN, 12.f, 118.f, CompModule::I_MPX, "mpx\nIN", NOTE_CABLE, 7.f);
+	jack("out.mpx", Item::PORT_OUT, 69.f, 118.f, CompModule::O_MPX, "mpx\nOUT", NOTE_CABLE, 7.f);
 
 	Item lamp;
 	lamp.key = "lamp.change"; lamp.kind = Item::LIGHT; lamp.id = CompModule::L_CHANGE;
-	lamp.x = 30.f; lamp.y = 114.f;
+	lamp.x = 40.6f; lamp.y = 118.f;
 	L.items.push_back(lamp);
 
 
 	L.bindOffsets();
 	return L;
 }
+
+
+/** The controls in the order the module declares them, so a settings line in the log reads as
+words. One name per parameter, including the ones no longer on the panel. */
+static const char* COMP_PARAM_NAMES[] = {
+	"voices", "root", "register", "span", "spread", "colour", "lead",
+	"pattern", "gate", "accent", "amount", "human", "strum", "hold", "pedal", "record",
+	"balance", "unusedRhythm", "rate",
+};
 
 
 struct CompWidget : ModuleWidget {
@@ -1076,8 +1146,12 @@ struct CompWidget : ModuleWidget {
 		layoutBuild(this, panel, layout);
 	}
 
+	NoteLogWriter writer;
+
 	void appendContextMenu(ui::Menu* menu) override {
 		layoutAppendMenu(menu, this, panel, &layout, "mpxComp");
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel(writer.where()));
 	}
 
 	void step() override {
@@ -1085,6 +1159,19 @@ struct CompWidget : ModuleWidget {
 		CompModule* comp = dynamic_cast<CompModule*>(module);
 		if (!comp)
 			return;
+
+		// THE TAKE, started and stopped by the button in the title bar. The file is opened on
+		// the main thread, here; the engine only ever fills a ring.
+		const bool want = comp->params[CompModule::P_RECORD].getValue() > 0.5f;
+		if (want != writer.writing()) {
+			if (want)
+				writer.open("comp");
+			else
+				writer.close();
+			comp->logging.store(want);
+		}
+		writer.drain(comp->noteLog, COMP_PARAM_NAMES,
+			(int) (sizeof(COMP_PARAM_NAMES) / sizeof(COMP_PARAM_NAMES[0])));
 		// WHICH MPX CABLES ARE PATCHED, resolved here rather than in the audio thread: the
 		// engine knows nothing of cables, and the widget is walked once a frame anyway.
 		int slots[MAX_UPSTREAM];

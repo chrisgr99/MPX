@@ -63,6 +63,12 @@ struct Event {
 	/** How many semitones full bend deflection is worth, so the far end can produce the
 	control voltage without knowing the source's knob. */
 	float bendRange = 2.f;
+	/** HOW HIGH THIS NOTE SHOULD AIM, nought at the bottom of the line's range and one at the
+	top, or below nought where the source has no opinion. A rhythm source that carries a contour
+	says where the line should be going without naming a note; the module that chooses pitches
+	decides what that means. */
+	float contour = -1.f;
+
 	/** UPDATE only. */
 	float value = 0.f;
 
@@ -106,6 +112,16 @@ can read whenever they like, and forwarding it costs a copy.
 AND IT DESCRIBES THE FUTURE. Notes arrive as they happen; this says what is coming. That is why
 a harmony processor can insert a chord before a dominant it can already see, where every note
 processor has to work around having no lookahead. */
+/** WHERE THE VOICES ARE, as decided by whatever module holds the voicing settings. Volts, one
+per voice, ascending. `change` moves whenever the notes change, so a reader can tell a new voicing
+from the same one read again without comparing the pitches. */
+struct ChordVoicing {
+	bool valid = false;
+	int count = 0;
+	float pitch[8] = {0.f};
+	uint32_t change = 0;
+};
+
 struct Harmony {
 	bool valid = false;
 	Key key;
@@ -264,6 +280,13 @@ struct Bus {
 	early, which nothing can hear. */
 	std::atomic<float> sustain{0.f};
 	std::atomic<float> soft{0.f};
+
+	/** THE VOICING: the notes this chord has been placed on. State for the same reason the
+	harmony is — a module that starts listening between chords must know where the voices are
+	now, not when they next move — and written by the same seqlock, since it is several words
+	that have to agree with each other. See docs/players.md. */
+	std::atomic<uint32_t> vseq{0};
+	ChordVoicing voicing;
 };
 
 extern Bus gBuses[MAX_BUSES];
@@ -280,6 +303,11 @@ void busPush(int slot, const Event& e);
 upstream and publishes its own bus forwards them, exactly as it forwards the harmony: a processor
 that dropped them would leave everything after it unpedalled. */
 void busPublishPedals(int slot, float sustain, float soft);
+
+/** Publishes the voicing on this bus. Audio thread, one writer per bus. */
+void busPublishVoicing(int slot, const ChordVoicing& v);
+/** Reads it. False if the slot is empty or nothing has published one. */
+bool busReadVoicing(int slot, ChordVoicing& out);
 
 /** Publishes the harmony on this bus. Audio thread, one writer per bus. */
 void busPublishHarmony(int slot, const Harmony& h);
@@ -317,6 +345,8 @@ struct BusReader {
 	bool next(Event& e);
 	/** The harmony from the first upstream that has one. */
 	bool harmony(Harmony& out) const;
+	/** The voicing from the first upstream that has one. */
+	bool voicing(ChordVoicing& out) const;
 	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
 	one player's hands, and either one holding the pedal holds it. Nought and nought with
 	nothing attached. */

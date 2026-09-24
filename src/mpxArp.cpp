@@ -28,6 +28,7 @@ and a clock jack would be a second timebase fighting the first.
 #include "plugin.hpp"
 #include "NoteBus.hpp"
 #include "Layout.hpp"
+#include "NoteLog.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -104,6 +105,7 @@ struct ArpModule : Module, NoteSource, NoteSink {
 		P_LENGTH,
 		P_VELOCITY,
 		P_BEND,
+		P_RECORD,
 		// APPENDED, NEVER INSERTED. A patch stores a parameter by its POSITION in this list, so
 		// a new one in the middle hands every value after it to the wrong control when an old
 		// patch is opened. New controls go on the end however untidy that reads.
@@ -152,6 +154,7 @@ struct ArpModule : Module, NoteSource, NoteSink {
 		// not what most people want first.
 		configParam(P_BEND, -2.f, 2.f, 0.f, "Bend over the note", " semitones");
 
+		configSwitch(P_RECORD, 0.f, 1.f, 0.f, "Record what it plays", {"Off", "Recording"});
 		configInput(I_MPX, "MPX in");
 		configOutput(O_MPX, "MPX out");
 
@@ -357,11 +360,39 @@ struct ArpModule : Module, NoteSource, NoteSink {
 		e.duration = math::clamp(seconds, 0.005f, 30.f);
 		e.bendRange = 2.f;
 		busPush(slot, e);
+		writeToLog(e);
 		s.endIn = seconds;
 		s.span = std::fmax(0.01f, seconds);
 		s.lived = 0.f;
 		s.bendTo = bendTo;
 		s.bendSent = 0.f;
+	}
+
+	/** WHAT WAS PLAYED, WRITTEN DOWN while a take is running — see NoteLog.hpp. */
+	NoteLog noteLog;
+	std::atomic<bool> logging{false};
+	SettingsWatcher settingsWatch;
+	double logSeconds = 0.0;
+
+	void writeToLog(const Event& e) {
+		if (!logging.load(std::memory_order_relaxed))
+			return;
+		LogNote n;
+		n.seconds = logSeconds;
+		n.pitch = e.pitch;
+		n.level = e.level;
+		n.duration = e.duration;
+		Harmony h;
+		if (reader.harmony(h) && h.valid) {
+			n.haveChord = true;
+			n.key = h.key;
+			n.chord = h.current;
+			n.beat = h.beat;
+			const int barBeats = std::max(1, (int) h.barBeats);
+			n.bar = (int) std::floor(h.beat / (double) barBeats);
+			n.beatInBar = (float) (h.beat - (double) n.bar * barBeats);
+		}
+		noteLog.push(n);
 	}
 
 	/** Ends what has come due, and moves the bend of what has not. */
@@ -540,6 +571,18 @@ struct ArpModule : Module, NoteSource, NoteSink {
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (logging.load(std::memory_order_relaxed)) {
+			logSeconds += args.sampleTime;
+			float values[NUM_PARAMS];
+			for (int i = 0; i < NUM_PARAMS; i++)
+				values[i] = params[i].getValue();
+			settingsWatch.step(noteLog, values, NUM_PARAMS, logSeconds);
+		}
+		else {
+			logSeconds = 0.0;
+			settingsWatch.reset();
+		}
+
 		if (relink.exchange(false)) {
 			reader.clear();
 			const int n = wantCount.load();
@@ -594,6 +637,9 @@ static Layout arpLayout() {
 	Layout L;
 	L.hp = 14.f;
 	L.title = "mpxArp";
+
+	// A record button in the title bar: see layoutAddRecordButton.
+	layoutAddRecordButton(L, ArpModule::P_RECORD);
 
 	static const float NAME_HALF = 1.22f;
 	static const float KNOB_EDGE = 4.8f;
@@ -670,6 +716,12 @@ static Layout arpLayout() {
 }
 
 
+/** The controls in the order the module declares them, so a settings line reads as words. */
+static const char* ARP_PARAM_NAMES[] = {
+	"rate", "direction", "octaves", "tones", "register", "length", "velocity", "bend", "record",
+};
+
+
 struct ArpWidget : ModuleWidget {
 	Panel* panel = NULL;
 	Layout layout;
@@ -683,13 +735,29 @@ struct ArpWidget : ModuleWidget {
 		layoutBuild(this, panel, layout);
 	}
 
+	NoteLogWriter writer;
+
 	void appendContextMenu(ui::Menu* menu) override {
 		layoutAppendMenu(menu, this, panel, &layout, "mpxArp");
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel(writer.where()));
 	}
 
 	void step() override {
 		ModuleWidget::step();
 		ArpModule* arp = dynamic_cast<ArpModule*>(module);
+		if (arp) {
+			const bool want = arp->params[ArpModule::P_RECORD].getValue() > 0.5f;
+			if (want != writer.writing()) {
+				if (want)
+					writer.open("arp");
+				else
+					writer.close();
+				arp->logging.store(want);
+			}
+			writer.drain(arp->noteLog, ARP_PARAM_NAMES,
+				(int) (sizeof(ARP_PARAM_NAMES) / sizeof(ARP_PARAM_NAMES[0])));
+		}
 		if (!arp)
 			return;
 		// WHICH MPX CABLES ARE PATCHED, resolved here rather than in the audio thread: the engine

@@ -1,0 +1,541 @@
+[
+ {
+  "name": "Straight sixteens",
+  "genre": "Funk",
+  "bars": 1,
+  "beats": 4,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0.0,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 0.25,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 0.75,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 1.0,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 1.25,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 1.75,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 2.0,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 2.25,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 2.75,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 3.0,
+    "part": "hat",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 3.25,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 3.75,
+    "part": "hat",
+    "weight": 0.4
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "kick",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 0.75,
+    "part": "kick",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "kick",
+    "weight": 0.8
+   },
+   {
+    "bar": 0,
+    "beat": 3.25,
+    "part": "kick",
+    "weight": 0.5
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "snare",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "snare",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 2.25,
+    "part": "snare",
+    "weight": 0.3
+   }
+  ],
+  "fill": [
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "snare",
+    "weight": 0.8
+   },
+   {
+    "bar": 0,
+    "beat": 3.25,
+    "part": "snare",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "tomlo",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 3.75,
+    "part": "tomhi",
+    "weight": 0.9
+   }
+  ]
+ },
+ {
+  "name": "Half time",
+  "genre": "Funk",
+  "bars": 1,
+  "beats": 4,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0.0,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 1.0,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 2.0,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 3.0,
+    "part": "hat",
+    "weight": 0.65
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "kick",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "kick",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 2.75,
+    "part": "kick",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "snare",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "snare",
+    "weight": 0.35
+   }
+  ]
+ },
+ {
+  "name": "New Orleans",
+  "genre": "Funk",
+  "bars": 2,
+  "beats": 4,
+  "swing": 0.3,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 1.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 2.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 3.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "kick",
+    "weight": 0.95
+   },
+   {
+    "bar": 0,
+    "beat": 1.75,
+    "part": "kick",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "kick",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "snare",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "snare",
+    "weight": 0.3
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "snare",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 3.75,
+    "part": "snare",
+    "weight": 0.35
+   },
+   {
+    "bar": 1,
+    "beat": 0.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 1,
+    "beat": 0.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 1,
+    "beat": 1.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 1,
+    "beat": 1.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 1,
+    "beat": 2.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 1,
+    "beat": 2.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 1,
+    "beat": 3.0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 1,
+    "beat": 3.5,
+    "part": "hat",
+    "weight": 0.45
+   },
+   {
+    "bar": 1,
+    "beat": 0,
+    "part": "kick",
+    "weight": 0.95
+   },
+   {
+    "bar": 1,
+    "beat": 1.75,
+    "part": "kick",
+    "weight": 0.6
+   },
+   {
+    "bar": 1,
+    "beat": 2.5,
+    "part": "kick",
+    "weight": 0.7
+   },
+   {
+    "bar": 1,
+    "beat": 1,
+    "part": "snare",
+    "weight": 0.9
+   },
+   {
+    "bar": 1,
+    "beat": 1.5,
+    "part": "snare",
+    "weight": 0.3
+   },
+   {
+    "bar": 1,
+    "beat": 3,
+    "part": "snare",
+    "weight": 0.9
+   },
+   {
+    "bar": 1,
+    "beat": 3.75,
+    "part": "snare",
+    "weight": 0.35
+   }
+  ]
+ },
+ {
+  "name": "Disco",
+  "genre": "Funk",
+  "bars": 1,
+  "beats": 4,
+  "hits": [
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "kick",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "kick",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "kick",
+    "weight": 1.0
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "kick",
+    "weight": 0.9
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "snare",
+    "weight": 0.95
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "snare",
+    "weight": 0.95
+   },
+   {
+    "bar": 0,
+    "beat": 0.5,
+    "part": "open",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 1.5,
+    "part": "open",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 2.5,
+    "part": "open",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 3.5,
+    "part": "open",
+    "weight": 0.7
+   },
+   {
+    "bar": 0,
+    "beat": 0,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 1,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 2,
+    "part": "hat",
+    "weight": 0.6
+   },
+   {
+    "bar": 0,
+    "beat": 3,
+    "part": "hat",
+    "weight": 0.6
+   }
+  ]
+ }
+]

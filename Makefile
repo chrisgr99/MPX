@@ -15,6 +15,11 @@ SOURCES += $(wildcard src/*.cpp)
 # Licence, which is redistributed here with its licence beside it.
 DISTRIBUTABLES += res
 DISTRIBUTABLES += presets
+DISTRIBUTABLES += help
+# THE GROOVE LIBRARY SHIPS WITH THE PLUGIN, and a folder of the same name in the Rack user
+# folder is read after it — see GrooveLib.hpp. Data rather than code, so a groove is a file.
+DISTRIBUTABLES += grooves
+
 DISTRIBUTABLES += $(wildcard LICENSE*)
 
 include $(RACK_DIR)/plugin.mk
@@ -45,10 +50,14 @@ dev: $(TARGET)
 	@rm -f "$(PLUGIN_DIR)/plugin.dylib"
 	@cp $(TARGET) "$(PLUGIN_DIR)/plugin.dylib"
 	@cp plugin.json "$(PLUGIN_DIR)/"
+	@rm -rf "$(PLUGIN_DIR)/grooves"
+	@cp -R grooves "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@rm -rf "$(PLUGIN_DIR)/res"
 	@cp -R res "$(PLUGIN_DIR)/"
 	@rm -rf "$(PLUGIN_DIR)/presets"
 	@cp -R presets "$(PLUGIN_DIR)/"
+	@rm -rf "$(PLUGIN_DIR)/help"
+	@cp -R help "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@cp LICENSE "$(PLUGIN_DIR)/" 2>/dev/null || true
 	@xattr -c "$(PLUGIN_DIR)/plugin.dylib" 2>/dev/null || true
 	@codesign -v "$(PLUGIN_DIR)/plugin.dylib" && echo "signature valid"

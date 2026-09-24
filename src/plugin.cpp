@@ -12,6 +12,11 @@ void init(Plugin* p) {
 	p->addModel(modelMonitor);
 	p->addModel(modelChart);
 	p->addModel(modelMpxComp);
+	p->addModel(modelMpxVoicing);
+	p->addModel(modelMpxGroove);
+	p->addModel(modelMpxDrums);
+	p->addModel(modelMpxPattern);
+	p->addModel(modelMpxSprites);
 	p->addModel(modelPolyToStereo);
 	p->addModel(modelMpxArp);
 	p->addModel(modelMpxRand);

@@ -1,0 +1,39 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxSprites",
+  "description": "Moves one to four sprites over a picture and reads a force field from the picture's colours to steer them. The picture is drawn on the panel and the sprites are seen crossing it. Load a picture from the right-click menu; the picture itself is saved in the patch, so a patch sent to somebody else looks the same.",
+  "params": [
+    {"ids": [0], "name": "Sprites", "text": "How many sprites move over the picture, one to four. Each has its own position, heading and colour, and each is placed and aimed separately. Sprites above the number chosen keep their positions and start again from them when the number is raised."},
+    {"ids": [1], "name": "Top speed", "text": "Puts a ceiling on how fast a sprite may travel. A sprite going slower than the ceiling is not touched by this knob at all: it accelerates and turns exactly as the picture tells it to. One that reaches the ceiling goes no faster, however hard the picture pushes. Lowering it while the sprites are running clips back whatever is already going faster than the new ceiling, and raising it again lets the force build their speed back up."},
+    {"ids": [2], "name": "Drift", "text": "A small random wander added to each sprite's heading. It is there to stop a sprite becoming stuck in a region where the picture pushes it nowhere, and for nothing else. At the full turn it moves a sprite's speed by a few per cent in a second, which is felt over half a minute rather than seen over one. What makes a sprite move is the picture."},
+    {"ids": [3], "name": "Run", "text": "Holds the sprites still or lets them go. Held, they keep their positions and headings and nothing is lost. Placing and aiming a sprite works either way."},
+    {"ids": [4], "name": "Rewind", "text": "Puts every sprite back where it started. Started again, each retraces exactly the path it took before, the drift included: the random stream the drift uses is wound back with the sprites. The starting point is taken afresh whenever you place or aim a sprite by hand."},
+    {"ids": [5], "name": "Field", "text": "How the force on a sprite is read from the picture. Colour: the hue of the region under the sprite gives the direction and its saturation gives the strength, with the picture's own average push subtracted so that what steers a sprite is how a region differs from the picture rather than what the picture mostly is. Slope: the direction in which brightness changes fastest, taken from the pixels either side, which follows the edges in the picture and has no average push in it at all."},
+    {"ids": [6], "name": "Force", "text": "How hard the picture pushes. At nought the sprites travel in straight lines and bounce off the walls. At the full turn a strongly coloured region takes a sprite from standing to its top speed in about a sixth of a second, so the picture throws the sprites about rather than nudging them."},
+    {"ids": [7], "name": "Along", "text": "Turns the force through a right angle, from across whatever the picture says to along it. At nought a sprite runs straight at an edge or a colour boundary; at the full turn it runs along one, orbiting a bright shape or following a horizon, and cannot settle in a corner. Part way is the spiral between the two, which is usually the most interesting."},
+    {"ids": [8], "name": "Turn", "text": "Rotates the whole field, so a picture whose colours all push one way can be made to push another. Minus 180 to 180 degrees."}
+  ],
+  "inputs": [
+    {"ids": [0], "name": "MPX IN", "text": "The MPX chart: notes, harmony, chord voicing and pedals from an upstream module. It passes straight through to the output. The harmony on it will decide what the sprites play once they send notes."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "MPX OUT", "text": "The MPX chart, carrying everything that came in. The sprites do not yet add notes of their own."}
+  ],
+  "notes": [
+    "Drag a sprite to place it. It is held still while your hand is on it and carries on from wherever you let go, and that is also where rewind will put it back to.",
+    "A sprite is drawn in the colour of the picture underneath it, so the colour that is steering it and the way it is moving are on the screen together. The ring round it is what keeps it visible when it is standing on its own colour: its tone is set a fixed distance away from the brightness of the picture just outside the sprite, light on a dark region and dark on a pale one, and it slides from one to the other over about a fifth of a second rather than switching, so a sprite crossing a boundary does not blink.",
+    "Any image file is resampled to a square of 1024 by 1024 when it is loaded, whatever shape it was, by averaging each block rather than by sampling it. The field and the drawing therefore always work in the same square.",
+    "A bounce off a wall does nothing but turn the sprite round: no note and no trigger. It also flips the sign the picture's force is multiplied by for that axis, so a region that drove a sprite into a wall drives it away from that wall afterwards rather than pinning it there."
+  ],
+  "menu": [
+    "Load a picture: reads an image file and squares it off. PNG, JPEG, BMP, GIF and a few others.",
+    "Take the picture out: leaves the module with no picture. The sprites keep moving; nothing pushes them.",
+    "Reduce glare: takes the brightness out of large pale regions of the picture, leaving small bright things and local contrast alone. Off, gentle, normal or strong. It changes how the picture looks and nothing else — the force field always reads the original.",
+    "Direction from: which of a pixel's numbers gives the direction of the force in colour mode. Hue by default, since a region's hue is what a person would call its colour.",
+    "Strength from: which number gives the strength of the force, and which one the slope is taken of in slope mode. Saturation by default."
+  ],
+  "expects": {
+    "inputs": {"0": "MPX chart · from any MPX module"},
+    "outputs": {"0": "MPX chart · to any MPX module"}
+  }
+}

@@ -73,10 +73,12 @@ static void plainStack(const VoicingRequest& req, float* plain) {
 	}
 }
 
-int voicePlace(const VoicingRequest& req, float* out) {
+/** ONE ATTEMPT AT THE RANGE IT IS GIVEN. False when the range has nowhere to put the voices,
+which is what voicePlace answers by widening it. */
+static bool placeOnce(const VoicingRequest& req, float* out) {
 	const int n = std::min(req.count, VOICING_MAX);
 	if (n <= 0)
-		return 0;
+		return false;
 
 	float plain[VOICING_MAX];
 	plainStack(req, plain);
@@ -97,11 +99,8 @@ int voicePlace(const VoicingRequest& req, float* out) {
 			nc++;
 		}
 	}
-	if (nc == 0) {
-		for (int v = 0; v < n; v++)
-			out[v] = plain[v];
-		return n;
-	}
+	if (nc == 0)
+		return false;
 	std::sort(cand, cand + nc, [](const Cand& a, const Cand& b) { return a.pitch < b.pitch; });
 
 	// What one voice landing here costs.
@@ -195,12 +194,8 @@ int voicePlace(const VoicingRequest& req, float* out) {
 			end = c;
 		}
 	}
-	if (end < 0) {
-		// Nothing fits — more voices than the range has places for. The plain stack always does.
-		for (int v = 0; v < n; v++)
-			out[v] = plain[v];
-		return n;
-	}
+	if (end < 0)
+		return false;
 
 	int mask = full;
 	int c = end;
@@ -212,6 +207,126 @@ int voicePlace(const VoicingRequest& req, float* out) {
 		if (c < 0)
 			break;
 	}
+	return true;
+}
+
+
+/** WHICH TONES GET PLAYED, when there are fewer voices than the chord has tones — which is
+the ordinary case rather than the awkward one.
+
+Taking the lowest ranks is the whole rule, because the ranks were written to be taken in
+order: the tone that says which quality this is, then the seventh, then the colour, then the
+root, and the plain fifth last of all. Three voices under a thirteenth chord therefore play
+the third, the seventh and the thirteenth, which is what a pianist plays and what no amount
+of arithmetic on a polyphonic cable could have worked out.
+
+MORE VOICES THAN TONES doubles from the same order, so the sixth voice of a triad doubles the
+third rather than whatever happened to be first in the list.
+
+Writes the pitch classes IN STACK ORDER — the root first and the rest as they rise above it,
+which is what the voicing wants — and returns how many. */
+int voiceChooseTones(const ChordTone* tones, int count, int want, bool ownBass, int colour,
+		int* pcs) {
+	if (count <= 0)
+		return 0;
+	int rootPc = tones[0].pc;
+	for (int i = 0; i < count; i++)
+		if (tones[i].degree == 1)
+			rootPc = tones[i].pc;
+
+	// HOW MUCH OF THE CHORD TO PLAY. A triad is the degrees a triad has, which includes the
+	// fourth and the second a sus chord puts where its third would be; sevenths adds the
+	// seventh and the sixth; extensions is everything the quality implies.
+	int keep[MAX_CHORD_TONES];
+	int n = 0;
+	for (int i = 0; i < count; i++) {
+		const int d = tones[i].degree;
+		bool take = true;
+		if (colour == VOICING_TRIAD)
+			take = (d == 1 || d == 3 || d == 4 || d == 5 || (d == 9 && tones[i].rank == 0));
+		else if (colour == VOICING_SEVENTHS)
+			take = (d != 11 && d != 13 && !(d == 9 && tones[i].rank != 0));
+		if (take)
+			keep[n++] = i;
+	}
+	// A chord can be left with nothing to play — a fifth chord asked for a third. Whatever
+	// the quality does have is better than silence.
+	if (n == 0) {
+		for (int i = 0; i < count; i++)
+			keep[n++] = i;
+	}
+
+	int above[MAX_CHORD_TONES];
+	int rank[MAX_CHORD_TONES];
+	// THE ELEVENTH IS WHY THE THIRD WAS RANKED LAST. Take the eleventh away and the third
+	// is an ordinary third again, so the table's ranking has to be undone here rather than
+	// leaving an eleventh chord played as a rootless fifth.
+	bool hasEleven = false;
+	for (int k = 0; k < n; k++)
+		hasEleven = hasEleven || (tones[keep[k]].degree == 11);
+	for (int k = 0; k < n; k++) {
+		const ChordTone& t = tones[keep[k]];
+		above[k] = ((t.pc - rootPc) % 12 + 12) % 12;
+		// PLAYING ITS OWN BOTTOM MAKES THE ROOT ESSENTIAL. The table ranks it fourth
+		// because a bass usually has it; when nothing else does, it is the first tone
+		// kept and the first tone doubled.
+		if (ownBass && t.degree == 1)
+			rank[k] = -1;
+		else if (!hasEleven && t.degree == 3 && t.rank > 4)
+			rank[k] = 0;
+		else
+			rank[k] = t.rank;
+	}
+	count = n;
+
+	// The keep order: rank first, and the lower tone first where two are ranked alike.
+	int order[MAX_CHORD_TONES];
+	for (int i = 0; i < count; i++)
+		order[i] = i;
+	std::sort(order, order + count, [&](int a, int b) {
+		if (rank[a] != rank[b])
+			return rank[a] < rank[b];
+		return above[a] < above[b];
+	});
+
+	// Take that many, doubling round the same order when there are more voices than tones,
+	// then put them back into stack order for the voicing.
+	int chosen[VOICING_MAX];
+	const int take = std::min(want, VOICING_MAX);
+	for (int v = 0; v < take; v++)
+		chosen[v] = order[v % count];
+	std::sort(chosen, chosen + take, [&](int a, int b) { return above[a] < above[b]; });
+	for (int v = 0; v < take; v++)
+		pcs[v] = tones[keep[chosen[v]]].pc;
+	return take;
+}
+
+
+/** THE RANGE IS WHAT WAS ASKED FOR, AND THEN AS LITTLE MORE AS WILL DO.
+
+Six voices do not fit in one octave. Asked for a range with nowhere to put them, the search used
+to give up and hand back a plain stack from the BOTTOM of the range upward — each voice pushed an
+octave above the last, with nothing looking at the top of the range at all. So narrowing the span
+raised the chord instead of tightening it, which is the opposite of what the control says.
+
+Now the range is widened a half octave at a time, evenly above and below, until the voices fit.
+The register is kept — the chord grows around its centre rather than climbing — and a span that
+does fit is used exactly as given. */
+int voicePlace(const VoicingRequest& req, float* out) {
+	const int n = std::min(req.count, VOICING_MAX);
+	if (n <= 0)
+		return 0;
+	const float mid = (req.lo + req.hi) / 2.f;
+	const float half = (req.hi - req.lo) / 2.f;
+	for (int widen = 0; widen <= 8; widen++) {
+		VoicingRequest r = req;
+		r.lo = mid - half - 0.5f * (float) widen;
+		r.hi = mid + half + 0.5f * (float) widen;
+		if (placeOnce(r, out))
+			return n;
+	}
+	// Four octaves either side and still nowhere: the plain stack always writes something.
+	plainStack(req, out);
 	return n;
 }
 

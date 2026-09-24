@@ -6,7 +6,19 @@ Given where the voices are, which tones they are to play and how much room they 
 where they go. That makes it testable on its own, which the module is not.
 */
 
+#include "Chord.hpp"
+
 namespace px {
+
+/** HOW MUCH OF THE CHORD TO PLAY. A triad is the degrees a triad has, including the fourth and
+the second that a sus chord puts where its third would be; sevenths adds the seventh and the
+sixth; extensions is everything the quality implies. */
+enum VoicingColour {
+	VOICING_TRIAD,
+	VOICING_SEVENTHS,
+	VOICING_EXTENSIONS,
+	VOICING_COLOURS,
+};
 
 
 /** Six voices is what the panel offers and what a hand has room for. */
@@ -50,6 +62,13 @@ struct VoicingRequest {
 	worse version of a root in the bass. It is a different voicing. */
 	int bassTone = -1;
 };
+
+/** WHICH TONES GET PLAYED, when there are fewer voices than the chord has tones — which is the
+ordinary case rather than the awkward one. Writes the pitch classes in stack order and returns how
+many, which is `want` or fewer. `ownBass` says this part carries the root itself, which makes the
+root essential rather than the fourth-ranked tone it is when a bass has it. */
+int voiceChooseTones(const ChordTone* tones, int count, int want, bool ownBass, int colour,
+	int* pcs);
 
 /** Writes one pitch per tone, in volts, ascending, and returns how many. Always writes
 something: a request that cannot be satisfied inside the range falls back to the plain stack. */

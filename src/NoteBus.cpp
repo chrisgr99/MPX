@@ -93,6 +93,41 @@ void busPublishHarmony(int slot, const Harmony& h) {
 }
 
 
+void busPublishVoicing(int slot, const ChordVoicing& v) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return;
+	Bus& bus = gBuses[slot];
+	const uint32_t s = bus.vseq.load(std::memory_order_relaxed);
+	bus.vseq.store(s + 1, std::memory_order_release);
+	std::atomic_thread_fence(std::memory_order_release);
+	bus.voicing = v;
+	std::atomic_thread_fence(std::memory_order_release);
+	bus.vseq.store(s + 2, std::memory_order_release);
+}
+
+
+bool busReadVoicing(int slot, ChordVoicing& out) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return false;
+	Bus& bus = gBuses[slot];
+	if (!bus.claimed.load(std::memory_order_acquire))
+		return false;
+	for (int attempt = 0; attempt < 3; attempt++) {
+		const uint32_t a = bus.vseq.load(std::memory_order_acquire);
+		if (a & 1u)
+			continue;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		ChordVoicing v = bus.voicing;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (bus.vseq.load(std::memory_order_acquire) == a) {
+			out = v;
+			return v.valid;
+		}
+	}
+	return false;
+}
+
+
 bool busReadHarmony(int slot, Harmony& out) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return false;
@@ -150,6 +185,15 @@ bool BusReader::harmony(Harmony& out) const {
 	// the first is a defined answer rather than an arbitrary one.
 	for (int i = 0; i < count; i++) {
 		if (busReadHarmony(links[i].slot, out))
+			return true;
+	}
+	return false;
+}
+
+
+bool BusReader::voicing(ChordVoicing& out) const {
+	for (int i = 0; i < count; i++) {
+		if (busReadVoicing(links[i].slot, out))
 			return true;
 	}
 	return false;
