@@ -8,6 +8,23 @@ RACK_DIR ?= ../Rack-SDK
 
 SOURCES += $(wildcard src/*.cpp)
 
+# WHICH PLATFORM, decided before the SDK is included. ARCH_MAC is set by the SDK's arch.mk, which
+# is pulled in by plugin.mk at the bottom of this file — too late to choose sources with. The same
+# test arch.mk makes is made here instead, honouring CROSS_COMPILE so that a Windows or Linux build
+# cross-compiled on a Mac is still seen as Windows or Linux.
+ifdef CROSS_COMPILE
+	TARGET_MACHINE := $(CROSS_COMPILE)
+else
+	TARGET_MACHINE := $(shell $(CC) -dumpmachine)
+endif
+
+# OBJECTIVE-C++ ONLY ON MACOS. Reading a picture off the clipboard means asking the system's
+# pasteboard, which is Cocoa. The plain C++ file beside it answers the same question with "no"
+# everywhere else, so nothing above this layer has to know which platform it is on.
+ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
+    SOURCES += $(wildcard src/*.mm)
+endif
+
 # THE ONLY THING IN res IS TYPE. Every panel is drawn in code and the plugin ships no artwork,
 # but a chord chart needs music symbols — the major-seventh triangle, the diminished circle, the
 # segno and coda, the measure-repeat marks — and those are glyphs, not shapes to be approximated
@@ -21,6 +38,12 @@ DISTRIBUTABLES += help
 DISTRIBUTABLES += grooves
 
 DISTRIBUTABLES += $(wildcard LICENSE*)
+
+# The pasteboard is Cocoa, so the framework is named explicitly. Tested the same way as the
+# sources above, since arch.mk has not been included yet and ARCH_MAC is therefore not set here.
+ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
+	LDFLAGS += -framework Cocoa
+endif
 
 include $(RACK_DIR)/plugin.mk
 

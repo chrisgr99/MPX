@@ -282,4 +282,229 @@ void Picture::at(float x, float y, uint8_t* out) const {
 }
 
 
+
+// ---- what has been loaded before ---------------------------------------------------------
+
+/** Box-filtered down from the square, the same way the square itself was made: point sampling a
+photograph down to forty-eight pixels loses whatever it was of. */
+void pictureThumbnail(const std::vector<uint8_t>& rgba, std::vector<uint8_t>& out) {
+	out.assign((size_t) THUMB_SIDE * THUMB_SIDE * 4, 0);
+	if (rgba.size() < (size_t) PICTURE_SIDE * PICTURE_SIDE * 4)
+		return;
+	const int block = PICTURE_SIDE / THUMB_SIDE;
+	for (int y = 0; y < THUMB_SIDE; y++) {
+		for (int x = 0; x < THUMB_SIDE; x++) {
+			uint32_t sum[4] = {0, 0, 0, 0};
+			uint32_t count = 0;
+			for (int sy = y * block; sy < (y + 1) * block && sy < PICTURE_SIDE; sy++) {
+				const uint8_t* row = &rgba[((size_t) sy * PICTURE_SIDE + x * block) * 4];
+				for (int sx = 0; sx < block; sx++) {
+					sum[0] += row[0]; sum[1] += row[1]; sum[2] += row[2]; sum[3] += row[3];
+					row += 4;
+					count++;
+				}
+			}
+			if (count == 0)
+				count = 1;
+			uint8_t* to = &out[((size_t) y * THUMB_SIDE + x) * 4];
+			for (int c = 0; c < 4; c++)
+				to[c] = (uint8_t) (sum[c] / count);
+		}
+	}
+}
+
+
+static const size_t PICTURE_HISTORY = PICTURE_KEPT;
+static std::vector<PictureMemory> gHistory;
+static std::string gFolder;
+static bool gMemoryRead = false;
+
+static std::string memoryPath() {
+	return asset::user(layoutFolder + "/pictures.json");
+}
+
+static std::string keptFolder() {
+	return asset::user(layoutFolder + "/pictures");
+}
+
+std::string pictureKeepCopy(const std::string& name, const std::vector<uint8_t>& bytes) {
+	if (bytes.empty())
+		return "";
+	system::createDirectories(keptFolder());
+	std::string base = name.empty() ? "picture" : name;
+	// Anything a file system would rather not see, taken out.
+	for (char& c : base) {
+		if (c == '/' || c == '\\' || c == ':')
+			c = '-';
+	}
+	std::string path = keptFolder() + "/" + base;
+	// A SECOND PICTURE OF THE SAME NAME IS A SECOND PICTURE, so it is numbered rather than being
+	// written over — two photographs both called image.jpg is the commonest thing in the world.
+	if (system::isFile(path)) {
+		const std::string stem = system::getStem(base);
+		const std::string ext = system::getExtension(base);
+		for (int n = 2; n < 1000; n++) {
+			const std::string tryPath = keptFolder() + "/" + stem + string::f(" %d", n) + ext;
+			if (!system::isFile(tryPath)) {
+				path = tryPath;
+				break;
+			}
+		}
+	}
+	std::FILE* f = std::fopen(path.c_str(), "wb");
+	if (!f)
+		return "";
+	const size_t put = std::fwrite(bytes.data(), 1, bytes.size(), f);
+	std::fclose(f);
+	if (put != bytes.size()) {
+		system::remove(path);
+		return "";
+	}
+	return path;
+}
+
+static std::string thumbFolder() {
+	return asset::user(layoutFolder + "/thumbs");
+}
+
+/** A NAME FOR A THUMBNAIL'S FILE, made from the picture's path. The same picture always gets the
+same name, so re-loading it overwrites its own thumbnail rather than leaving another behind. */
+static std::string thumbName(const std::string& path) {
+	uint64_t h = 1469598103934665603ull;
+	for (char c : path) {
+		h ^= (uint64_t) (unsigned char) c;
+		h *= 1099511628211ull;
+	}
+	char buf[32];
+	std::snprintf(buf, sizeof(buf), "%016llx.rgba", (unsigned long long) h);
+	return buf;
+}
+
+bool pictureThumb(const PictureMemory& memory, std::vector<uint8_t>& out) {
+	if (memory.thumbFile.empty())
+		return false;
+	std::FILE* f = std::fopen((thumbFolder() + "/" + memory.thumbFile).c_str(), "rb");
+	if (!f)
+		return false;
+	out.assign((size_t) THUMB_SIDE * THUMB_SIDE * 4, 0);
+	const size_t got = std::fread(out.data(), 1, out.size(), f);
+	std::fclose(f);
+	if (got != out.size()) {
+		out.clear();
+		return false;
+	}
+	return true;
+}
+
+void pictureMemoryLoad() {
+	if (gMemoryRead)
+		return;
+	gMemoryRead = true;
+	FILE* file = std::fopen(memoryPath().c_str(), "r");
+	if (!file)
+		return;
+	json_error_t error;
+	json_t* rootJ = json_loadf(file, 0, &error);
+	std::fclose(file);
+	if (!rootJ)
+		return;
+	if (const char* folder = json_string_value(json_object_get(rootJ, "folder")))
+		gFolder = folder;
+	json_t* listJ = json_object_get(rootJ, "recent");
+	if (json_is_array(listJ)) {
+		size_t i;
+		json_t* oneJ;
+		json_array_foreach(listJ, i, oneJ) {
+			PictureMemory m;
+			if (const char* v = json_string_value(json_object_get(oneJ, "path")))
+				m.path = v;
+			if (const char* v = json_string_value(json_object_get(oneJ, "name")))
+				m.name = v;
+			if (const char* v = json_string_value(json_object_get(oneJ, "thumb")))
+				m.thumbFile = v;
+			if (!m.path.empty() && gHistory.size() < PICTURE_HISTORY)
+				gHistory.push_back(m);
+		}
+	}
+	json_decref(rootJ);
+}
+
+static void memorySave() {
+	json_t* rootJ = json_object();
+	json_object_set_new(rootJ, "folder", json_string(gFolder.c_str()));
+	json_t* listJ = json_array();
+	for (const PictureMemory& m : gHistory) {
+		json_t* oneJ = json_object();
+		json_object_set_new(oneJ, "path", json_string(m.path.c_str()));
+		json_object_set_new(oneJ, "name", json_string(m.name.c_str()));
+		if (!m.thumbFile.empty())
+			json_object_set_new(oneJ, "thumb", json_string(m.thumbFile.c_str()));
+		json_array_append_new(listJ, oneJ);
+	}
+	json_object_set_new(rootJ, "recent", listJ);
+	system::createDirectories(asset::user(layoutFolder));
+	FILE* file = std::fopen(memoryPath().c_str(), "w");
+	if (file) {
+		json_dumpf(rootJ, file, JSON_INDENT(2));
+		std::fclose(file);
+	}
+	json_decref(rootJ);
+}
+
+std::string pictureFolder() {
+	pictureMemoryLoad();
+	return gFolder;
+}
+
+const std::vector<PictureMemory>& pictureHistory() {
+	pictureMemoryLoad();
+	return gHistory;
+}
+
+void pictureRemember(const std::string& path, const std::string& name,
+		const std::vector<uint8_t>& rgba) {
+	pictureMemoryLoad();
+	gFolder = system::getDirectory(path);
+	// THE SAME PICTURE TWICE IS ONE ENTRY, moved to the front. A list that fills up with four
+	// copies of the picture you are working on is a list of one picture.
+	for (size_t i = 0; i < gHistory.size(); i++) {
+		if (gHistory[i].path == path) {
+			gHistory.erase(gHistory.begin() + i);
+			break;
+		}
+	}
+	PictureMemory m;
+	m.path = path;
+	m.name = name.empty() ? system::getFilename(path) : name;
+	std::vector<uint8_t> thumb;
+	pictureThumbnail(rgba, thumb);
+	if (!thumb.empty()) {
+		system::createDirectories(thumbFolder());
+		m.thumbFile = thumbName(path);
+		std::FILE* f = std::fopen((thumbFolder() + "/" + m.thumbFile).c_str(), "wb");
+		if (f) {
+			std::fwrite(thumb.data(), 1, thumb.size(), f);
+			std::fclose(f);
+		}
+		else {
+			m.thumbFile.clear();
+		}
+	}
+	gHistory.insert(gHistory.begin(), m);
+	if (gHistory.size() > PICTURE_HISTORY)
+		gHistory.resize(PICTURE_HISTORY);
+	memorySave();
+}
+
+void pictureMemoryClear() {
+	pictureMemoryLoad();
+	for (const PictureMemory& m : gHistory) {
+		if (!m.thumbFile.empty())
+			system::remove(thumbFolder() + "/" + m.thumbFile);
+	}
+	gHistory.clear();
+	memorySave();
+}
+
+
 } // namespace px
