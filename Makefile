@@ -45,6 +45,25 @@ ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
 	LDFLAGS += -framework Cocoa
 endif
 
+# FLUIDSYNTH, built into dep by tools/build-fluidsynth.sh and linked statically: the SoundFont
+# player inside mpxSound. Built without audio drivers, MIDI drivers, libsndfile, LADSPA, readline,
+# networking or threads of its own, and without GLib, which it stopped needing in 2.6.
+#
+# TESTED WITH TARGET_MACHINE AND NOT ARCH_MAC, because arch.mk has not been included yet — which
+# is the same reason the test above it is written that way. A framework missed here still works,
+# since the host has already loaded it and the undefined symbol is looked up at load; a static
+# library missed here does not, and the module crashes the first time it is created.
+FLAGS += -I dep/include
+ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
+	LDFLAGS += dep/lib/libfluidsynth.a -framework CoreFoundation
+endif
+ifneq (,$(findstring -linux,$(TARGET_MACHINE)))
+	LDFLAGS += dep/lib/libfluidsynth.a
+endif
+ifneq (,$(findstring -mingw,$(TARGET_MACHINE)))
+	LDFLAGS += dep/lib/libfluidsynth.a -lws2_32 -lole32
+endif
+
 include $(RACK_DIR)/plugin.mk
 
 # DEVELOPMENT INSTALL, and why it is not `make install`.
@@ -165,4 +184,11 @@ navtest:
 		-o build/navtest
 	@./build/navtest
 
-.PHONY: test presets phrasesim gptest navtest
+# The SoundFont engine. No Rack in it either, so it runs against a bank from the command line.
+soundtest:
+	@c++ -std=c++11 -O1 -Wall -I dep/include test/soundtest.cpp src/FluidEngine.cpp \
+		dep/lib/libfluidsynth.a -framework CoreFoundation -o build/soundtest
+	@./build/soundtest $(ARGS)
+
+
+.PHONY: test presets phrasesim gptest navtest soundtest
