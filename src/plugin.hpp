@@ -8,7 +8,6 @@ extern Model* modelMpxOut;
 extern Model* modelMpxIn;
 extern Model* modelMonitor;
 extern Model* modelChart;
-extern Model* modelMpxComp;
 extern Model* modelMpxVoicing;
 extern Model* modelMpxPattern;
 extern Model* modelMpxSprites;

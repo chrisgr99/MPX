@@ -9,7 +9,6 @@ void init(Plugin* p) {
 	p->addModel(modelMpxIn);
 	p->addModel(modelMonitor);
 	p->addModel(modelChart);
-	p->addModel(modelMpxComp);
 	p->addModel(modelMpxVoicing);
 	p->addModel(modelMpxPattern);
 	p->addModel(modelMpxSprites);

@@ -65,16 +65,6 @@
       ]
     },
     {
-      "slug": "mpxComp",
-      "name": "mpxComp",
-      "description": "Chordal accompaniment: voices a chord and leads the voices between changes",
-      "tags": [
-        "Polyphonic",
-        "Utility",
-        "Arpeggiator"
-      ]
-    },
-    {
       "slug": "polyToStereo",
       "name": "polyToStereo",
       "description": "A channel strip per voice: two level stages multiplied, a pan, and a stereo pair",
