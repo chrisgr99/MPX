@@ -106,6 +106,41 @@ void busPublishVoicing(int slot, const ChordVoicing& v) {
 }
 
 
+void busPublishInstrument(int slot, const Instrument& p) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return;
+	Bus& bus = gBuses[slot];
+	const uint32_t s = bus.pseq.load(std::memory_order_relaxed);
+	bus.pseq.store(s + 1, std::memory_order_release);
+	std::atomic_thread_fence(std::memory_order_release);
+	bus.instrument = p;
+	std::atomic_thread_fence(std::memory_order_release);
+	bus.pseq.store(s + 2, std::memory_order_release);
+}
+
+
+bool busReadInstrument(int slot, Instrument& out) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return false;
+	Bus& bus = gBuses[slot];
+	if (!bus.claimed.load(std::memory_order_acquire))
+		return false;
+	for (int attempt = 0; attempt < 3; attempt++) {
+		const uint32_t a = bus.pseq.load(std::memory_order_acquire);
+		if (a & 1u)
+			continue;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		Instrument p = bus.instrument;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (bus.pseq.load(std::memory_order_acquire) == a) {
+			out = p;
+			return p.valid;
+		}
+	}
+	return false;
+}
+
+
 bool busReadVoicing(int slot, ChordVoicing& out) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return false;
@@ -194,6 +229,15 @@ bool BusReader::harmony(Harmony& out) const {
 bool BusReader::voicing(ChordVoicing& out) const {
 	for (int i = 0; i < count; i++) {
 		if (busReadVoicing(links[i].slot, out))
+			return true;
+	}
+	return false;
+}
+
+
+bool BusReader::instrument(Instrument& out) const {
+	for (int i = 0; i < count; i++) {
+		if (busReadInstrument(links[i].slot, out))
 			return true;
 	}
 	return false;

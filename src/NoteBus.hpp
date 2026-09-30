@@ -100,6 +100,79 @@ struct Event {
 	at its last; below nought from a source that does not know. A melody shapes its line by it:
 	see CONTOUR on mpxVoice. */
 	float along = -1.f;
+
+	/** HOW THE NOTE IS PLAYED, not what it sounds like.
+
+	A source says the note is hammered on, palm muted, the third string of a downstroke; a
+	renderer decides what that means in pitch, level and length. Both statements are needed and
+	they belong in different modules: a source that sent a finished bend curve would leave nothing
+	for a renderer to vary, and a renderer asked to guess whether a note was picked or hammered
+	would be guessing. See docs/guitar-player-spec.md.
+
+	AT THE NOTE'S START, AND NOT LATER. Every one of these is decided when the note is struck and
+	none of them changes while it sounds, so they are fields rather than messages — and a renderer
+	needs them BEFORE it starts the note: a palm mute changes the attack, a slide into a note
+	begins before the note's own moment, and a strum's position decides how late that string
+	speaks. The three lanes remain for what is genuinely moving while a note sounds.
+
+	EMPTY IS ORDINARY. A source that knows nothing of any of this leaves them alone and a
+	renderer hears a plainly struck note, which is what every module sending notes today does. */
+	enum Technique : uint32_t {
+		HAMMER_ON = 1u << 0,       /**< Sounded by the left hand from the note before it. */
+		PULL_OFF = 1u << 1,
+		LEGATO_SLIDE = 1u << 2,    /**< Slides to the next note without striking it. */
+		SHIFT_SLIDE = 1u << 3,     /**< Slides to the next note and strikes it. */
+		SLIDE_IN_BELOW = 1u << 4,
+		SLIDE_IN_ABOVE = 1u << 5,
+		SLIDE_OUT_DOWN = 1u << 6,
+		SLIDE_OUT_UP = 1u << 7,
+		LET_RING = 1u << 8,        /**< Sounds until its own string is struck again. */
+		PALM_MUTE = 1u << 9,
+		DEAD_NOTE = 1u << 10,      /**< A muted click with no pitch in it. */
+		GHOST = 1u << 11,
+		ACCENT = 1u << 12,
+		HEAVY_ACCENT = 1u << 13,
+		HARMONIC = 1u << 14,
+		ARTIFICIAL_HARMONIC = 1u << 15,
+		TAPPED = 1u << 16,
+		STACCATO = 1u << 17,
+		TREMOLO = 1u << 18,        /**< Picked repeatedly for the note's length. */
+	};
+	uint32_t technique = 0;
+
+	/** WHERE ON THE INSTRUMENT. One is the highest string; nought means the source has no
+	fretboard, and then a renderer gives the note a voice of its own. The string is what makes a
+	bend move one note and not its neighbours, and what makes let ring end when that string is
+	played again. */
+	int8_t string = 0;
+	int8_t fret = -1;
+
+	enum Vibrato : uint8_t { VIBRATO_NONE, VIBRATO_SLIGHT, VIBRATO_WIDE };
+	uint8_t vibrato = VIBRATO_NONE;
+
+	/** A note squeezed in before its beat, or taking time from it. */
+	enum Grace : uint8_t { GRACE_NONE, GRACE_BEFORE, GRACE_ON };
+	uint8_t grace = GRACE_NONE;
+
+	/** THE STROKE THIS NOTE BELONGS TO. A chord brushed with one movement of the hand is several
+	notes, each speaking a few milliseconds after the one before it, low to high going down and
+	high to low coming up. The direction and the note's place in the stroke are what a renderer
+	needs to spread it; the length of the whole stroke is in milliseconds, or nought to let the
+	renderer decide from the style. */
+	int8_t strum = 0;              /**< -1 up, 1 down, nought not brushed. */
+	uint8_t strumIndex = 0;
+	uint8_t strumMs = 0;
+
+	/** A BEND, AS THE SOURCE MEANT IT: up to four points through the note's length, each an
+	offset from nought to a hundred per cent and a height in cents. Not a curve — what happens
+	between the points is the renderer's business, and a source that drew the curve itself would
+	leave nothing to vary. Nought points is a note that is not bent. */
+	struct BendPoint {
+		uint8_t at = 0;            /**< Per cent of the note's length. */
+		int16_t cents = 0;
+	};
+	uint8_t bendCount = 0;
+	BendPoint bendPoints[4];
 };
 
 /** THE HARMONY THE NOTES ARE PLAYED AGAINST, carried by the same cable.
@@ -260,6 +333,37 @@ struct Harmony {
 	bool holding = false;
 };
 
+/** WHAT INSTRUMENT IS PLAYING, carried as state for the reason the harmony is: a module that
+starts listening between two notes must know it at once, not when something next changes.
+
+It is per part and not per note — it is the same for every note of a guitar — and it changes only
+when a song is loaded or an instrument is chosen. `change` moves when it does, so a reader can
+tell a new one from the same one read again. */
+struct Instrument {
+	bool valid = false;
+	/** The General MIDI program the source thinks this part is, or -1 where it has no opinion. */
+	int program = -1;
+	bool percussion = false;
+	int capo = 0;
+	/** The MIDI note of each open string, highest first. Empty for an instrument with no strings,
+	and then a renderer gives every note a voice of its own. */
+	static constexpr int MAX_STRINGS = 8;
+	uint8_t stringCount = 0;
+	uint8_t tuning[MAX_STRINGS] = {};
+	/** What to call it on a panel: "Jazz Guitar", "Bass", "Drums". Fixed length, because this is
+	shared memory read from the audio thread and a string that reallocates is not. */
+	char name[24] = {};
+	uint32_t change = 0;
+
+	void setName(const std::string& text) {
+		const size_t n = (text.size() < sizeof(name) - 1) ? text.size() : sizeof(name) - 1;
+		for (size_t i = 0; i < n; i++)
+			name[i] = text[i];
+		name[n] = 0;
+	}
+};
+
+
 struct Bus {
 	std::atomic<bool> claimed{false};
 	std::atomic<uint32_t> generation{0};
@@ -280,6 +384,12 @@ struct Bus {
 	early, which nothing can hear. */
 	std::atomic<float> sustain{0.f};
 	std::atomic<float> soft{0.f};
+
+	/** THE INSTRUMENT: what is playing on this cable. Its own sequence number rather than the
+	harmony's, since the two change at quite different times — the harmony several times a bar,
+	this one only when a song is loaded. */
+	std::atomic<uint32_t> pseq{0};
+	Instrument instrument;
 
 	/** THE VOICING: the notes this chord has been placed on. State for the same reason the
 	harmony is — a module that starts listening between chords must know where the voices are
@@ -308,6 +418,11 @@ void busPublishPedals(int slot, float sustain, float soft);
 void busPublishVoicing(int slot, const ChordVoicing& v);
 /** Reads it. False if the slot is empty or nothing has published one. */
 bool busReadVoicing(int slot, ChordVoicing& out);
+
+/** Publishes the instrument on this bus. Audio thread, one writer per bus. */
+void busPublishInstrument(int slot, const Instrument& p);
+/** Reads it. False if the slot is empty or nothing has published one. */
+bool busReadInstrument(int slot, Instrument& out);
 
 /** Publishes the harmony on this bus. Audio thread, one writer per bus. */
 void busPublishHarmony(int slot, const Harmony& h);
@@ -347,6 +462,8 @@ struct BusReader {
 	bool harmony(Harmony& out) const;
 	/** The voicing from the first upstream that has one. */
 	bool voicing(ChordVoicing& out) const;
+	/** The instrument from the first upstream that has one. */
+	bool instrument(Instrument& out) const;
 	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
 	one player's hands, and either one holding the pedal holds it. Nought and nought with
 	nothing attached. */

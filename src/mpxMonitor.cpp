@@ -60,6 +60,14 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 		uint8_t lane = 0;
 		int64_t handle = 0;
 		float a = 0.f, b = 0.f, c = 0.f;
+		/** HOW THE NOTE IS PLAYED, as the cable now carries it. Shown because otherwise there is
+		no way to see whether a source is saying any of it. */
+		uint32_t technique = 0;
+		int8_t string = 0;
+		uint8_t vibrato = 0;
+		int8_t strum = 0;
+		uint8_t bendCount = 0;
+		int16_t bendTo = 0;
 	};
 	Line log[LOG];
 	std::atomic<uint32_t> logWrite{0};
@@ -126,6 +134,12 @@ struct MonitorModule : Module, NoteSource, NoteSink {
 			line.a = e.pitch;
 			line.b = e.level;
 			line.c = e.duration;
+			line.technique = e.technique;
+			line.string = e.string;
+			line.vibrato = e.vibrato;
+			line.strum = e.strum;
+			line.bendCount = e.bendCount;
+			line.bendTo = e.bendCount ? e.bendPoints[e.bendCount - 1].cents : 0;
 		}
 		else {
 			line.a = e.value;
@@ -196,6 +210,49 @@ static std::string voltsAsNote(float volts) {
 	char buf[16];
 	std::snprintf(buf, sizeof(buf), "%s%d", pitchClassName(semis), semis / 12 - 1);
 	return buf;
+}
+
+
+/** HOW THE NOTE IS PLAYED, IN AS FEW LETTERS AS WILL DO. A line of a monitor is narrow, and a
+list of nineteen words would push the pitch off it — so each technique is two or three letters,
+and a note with nothing said about it shows its handle as it always did. */
+static std::string playedAs(const MonitorModule::Line& line) {
+	std::string out;
+	auto add = [&](const char* mark) {
+		if (!out.empty())
+			out += " ";
+		out += mark;
+	};
+	if (line.string > 0)
+		add(string::f("s%d", line.string).c_str());
+	if (line.technique & Event::HAMMER_ON) add("ham");
+	if (line.technique & Event::PULL_OFF) add("pull");
+	if (line.technique & Event::LEGATO_SLIDE) add("leg");
+	if (line.technique & Event::SHIFT_SLIDE) add("sl");
+	if (line.technique & Event::SLIDE_IN_BELOW) add("sl/");
+	if (line.technique & Event::SLIDE_IN_ABOVE) add("sl\\");
+	if (line.technique & Event::SLIDE_OUT_DOWN) add("/sl");
+	if (line.technique & Event::SLIDE_OUT_UP) add("\\sl");
+	if (line.technique & Event::LET_RING) add("ring");
+	if (line.technique & Event::PALM_MUTE) add("palm");
+	if (line.technique & Event::DEAD_NOTE) add("dead");
+	if (line.technique & Event::GHOST) add("gh");
+	if (line.technique & Event::HEAVY_ACCENT) add(">>");
+	else if (line.technique & Event::ACCENT) add(">");
+	if (line.technique & Event::ARTIFICIAL_HARMONIC) add("ah");
+	else if (line.technique & Event::HARMONIC) add("h");
+	if (line.technique & Event::TAPPED) add("tap");
+	if (line.technique & Event::STACCATO) add(".");
+	if (line.technique & Event::TREMOLO) add("trem");
+	if (line.vibrato == Event::VIBRATO_WIDE) add("vib+");
+	else if (line.vibrato == Event::VIBRATO_SLIGHT) add("vib");
+	if (line.strum > 0) add("down");
+	else if (line.strum < 0) add("up");
+	if (line.bendCount)
+		add(string::f("bend%+d", (int) line.bendTo).c_str());
+	if (out.empty())
+		out = string::f("%lld", (long long) (line.handle % 1000));
+	return out;
 }
 
 
@@ -318,9 +375,9 @@ struct MonitorDisplay : widget::Widget {
 			const MonitorModule::Line& line = module->log[(w - 1 - i) % LOG];
 			if (line.kind == Event::ON) {
 				nvgFillColor(args.vg, nvgRGB(0x3d, 0xd6, 0x8c));
-				std::snprintf(buf, sizeof(buf), "on  %-4s %.2f %.2fs %lld",
+				std::snprintf(buf, sizeof(buf), "on  %-4s %.2f %.2fs %s",
 					voltsAsNote(line.a).c_str(), line.b, line.c,
-					(long long) (line.handle % 1000));
+					playedAs(line).c_str());
 			}
 			else if (line.kind == Event::OFF) {
 				nvgFillColor(args.vg, nvgRGB(0x8a, 0x92, 0x9e));
