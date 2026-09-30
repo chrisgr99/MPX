@@ -155,8 +155,14 @@ melodytest:
 # Reading Guitar Pro files. No Rack in it, so it builds on its own and runs against a folder of
 # real files: make gptest ARGS="~/Downloads/*.gp*"
 gptest:
-	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp -o build/gptest
+	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp src/GpTimeline.cpp -o build/gptest
 	@./build/gptest $(ARGS)
 
 
-.PHONY: test presets phrasesim gptest
+# Repeats, endings and jumps: the played order, against songs written in the test itself.
+navtest:
+	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp \
+		-o build/navtest
+	@./build/navtest
+
+.PHONY: test presets phrasesim gptest navtest
