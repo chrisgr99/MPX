@@ -24,4 +24,5 @@ void init(Plugin* p) {
 	p->addModel(modelMpxMelodyVoice);
 	p->addModel(modelMpxPhrase);
 	p->addModel(modelMpxPiano);
+	p->addModel(modelMpxGuitarChart);
 }

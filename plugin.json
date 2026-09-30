@@ -202,6 +202,15 @@
         "Polyphonic",
         "Sampler"
       ]
+    },
+    {
+      "slug": "mpxGuitarChart",
+      "name": "mpxGuitarChart",
+      "description": "Plays a Guitar Pro file: each track on its own MPX cable, with a mute beside each one. Reads .gp, .gpx and .gp3 to .gp5.",
+      "tags": [
+        "Sequencer",
+        "Polyphonic"
+      ]
     }
   ]
 }
