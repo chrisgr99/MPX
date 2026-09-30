@@ -45,7 +45,7 @@ ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
 endif
 
 # FLUIDSYNTH, built into dep by tools/build-fluidsynth.sh and linked statically: the SoundFont
-# player inside mpxSound. Built without audio drivers, MIDI drivers, libsndfile, LADSPA, readline,
+# player inside mpxFluidSynth. Built without audio drivers, MIDI drivers, libsndfile, LADSPA, readline,
 # networking or threads of its own, and without GLib, which it stopped needing in 2.6.
 #
 # TESTED WITH TARGET_MACHINE AND NOT ARCH_MAC, because arch.mk has not been included yet — which

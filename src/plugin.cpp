@@ -17,6 +17,6 @@ void init(Plugin* p) {
 	p->addModel(modelMpxRand);
 	p->addModel(modelMpxPiano);
 	p->addModel(modelMpxGuitarChart);
-	p->addModel(modelMpxSound);
+	p->addModel(modelMpxFluidSynth);
 	p->addModel(modelMpxGuitarist);
 }

@@ -16,7 +16,7 @@ extern Model* modelMpxArp;
 extern Model* modelMpxRand;
 extern Model* modelMpxPiano;
 extern Model* modelMpxGuitarChart;
-extern Model* modelMpxSound;
+extern Model* modelMpxFluidSynth;
 extern Model* modelMpxGuitarist;
 
 namespace px {

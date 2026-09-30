@@ -134,8 +134,8 @@
       ]
     },
     {
-      "slug": "mpxSound",
-      "name": "mpxSound",
+      "slug": "mpxFluidSynth",
+      "name": "mpxFluidSynth",
       "description": "A SoundFont band: six MPX parts through one FluidSynth and one bank, a channel per string so bends and legato behave, with the bank's own sounds chosen per part.",
       "tags": [
         "Sampler",

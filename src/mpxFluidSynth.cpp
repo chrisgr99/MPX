@@ -1,4 +1,4 @@
-/** mpxSound — a SoundFont band, played from MPX cables. See docs/guitar-player-spec.md.
+/** mpxFluidSynth — a SoundFont band, played from MPX cables. See docs/guitar-player-spec.md.
 
 ONE SYNTH, ONE BANK, SIX PARTS. A General MIDI bank is thirty megabytes, so it is loaded once and
 shared: each input is one instrument with its own sound out of the bank, and each gets a block of
@@ -192,13 +192,13 @@ struct SoundModule : Module, NoteSink {
 				// SAID ONCE, IN THE LOG. Whether a bank was found and read is the first
 				// question asked when the module makes no sound, and reading it off the panel
 				// means being at the panel at the moment it happened.
-				INFO("mpxSound: read %d sounds from %s", (int) engine.presets().size(),
+				INFO("mpxFluidSynth: read %d sounds from %s", (int) engine.presets().size(),
 					wantBank.c_str());
 			}
 			else {
 				message = engine.reason();
 				failed = true;
-				WARN("mpxSound: %s: %s", wantBank.c_str(), engine.reason().c_str());
+				WARN("mpxFluidSynth: %s: %s", wantBank.c_str(), engine.reason().c_str());
 			}
 			busy = false;
 		});
@@ -339,7 +339,7 @@ struct SoundModule : Module, NoteSink {
 		if (!found.empty())
 			loadBank(found);
 		else
-			INFO("mpxSound: no SoundFont in %s", bankFolder().c_str());
+			INFO("mpxFluidSynth: no SoundFont in %s", bankFolder().c_str());
 	}
 
 	/** The first SoundFont in the banks folder, or nothing. */
@@ -655,7 +655,7 @@ struct SoundParts : widget::OpaqueWidget {
 static Layout soundLayout() {
 	Layout L;
 	L.hp = 12.f;
-	L.title = "mpxSound";
+	L.title = "mpxFluidSynth";
 
 	auto label = [&](const char* key, float x, float y, const char* text, Panel::Align align,
 			bool heading, const char* owner) {
@@ -751,7 +751,7 @@ struct SoundWidget : ModuleWidget {
 	SoundWidget(SoundModule* module) {
 		setModule(module);
 		layout = soundLayout();
-		layoutApplyUser("mpxSound", layout);
+		layoutApplyUser("mpxFluidSynth", layout);
 		panel = new Panel;
 		addChild(panel);
 
@@ -770,7 +770,7 @@ struct SoundWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
-		layoutAppendMenu(menu, this, panel, &layout, "mpxSound");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxFluidSynth");
 		SoundModule* m = dynamic_cast<SoundModule*>(module);
 		if (!m)
 			return;
@@ -817,4 +817,4 @@ struct SoundWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelMpxSound = createModel<px::SoundModule, px::SoundWidget>("mpxSound");
+Model* modelMpxFluidSynth = createModel<px::SoundModule, px::SoundWidget>("mpxFluidSynth");

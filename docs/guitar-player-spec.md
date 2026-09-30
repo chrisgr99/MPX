@@ -12,13 +12,15 @@ Specification for Claude Code. Author: Chris Graham. Date: 2026-09-29.
 
 *`mpxOut` is untouched, for the notes as they were written.*
 
-*D3: `mpxSound` holds one FluidSynth and one copy of the bank, with six or eight MPX inputs — one instrument each, a program each, its own strings' channels each. A synth per module would mean a copy of a thirty-megabyte bank per part. Drums are a percussion input on the same module; mpxDrums stays as the synthesised kit and mpxPiano keeps the Salamander samples.*
+*D3: `mpxFluidSynth` holds one FluidSynth and one copy of the bank, with six or eight MPX inputs — one instrument each, a program each, its own strings' channels each. A synth per module would mean a copy of a thirty-megabyte bank per part. Drums are a percussion input on the same module; mpxDrums stays as the synthesised kit and mpxPiano keeps the Salamander samples.*
 
 *D4: inside MPX, beside the reader.*
 
+*The module §7 calls `mpxSound` is built as `mpxFluidSynth`, which is what it is and no more than that. The name is not changed in the specification below, which is left as it was written.*
+
 *`mpxGuitar` in the text below is the GENERATIVE guitarist, §6 — the module that invents a part from the harmony rather than playing one. It is unlikely to be built: the reason for importing a song is that the material is already musical, and inventing one from a chord grid is the problem the import was meant to avoid. So nothing is competing for the name.*
 
-*BUILT SO FAR: D1 — the note event carries the techniques, the string and fret, the vibrato, the grace, the strum and the bend points; the instrument is a state block beside the harmony; mpxGuitarChart fills all of it from the file and mpxMonitor shows it. The performer library (src/Perform.hpp), with every number in DreamerMPX/perform.txt and a test per articulation in `make performtest`. `mpxGuitarist`, which plays its schedule as control voltage, a channel per string. And `mpxSound`, which plays the same schedule through FluidSynth 2.6.1, built static in dep by tools/build-fluidsynth.sh, with `make soundtest` for the engine alone.*
+*BUILT SO FAR: D1 — the note event carries the techniques, the string and fret, the vibrato, the grace, the strum and the bend points; the instrument is a state block beside the harmony; mpxGuitarChart fills all of it from the file and mpxMonitor shows it. The performer library (src/Perform.hpp), with every number in DreamerMPX/perform.txt and a test per articulation in `make performtest`. `mpxGuitarist`, which plays its schedule as control voltage, a channel per string. And `mpxFluidSynth`, which plays the same schedule through FluidSynth 2.6.1, built static in dep by tools/build-fluidsynth.sh, with `make soundtest` for the engine alone.*
 
 *NOT BUILT: the harmony from the notes, the style profiles of §6.5, the MIDI file export of §7.6, and the variations of §6.6. The performer has no lookahead — see Perform.hpp — so a slide into a note arrives just after the onset rather than before it, and nothing else in the design depends on knowing the future.*
 

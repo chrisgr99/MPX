@@ -1,6 +1,6 @@
 /** The SoundFont engine, from a command line.
 
-WHY THERE IS A PROGRAM FOR THIS. Everything mpxSound does to make a sound happens here as well,
+WHY THERE IS A PROGRAM FOR THIS. Everything mpxFluidSynth does to make a sound happens here as well,
 and here it can be looked at: the bank is loaded, a part is given a sound, notes are played on a
 channel per string, a bend is drawn through one of them, and the result is written as a WAV that
 can be opened and measured. A fault found here is a line and a number; the same fault found by
