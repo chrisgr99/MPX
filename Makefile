@@ -152,5 +152,11 @@ melodytest:
 		-o build/melodytest -L$(RACK_DIR) -lRack
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/melodytest $(ARGS)
 
+# Reading Guitar Pro files. No Rack in it, so it builds on its own and runs against a folder of
+# real files: make gptest ARGS="~/Downloads/*.gp*"
+gptest:
+	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp -o build/gptest
+	@./build/gptest $(ARGS)
 
-.PHONY: test presets phrasesim
+
+.PHONY: test presets phrasesim gptest
