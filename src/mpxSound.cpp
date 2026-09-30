@@ -20,6 +20,7 @@ General MIDI drum numbers, which is what mpxGuitarChart and mpxGroove already se
 #include "FluidEngine.hpp"
 #include "Layout.hpp"
 #include "NoteBus.hpp"
+#include "Perform.hpp"
 
 #include <osdialog.h>
 
@@ -32,10 +33,11 @@ namespace px {
 /** How many parts. Six because a band is a rhythm section and a few voices on top, and because
 six parts of eight channels sit inside the sixty-four a synth is given. */
 static const int PARTS = 6;
-/** Channels per part: as many as a guitar has strings, and two spare for a part that turns out
-to want more voices than it has strings. */
-static const int PART_CHANNELS = 8;
-static const int CHANNELS = PARTS * PART_CHANNELS + 2;
+/** Channels per part: one per voice the performer holds, which is one per string of a twelve
+string and enough for anything unfretted. */
+static const int PART_CHANNELS = PERFORM_VOICES;
+/** FluidSynth wants a multiple of sixteen, so the next one up. */
+static const int CHANNELS = ((PARTS * PART_CHANNELS + 15) / 16) * 16;
 static const int POLYPHONY = 256;
 
 /** How many frames are rendered at a time. About one and a third milliseconds at 48k, which is
@@ -48,20 +50,10 @@ static std::string bankFolder() {
 }
 
 
-/** One sounding note of one part. A note carries its own length, so its end is known when it
-starts and nothing has to arrive to stop it. */
-struct SoundVoice {
-	bool on = false;
-	int channel = 0;
-	int key = 0;
-	int64_t handle = 0;
-	double remaining = 0.0;      /**< Seconds of it left to sound. */
-};
-
-
 struct SoundModule : Module, NoteSink {
 	enum ParamId {
 		P_LEVEL,
+		P_HUMANISE,
 		P_REVERB,
 		P_CHORUS,
 		P_MUTE,
@@ -77,6 +69,8 @@ struct SoundModule : Module, NoteSink {
 		NUM_OUTPUTS
 	};
 	enum LightId {
+		/** Lit once the bank has been read and the module can make a sound. */
+		L_BANK,
 		L_PART,
 		NUM_LIGHTS = L_PART + PARTS
 	};
@@ -101,8 +95,16 @@ struct SoundModule : Module, NoteSink {
 	std::atomic<int> wantSlots[PARTS][MAX_UPSTREAM];
 	std::atomic<uint32_t> wantGenerations[PARTS][MAX_UPSTREAM];
 
-	SoundVoice voices[PARTS][PART_CHANNELS];
+	/** ONE PERFORMER PER PART, because the articulations are per instrument: a string is a
+	voice, and two parts have their own strings. The same library mpxGuitarist reads, so the two
+	modules cannot disagree about what a hammer-on is. */
+	Performer performer[PARTS];
+	Instrument instrument[PARTS];
+	uint32_t instrumentChange[PARTS] = {};
+	PerformRules loadedRules;
+	std::atomic<bool> rulesReady{false};
 	float active[PARTS] = {};
+	bool attachedWas[PARTS] = {};
 
 	float rate = 44100.f;
 	bool reverbOn = true, chorusOn = true;
@@ -116,6 +118,9 @@ struct SoundModule : Module, NoteSink {
 		//? How loud the whole band is. A General MIDI bank is quiet on purpose, so that a
 		//? hundred instruments can play at once without clipping; this makes that up.
 		configParam(P_LEVEL, 0.f, 4.f, 1.f, "Level");
+		//? How much the playing is moved about — the timing, the loudness and the lengths. At
+		//? nought the same notes come out the same way every time.
+		configParam(P_HUMANISE, 0.f, 2.f, 1.f, "Humanise", "%", 0.f, 100.f);
 		//? The synthesiser's own reverb, which is the one the Ultimate Guitar player uses.
 		configSwitch(P_REVERB, 0.f, 1.f, 1.f, "Reverb", {"Off", "On"});
 		//? Its chorus, likewise.
@@ -134,6 +139,7 @@ struct SoundModule : Module, NoteSink {
 		}
 		configOutput(O_L, "Left");
 		configOutput(O_R, "Right");
+		readRules();
 	}
 
 	~SoundModule() {
@@ -183,10 +189,16 @@ struct SoundModule : Module, NoteSink {
 				applyAsked();
 				chooseDefaults();
 				haveBank = true;
+				// SAID ONCE, IN THE LOG. Whether a bank was found and read is the first
+				// question asked when the module makes no sound, and reading it off the panel
+				// means being at the panel at the moment it happened.
+				INFO("mpxSound: read %d sounds from %s", (int) engine.presets().size(),
+					wantBank.c_str());
 			}
 			else {
 				message = engine.reason();
 				failed = true;
+				WARN("mpxSound: %s: %s", wantBank.c_str(), engine.reason().c_str());
 			}
 			busy = false;
 		});
@@ -326,6 +338,8 @@ struct SoundModule : Module, NoteSink {
 		const std::string found = firstBank();
 		if (!found.empty())
 			loadBank(found);
+		else
+			INFO("mpxSound: no SoundFont in %s", bankFolder().c_str());
 	}
 
 	/** The first SoundFont in the banks folder, or nothing. */
@@ -343,28 +357,25 @@ struct SoundModule : Module, NoteSink {
 		return "";
 	}
 
-	/** A channel for a note: the one its string uses where the cable says which string, and
-	otherwise the next one that is free. */
-	int take(int part, const Event& e) {
-		SoundVoice* room = NULL;
-		double oldest = 1e9;
-		for (int c = 0; c < PART_CHANNELS; c++) {
-			SoundVoice& v = voices[part][c];
-			if (!v.on)
-				return c;
-			if (v.remaining < oldest) {
-				oldest = v.remaining;
-				room = &v;
+	/** Reads the performance rules, the same file mpxGuitarist reads. Main thread. */
+	void readRules() {
+		const std::string path = asset::user("DreamerMPX/perform.txt");
+		PerformRules rules;
+		if (system::isFile(path)) {
+			FILE* f = std::fopen(path.c_str(), "rb");
+			std::string text;
+			if (f) {
+				char buf[4096];
+				size_t n = 0;
+				while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
+					text.append(buf, n);
+				std::fclose(f);
 			}
+			std::string complaint;
+			performRulesRead(text, rules, &complaint);
 		}
-		// Every channel sounding: the one with least left to sound gives way, which is the note
-		// closest to ending anyway.
-		if (room) {
-			engine.noteOff(room->channel, room->key);
-			room->on = false;
-			return (int) (room - &voices[part][0]);
-		}
-		return 0;
+		loadedRules = rules;
+		rulesReady.store(true);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -382,6 +393,13 @@ struct SoundModule : Module, NoteSink {
 			}
 		}
 		const bool playing = haveBank.load() && !busy.load();
+		lights[L_BANK].setBrightness(playing ? 1.f : 0.f);
+		for (int p = 0; p < PARTS; p++) {
+			const bool attached = reader[p].attached();
+			if (!attached && attachedWas[p])
+				performer[p].silence();
+			attachedWas[p] = attached;
+		}
 
 		// The effects follow their buttons, and only when one moves.
 		const bool wantReverb = params[P_REVERB].getValue() > 0.5f;
@@ -393,65 +411,100 @@ struct SoundModule : Module, NoteSink {
 		}
 
 		// ---- the notes ----
+		//
+		// WHAT IS PLAYED IS DECIDED BY THE PERFORMER, and FluidSynth is told the result. It
+		// knows note-on, note-off, pitch bend and control changes, and nothing about a hammer-on
+		// or a palm mute: every articulation is turned into those four here.
+		if (rulesReady.exchange(false)) {
+			for (int p = 0; p < PARTS; p++)
+				performer[p].rules = loadedRules;
+		}
+
 		for (int p = 0; p < PARTS; p++) {
 			const bool muted = params[P_MUTE + p].getValue() > 0.5f;
+			Instrument in;
+			if (reader[p].instrument(in) && in.change != instrumentChange[p]) {
+				instrumentChange[p] = in.change;
+				instrument[p] = in;
+				performer[p].strings(in.stringCount);
+			}
+			performer[p].humanise(params[P_HUMANISE].getValue());
+
 			Event e;
 			while (reader[p].next(e)) {
 				if (!playing || muted)
 					continue;
 				if (e.kind == Event::ON) {
-					const int c = take(p, e);
-					SoundVoice& v = voices[p][c];
-					v.on = true;
-					v.channel = p * PART_CHANNELS + c;
-					v.key = math::clamp((int) std::lround(60.f + 12.f * e.pitch), 0, 127);
-					v.handle = e.handle;
-					v.remaining = (e.duration > 0.f) ? (double) e.duration : 1e9;
-					engine.bend(v.channel, 0.f);
-					engine.noteOn(v.channel, v.key,
-						math::clamp((int) std::lround(e.level * 127.f), 1, 127));
+					PerformNote n;
+					n.handle = e.handle;
+					n.pitch = e.pitch;
+					n.level = e.level;
+					n.seconds = (e.duration > 0.f) ? e.duration : 0.25f;
+					n.string = e.string;
+					n.fret = e.fret;
+					n.pan = e.pan;
+					n.technique = e.technique;
+					n.vibrato = e.vibrato;
+					n.grace = e.grace;
+					n.strum = e.strum;
+					n.strumIndex = e.strumIndex;
+					n.strumMs = e.strumMs;
+					n.bendCount = e.bendCount;
+					for (int k = 0; k < n.bendCount && k < 4; k++) {
+						n.bendAt[k] = (float) e.bendPoints[k].at / 100.f;
+						n.bendCents[k] = (float) e.bendPoints[k].cents;
+					}
+					performer[p].note(n);
 					active[p] = 1.f;
 				}
 				else if (e.kind == Event::OFF) {
-					for (int c = 0; c < PART_CHANNELS; c++) {
-						SoundVoice& v = voices[p][c];
-						if (v.on && v.handle == e.handle) {
-							engine.noteOff(v.channel, v.key);
-							v.on = false;
-						}
+					for (int i = 0; i < performer[p].voiceCount(); i++) {
+						if (performer[p].voice(i).gate
+								&& performer[p].voice(i).handle == e.handle)
+							performer[p].silenceVoice(i);
 					}
 				}
-				else {
-					// The continuing values, each aimed at one sounding note: a bend moves that
-					// string's channel alone, which is the whole reason for a channel per string.
-					for (int c = 0; c < PART_CHANNELS; c++) {
-						SoundVoice& v = voices[p][c];
-						if (!v.on || v.handle != e.handle)
-							continue;
-						if (e.lane == LANE_BEND)
-							engine.bend(v.channel, e.value * e.bendRange * 100.f);
-						else if (e.lane == LANE_TIMBRE)
-							engine.controller(v.channel, 74,
-								math::clamp((int) std::lround(e.value * 127.f), 0, 127));
-						else if (e.lane == LANE_PRESSURE)
-							engine.controller(v.channel, 11,
-								math::clamp((int) std::lround(e.value * 127.f), 0, 127));
+				else if (e.lane == LANE_PRESSURE || e.lane == LANE_TIMBRE) {
+					for (int i = 0; i < performer[p].voiceCount(); i++) {
+						if (performer[p].voice(i).gate
+								&& performer[p].voice(i).handle == e.handle)
+							performer[p].set(i, e.lane == LANE_TIMBRE, e.value);
 					}
 				}
 			}
 
-			// A NOTE CARRIES ITS OWN LENGTH, so it ends itself. Nothing has to arrive to stop it,
-			// and a cable pulled out mid-note leaves nothing sounding for ever.
-			for (int c = 0; c < PART_CHANNELS; c++) {
-				SoundVoice& v = voices[p][c];
-				if (!v.on)
-					continue;
-				v.remaining -= args.sampleTime;
-				if (v.remaining <= 0.0) {
-					engine.noteOff(v.channel, v.key);
-					v.on = false;
+			performer[p].advance(args.sampleTime);
+
+			PerformMessage m;
+			while (performer[p].next(m)) {
+				const int channel = p * PART_CHANNELS
+					+ ((m.voice < PART_CHANNELS) ? m.voice : PART_CHANNELS - 1);
+				switch (m.kind) {
+					case PerformMessage::ATTACK:
+						engine.noteOn(channel, math::clamp(m.key, 0, 127),
+							math::clamp((int) std::lround(m.value * 127.f), 1, 127));
+						break;
+					case PerformMessage::RELEASE:
+						engine.noteOff(channel, math::clamp(m.key, 0, 127));
+						break;
+					case PerformMessage::BEND:
+						engine.bend(channel, m.value);
+						break;
+					case PerformMessage::LEVEL:
+						// Expression rather than velocity: the note is already sounding, and a
+						// second velocity would mean striking it again.
+						engine.controller(channel, 11,
+							math::clamp((int) std::lround(m.value * 127.f), 0, 127));
+						break;
+					case PerformMessage::TIMBRE:
+						engine.controller(channel, 74,
+							math::clamp((int) std::lround(m.value * 127.f), 0, 127));
+						break;
+					default:
+						break;
 				}
 			}
+
 			active[p] = std::fmax(0.f, active[p] - args.sampleTime * 3.f);
 			lights[L_PART + p].setBrightness(active[p]);
 		}
@@ -476,26 +529,25 @@ struct SoundModule : Module, NoteSink {
 
 // ---- the panel ---------------------------------------------------------------------------------
 
-static const float PANEL_W = 121.92f;      /**< Twenty-four HP. */
-static const float JACK_X = 9.f;
-static const float MUTE_X = 20.f;
-static const float NAME_X = 28.f;
-static const float ROW_TOP = 40.f;
-static const float ROW_STEP = 13.f;
+static const float PANEL_W = 60.96f;      /**< Twelve HP. */
+static const float LAMP_X = 3.5f;
+static const float JACK_X = 9.5f;
+static const float MUTE_X = 18.f;
+static const float NAME_X = 23.f;
+static const float ROW_TOP = 47.f;
+static const float ROW_STEP = 10.5f;
 
 
-/** The bank, and a press chooses one. */
-struct SoundBank : widget::OpaqueWidget {
+/** WHICH BANK IS IN, AS A READING RATHER THAN AS A CONTROL.
+
+There is one bank, it is found in the banks folder when the module is made, and it is read without
+being asked for — so the panel has nothing to ask. It said CHOOSE A SOUNDFONT and was a button
+across the whole panel, which offered a modal file dialog to anybody who clicked near it and
+stopped Rack drawing until they answered it.
+
+Choosing another is in the right-click menu, where something done once and rarely belongs. */
+struct SoundBank : widget::Widget {
 	SoundModule* module = NULL;
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			choose();
-			e.consume(this);
-			return;
-		}
-		widget::OpaqueWidget::onButton(e);
-	}
 
 	void choose() {
 		if (!module || module->busy.load())
@@ -512,31 +564,23 @@ struct SoundBank : widget::OpaqueWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		NVGcontext* vg = args.vg;
-		nvgBeginPath(vg);
-		nvgRoundedRect(vg, 0.5f, 0.5f, box.size.x - 1.f, box.size.y - 1.f, 3.f);
-		nvgFillColor(vg, nvgRGB(0x2a, 0x2f, 0x36));
-		nvgFill(vg);
-		nvgStrokeColor(vg, nvgRGBA(0xcf, 0xcf, 0xcf, 0x90));
-		nvgStrokeWidth(vg, 1.3f);
-		nvgStroke(vg);
-
 		std::shared_ptr<window::Font> font =
 			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 		if (!font || font->handle < 0)
 			return;
-		std::string text = "CHOOSE A SOUNDFONT";
+		std::string text = "no bank";
 		if (module) {
 			if (module->busy.load())
-				text = "LOADING";
+				text = "loading";
 			else if (module->failed.load())
 				text = module->message;
 			else if (module->haveBank.load())
 				text = module->message;
 		}
+		NVGcontext* vg = args.vg;
 		nvgFontFaceId(vg, font->handle);
-		nvgFontSize(vg, 11.f);
-		nvgFillColor(vg, nvgRGB(0xff, 0xff, 0xff));
+		nvgFontSize(vg, 10.f);
+		nvgFillColor(vg, PANEL_INK);
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 		for (int pass = 0; pass < 2; pass++)
 			nvgText(vg, box.size.x / 2.f, box.size.y / 2.f, text.c_str(), NULL);
@@ -610,7 +654,7 @@ struct SoundParts : widget::OpaqueWidget {
 
 static Layout soundLayout() {
 	Layout L;
-	L.hp = 24.f;
+	L.hp = 12.f;
 	L.title = "mpxSound";
 
 	auto label = [&](const char* key, float x, float y, const char* text, Panel::Align align,
@@ -623,11 +667,22 @@ static Layout soundLayout() {
 		L.items.push_back(i);
 	};
 
+	// WHICH BANK IS IN. A reading and a lamp, not a control: there is one bank and it is read
+	// without being asked for. Choosing another is in the menu.
+	label("h.bank", PANEL_W / 2.f, 25.f, "SOUNDFONT", Panel::CENTRE, true, NULL);
 	Item bank;
 	bank.key = "d.bank"; bank.kind = Item::DISPLAY;
-	bank.x = 4.f; bank.y = 24.f; bank.w = PANEL_W - 8.f; bank.h = 10.f;
+	bank.w = 44.f; bank.h = 6.f;
+	bank.x = (PANEL_W - bank.w) / 2.f + 2.f; bank.y = 28.f;
 	L.items.push_back(bank);
+	Item lit;
+	lit.key = "lamp.bank"; lit.kind = Item::LIGHT; lit.id = SoundModule::L_BANK;
+	lit.x = 4.5f; lit.y = bank.y + bank.h / 2.f;
+	L.items.push_back(lit);
 
+	// SIX PARTS, ONE TO A ROW: a lamp that flickers when it plays, the cable, a mute, and the
+	// sound it is making. The name is as wide as the panel has left, which is what decides the
+	// width of the panel.
 	for (int p = 0; p < PARTS; p++) {
 		const float y = ROW_TOP + p * ROW_STEP;
 		Item in;
@@ -639,43 +694,39 @@ static Layout soundLayout() {
 		Item mute;
 		mute.key = string::f("p.mute%d", p + 1);
 		mute.kind = Item::PARAM; mute.id = SoundModule::P_MUTE + p;
-		mute.style = "latch"; mute.diameter = 6.6f; mute.x = MUTE_X; mute.y = y;
+		mute.style = "latch"; mute.diameter = 5.6f; mute.x = MUTE_X; mute.y = y;
 		L.items.push_back(mute);
 
 		Item lamp;
 		lamp.key = string::f("lamp.part%d", p + 1);
 		lamp.kind = Item::LIGHT; lamp.id = SoundModule::L_PART + p;
-		lamp.x = 3.5f; lamp.y = y;
+		lamp.x = LAMP_X; lamp.y = y;
 		L.items.push_back(lamp);
 	}
-	label("h.in", JACK_X, ROW_TOP - 7.f, "mpx IN", Panel::CENTRE, true, NULL);
-	label("h.mute", MUTE_X, ROW_TOP - 7.f, "MUTE", Panel::CENTRE, true, NULL);
-	label("h.sound", NAME_X + 8.f, ROW_TOP - 7.f, "SOUND", Panel::LEFT, true, NULL);
+	label("h.in", JACK_X, ROW_TOP - 6.5f, "mpx IN", Panel::CENTRE, true, NULL);
+	label("h.mute", MUTE_X, ROW_TOP - 6.5f, "MUTE", Panel::CENTRE, true, NULL);
+	label("h.sound", NAME_X + 1.f, ROW_TOP - 6.5f, "SOUND", Panel::LEFT, true, NULL);
 
 	Item parts;
 	parts.key = "d.parts"; parts.kind = Item::DISPLAY;
 	parts.x = NAME_X; parts.y = ROW_TOP - ROW_STEP / 2.f;
-	parts.w = PANEL_W - NAME_X - 3.f; parts.h = PARTS * ROW_STEP;
+	parts.w = PANEL_W - NAME_X - 2.f; parts.h = PARTS * ROW_STEP;
 	L.items.push_back(parts);
 
+	// The whole band's loudness and how much the playing is moved about, and the pair out.
 	const float y = ROW_TOP + PARTS * ROW_STEP + 6.f;
 	Item level;
 	level.key = "p.level"; level.kind = Item::PARAM; level.id = SoundModule::P_LEVEL;
-	level.style = "knob"; level.x = 12.f; level.y = y;
+	level.style = "knob"; level.x = 11.f; level.y = y;
 	L.items.push_back(level);
-	label("p.level.label", 12.f, y + 8.5f, "LEVEL", Panel::CENTRE, true, "p.level");
+	label("p.level.label", 11.f, y + 8.5f, "LEVEL", Panel::CENTRE, true, "p.level");
 
-	Item verb;
-	verb.key = "p.reverb"; verb.kind = Item::PARAM; verb.id = SoundModule::P_REVERB;
-	verb.style = "latch"; verb.diameter = 6.6f; verb.x = 30.f; verb.y = y;
-	L.items.push_back(verb);
-	label("p.reverb.label", 30.f, y + 7.f, "REVERB", Panel::CENTRE, true, "p.reverb");
-
-	Item chorus;
-	chorus.key = "p.chorus"; chorus.kind = Item::PARAM; chorus.id = SoundModule::P_CHORUS;
-	chorus.style = "latch"; chorus.diameter = 6.6f; chorus.x = 46.f; chorus.y = y;
-	L.items.push_back(chorus);
-	label("p.chorus.label", 46.f, y + 7.f, "CHORUS", Panel::CENTRE, true, "p.chorus");
+	Item human;
+	human.key = "p.humanise"; human.kind = Item::PARAM; human.id = SoundModule::P_HUMANISE;
+	human.style = "knob"; human.x = 27.f; human.y = y;
+	human.ticks = 3; human.tickMarks = {"OFF", "", "2x"}; human.nameSize = 5.4f;
+	L.items.push_back(human);
+	label("p.humanise.label", 27.f, y + 8.5f, "HUMANISE", Panel::CENTRE, true, "p.humanise");
 
 	auto jack = [&](const char* key, int id, float x, const char* name) {
 		Item i;
@@ -684,8 +735,8 @@ static Layout soundLayout() {
 		L.items.push_back(i);
 		label((std::string(key) + ".label").c_str(), x, y + 7.5f, name, Panel::CENTRE, false, key);
 	};
-	jack("out.l", SoundModule::O_L, PANEL_W - 24.f, "L");
-	jack("out.r", SoundModule::O_R, PANEL_W - 12.f, "R");
+	jack("out.l", SoundModule::O_L, 43.f, "L");
+	jack("out.r", SoundModule::O_R, 53.f, "R");
 
 	L.bindOffsets();
 	return L;
