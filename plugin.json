@@ -35,27 +35,6 @@
       "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/manual.md"
     },
     {
-      "slug": "mpxEuclid",
-      "name": "mpxEuclid",
-      "description": "Four Euclidean voices on one MPX cable. Each has its own steps, pulses and offset, and its own clock divider. Every note's level and length come from a slowly wandering value that is correlated with its own past and repeats after a set number of beats, so each voice reads as a separate player rather than as a machine being random. Harder hits ring longer by however much you ask.",
-      "tags": [
-        "Sequencer",
-        "Polyphonic",
-        "Random"
-      ],
-      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/design.md"
-    },
-    {
-      "slug": "mpxProgression",
-      "name": "mpxProgression",
-      "description": "A dozen chord progressions everybody knows — two five one, a turnaround, twelve bar blues, the four chords, a Dorian vamp — chosen with one knob and shown as a chart in the key you set. Publishes them as the harmony on an MPX cable, so everything downstream is played against something. Not a chart module: no repeats, no sections, no import.",
-      "tags": [
-        "Sequencer",
-        "Utility"
-      ],
-      "manualUrl": "https://github.com/chrisgr99/MPX/blob/main/docs/ideas.md"
-    },
-    {
       "slug": "mpxMonitor",
       "name": "mpxMonitor",
       "description": "Shows what is on an MPX cable and passes it on unchanged: the harmony being played against, and the notes going by with their pitch, level and duration. An MPX cable carries no voltage, so a scope says nothing about it and this is the way to see one.",
@@ -96,24 +75,6 @@
       ]
     },
     {
-      "slug": "mpxGroove",
-      "name": "mpxGroove",
-      "description": "Holds the rhythm for a whole chain: a style, a feel, how busy it is and what happens at the end of a phrase, played as drums and offered to the players so several of them lock together",
-      "tags": [
-        "Polyphonic",
-        "Utility",
-        "Arpeggiator"
-      ]
-    },
-    {
-      "slug": "mpxDrums",
-      "name": "mpxDrums",
-      "description": "A kit played from an MPX cable, so every stroke carries how hard it was struck and how long it rings; the pitch says which drum, on the General MIDI map",
-      "tags": [
-        "Drum"
-      ]
-    },
-    {
       "slug": "polyToStereo",
       "name": "polyToStereo",
       "description": "A channel strip per voice: two level stages multiplied, a pan, and a stereo pair",
@@ -142,36 +103,6 @@
         "Random",
         "Polyphonic",
         "Utility"
-      ]
-    },
-    {
-      "slug": "mpxMelody",
-      "name": "mpxMelody",
-      "description": "Master for a melody chain: how far the voices keep apart, the random seed they share, and the chart they are played against. Voice expanders make the sound",
-      "tags": [
-        "Sequencer",
-        "Polyphonic",
-        "Random"
-      ]
-    },
-    {
-      "slug": "mpxMelodyVoice",
-      "name": "mpxVoice",
-      "description": "One melodic line drawn against the harmony on the cable — bass, melody or inner voice. Sits beside mpxMelody",
-      "tags": [
-        "Sequencer",
-        "Expander",
-        "Polyphonic"
-      ]
-    },
-    {
-      "slug": "mpxPhrase",
-      "name": "mpxPhrase",
-      "description": "A rhythm that phrases: notes placed against the bars, chord changes and cadences of the chart on the cable, in breath groups with pauses between them",
-      "tags": [
-        "Sequencer",
-        "Rhythm",
-        "Random"
       ]
     },
     {
