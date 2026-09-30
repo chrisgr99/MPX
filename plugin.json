@@ -220,6 +220,15 @@
         "Sampler",
         "Polyphonic"
       ]
+    },
+    {
+      "slug": "mpxGuitarist",
+      "name": "mpxGuitarist",
+      "description": "Plays an articulated MPX part as control voltage — a channel per string, with the bends, slides, hammer-ons, palm mutes and vibrato already in the pitch, the gate and the level. Any voice in the rack can then play a guitar part.",
+      "tags": [
+        "Polyphonic",
+        "Utility"
+      ]
     }
   ]
 }

@@ -25,6 +25,7 @@ extern Model* modelMpxPhrase;
 extern Model* modelMpxPiano;
 extern Model* modelMpxGuitarChart;
 extern Model* modelMpxSound;
+extern Model* modelMpxGuitarist;
 
 namespace px {
 
