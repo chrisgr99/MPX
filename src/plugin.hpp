@@ -220,6 +220,13 @@ struct Readout : ParamWidget {
 	and it tied a panel's arrangement to a parameter's range, so widening a range from 99 to 100
 	shifted a plate. A width is a decision about the panel, so the panel makes it. */
 	int chars = 0;
+	/** A FEW WORDS ON EACH VALUE, in the same order as the parameter's own names: what "corner"
+	or "odd" actually mean, which the one or two words on the plate cannot say.
+
+	SHOWN IN THE LIST, after the name and a dash, and spoken whole when Option is held. The plate
+	itself keeps the name alone, so it stays the size it is. Empty for a plate whose values need no
+	explaining, which is most of them. */
+	std::vector<std::string> notes;
 	/** Wheel gathered but not yet spent. A trackpad sends a great many small movements where a
 	wheel sends one large one, and adding them up rather than counting them means both behave
 	the same. */
@@ -260,7 +267,8 @@ between them they make it obvious that it is for pressing.
 Pressed, the lighting turns over — dark at the top, bright at the bottom — which is what a cap
 going down actually does to the light. A latch that is ON is lit in the panel's accent, so its
 state is a colour rather than a shade. */
-void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on);
+void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on,
+	const NVGcolor* accent = NULL, float round = 0.28f);
 
 /** The momentary one. Rack's Switch gives it its behaviour; this only draws. */
 struct DreamerButton : app::Switch {
@@ -271,6 +279,14 @@ struct DreamerButton : app::Switch {
 /** The latching one, which stays down and lit. */
 struct DreamerLatch : app::Switch {
 	DreamerLatch();
+	void draw(const DrawArgs& args) override;
+};
+
+/** THE SAME, ROUND AND RED. For switching a thing on rather than choosing a setting: red is what
+a reader already takes to mean live, and round tells it apart from the square latches at a glance
+without having to be read. */
+struct DreamerRedLatch : app::Switch {
+	DreamerRedLatch();
 	void draw(const DrawArgs& args) override;
 };
 
@@ -328,6 +344,23 @@ struct Lamps : ParamWidget {
 	Skipping the enter and leave events is what stops one being made at all. */
 	void onEnter(const EnterEvent& e) override;
 	void onLeave(const LeaveEvent& e) override;
+	void onHover(const HoverEvent& e) override;
+
+	/** WHAT EACH LAMP MEANS, and what the group as a whole is for.
+
+	NOT DRAWN — there is nowhere to put them. A lamp has its name beside it and no room for a
+	sentence, which is the whole reason a long description of every option at once ends up in the
+	maker's text and is impossible to follow. These exist to be SPOKEN: hold Option and move down
+	the lamps and each says what it does, with the group's own line heard first when the pointer is
+	on the group but not on any one lamp. */
+	std::vector<std::string> notes;
+	std::string groupNote;
+	/** The lamp last described, so the note is not remade every frame. */
+	int described = -2;
+	/** The note itself, which Rack owns once it is made. */
+	WeakPtr<ui::Tooltip> note;
+	void showNote(int lamp);
+	void dropNote();
 };
 
 /** Painted OVER the ports rather than behind them, because a jack's colour belongs on the jack.

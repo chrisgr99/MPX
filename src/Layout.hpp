@@ -60,6 +60,16 @@ struct Item {
 		DISPLAY,
 	};
 
+	/** A FEW WORDS ON EACH CHOICE, in the same order as `names` for a lamp group, or as the
+	parameter's own values for a plate. What the one or two words on the panel cannot say.
+
+	IN THE LAYOUT RATHER THAN IN THE HELP FILE, for now. The help file is where a description
+	belongs and where a user can override one, but its format has no place for a phrase per value
+	— so these sit beside the names they explain, which is at least next to what they describe.
+	*/
+	std::vector<std::string> notes;
+	std::string groupNote;
+
 	/** The name this item is saved under. Stable for the life of the module: rename one and
 	every layout anybody has saved forgets where that control went. */
 	std::string key;

@@ -438,11 +438,14 @@ static ParamWidget* makeParam(engine::Module* module, Item& item) {
 		// under no obligation to fill in — and when they are left at nought the box is empty, so
 		// the lamps are drawn and can never be clicked. Every lamp control in this plugin was in
 		// that state. The widget knows how much room its own lamps and names need.
+		lamps->notes = item.notes;
+		lamps->groupNote = item.groupNote;
 		lamps->fit();
 		return lamps;
 	}
 	if (item.style == "readout") {
 		Readout* r = createParam<Readout>(pos, module, item.id);
+		r->notes = item.notes;
 		r->setFigures(item.chars, item.h > 0.f ? item.h : 2.8f);
 		r->box.pos = pos.minus(r->box.size.div(2.f));
 		return r;
@@ -460,6 +463,8 @@ static ParamWidget* makeParam(engine::Module* module, Item& item) {
 		}
 		return w;
 	}
+	if (item.style == "latch.red")
+		return createParamCentered<DreamerRedLatch>(pos, module, item.id);
 	if (item.style == "transport.play")
 		return createParamCentered<DreamerPlay>(pos, module, item.id);
 	if (item.style == "transport.rewind")
@@ -654,7 +659,7 @@ static math::Rect itemVisual(const Item& item) {
 				return math::Rect(math::Vec(item.x - w / 2.f, item.y - h / 2.f),
 					math::Vec(w, h));
 			}
-			if (item.style == "button" || item.style == "latch"
+			if (item.style == "button" || item.style == "latch" || item.style == "latch.red"
 				|| item.style == "transport.play" || item.style == "transport.rewind")
 				w = h = item.diameter > 0.f ? item.diameter : 6.6f;
 			else {
@@ -762,7 +767,7 @@ static math::Rect itemRect(const Item& item) {
 	float w = 8.f, h = 8.f;
 	switch (item.kind) {
 		case Item::PARAM:
-			if (item.style == "button" || item.style == "latch"
+			if (item.style == "button" || item.style == "latch" || item.style == "latch.red"
 				|| item.style == "transport.play" || item.style == "transport.rewind") {
 				w = h = (item.diameter > 0.f ? item.diameter : 6.6f) + 1.2f;
 			}

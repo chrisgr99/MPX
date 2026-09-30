@@ -366,48 +366,59 @@ static float lampsNamesWidth(const std::vector<std::string>& names, float size) 
 	return longest ? (LAMP_R + 5.f + longest * 0.575f * size) : LAMP_R;
 }
 
-void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on) {
-	const float w = size.x, h = size.y;
-	const float r = std::fmin(w, h) * 0.28f;
+void drawRaisedButton(NVGcontext* vg, math::Vec size, bool down, bool on,
+		const NVGcolor* accent, float round) {
+	// ONE PUSH BUTTON ACROSS EVERY MODULE WE MAKE.
+	//
+	// These were raised square caps, light grey and modelled with a shadow, a bright rim along
+	// the top and a dark one along the bottom. They looked like something to press, and two
+	// things were wrong with them: on and off were a change of tint on the same light cap,
+	// which is hard to read at a glance, and they were nothing like the buttons on the Clarity
+	// family, which are a dark dome that turns green.
+	//
+	// This is that dome. Off is dark with a light grey ring, which is what gives a button
+	// nobody has pressed an edge on a dark panel; on is red, lit from above, with a red ring. The difference between them is a colour rather than a shade, so it survives being
+	// looked at quickly and out of the corner of the eye.
+	//
+	// `round` and the square box are kept: a caller that asks for a square footprint still gets
+	// the same footprint, and the cap is drawn inside it. `accent` still colours a lit cap, for
+	// the record button, which is red rather than green because it is not a setting.
+	(void) round;
+	const float r = std::fmin(size.x, size.y) / 2.f - 1.5f;
+	const float cx = size.x / 2.f, cy = size.y / 2.f;
+	const bool lit = on || (down && !on);
 
-	// The shadow it casts, which is most of what says "raised".
-	if (!down) {
-		nvgBeginPath(vg);
-		nvgRoundedRect(vg, 1.f, 2.f, w - 2.f, h - 1.f, r);
-		nvgFillColor(vg, nvgRGBA(0, 0, 0, 0x99));
-		nvgFill(vg);
-	}
-
-	const NVGcolor bright = on ? nvgRGB(0x8d, 0xf5, 0xc2) : nvgRGB(0x9d, 0xa8, 0xb8);
-	const NVGcolor dark = on ? nvgRGB(0x24, 0x9c, 0x67) : nvgRGB(0x4c, 0x55, 0x62);
-
+	// The rim it sits in, which is what stops a dark cap merging with a dark panel.
 	nvgBeginPath(vg);
-	nvgRoundedRect(vg, 1.f, down ? 1.5f : 0.f, w - 2.f, h - 2.f, r);
-	// Lit from above, and from below when it is pressed: a cap going down turns the light over.
-	nvgFillPaint(vg, nvgLinearGradient(vg, 0.f, down ? h : 0.f, 0.f, down ? 0.f : h,
-		bright, dark));
+	nvgCircle(vg, cx, cy, r + 1.5f);
+	nvgFillColor(vg, nvgRGB(0x0f, 0x12, 0x17));
 	nvgFill(vg);
 
-	// The rims. A bright one along the top and a dark one along the bottom is the whole of what
-	// an edge catching the light looks like.
-	nvgBeginPath(vg);
-	nvgRoundedRect(vg, 1.5f, (down ? 1.5f : 0.f) + 0.5f, w - 3.f, h - 3.f, r);
-	nvgStrokeWidth(vg, 1.f);
-	nvgStrokePaint(vg, nvgLinearGradient(vg, 0.f, 0.f, 0.f, h,
-		down ? nvgRGBA(0, 0, 0, 0xaa) : nvgRGBA(0xff, 0xff, 0xff, 0xaa),
-		down ? nvgRGBA(0xff, 0xff, 0xff, 0x55) : nvgRGBA(0, 0, 0, 0xaa)));
-	nvgStroke(vg);
-
-	// The sheen: a soft light across the upper half, which is what tells the eye the top is
-	// curved rather than flat.
-	if (!down) {
-		nvgBeginPath(vg);
-		nvgRoundedRect(vg, 2.5f, 1.5f, w - 5.f, h * 0.42f, r * 0.8f);
-		nvgFillPaint(vg, nvgLinearGradient(vg, 0.f, 1.5f, 0.f, h * 0.5f,
-			nvgRGBA(0xff, 0xff, 0xff, on ? 0x88 : 0x66), nvgRGBA(0xff, 0xff, 0xff, 0x00)));
-		nvgFill(vg);
+	NVGcolor bright = nvgRGB(0x4a, 0x50, 0x59);
+	NVGcolor dark = nvgRGB(0x2a, 0x2f, 0x36);
+	NVGcolor ring = nvgRGBA(0xcf, 0xcf, 0xcf, 0x90);
+	if (lit) {
+		bright = accent ? *accent : nvgRGB(0xff, 0x8f, 0x80);
+		dark = accent
+			? nvgRGB((unsigned char) (accent->r * 255.f * 0.45f),
+				(unsigned char) (accent->g * 255.f * 0.45f),
+				(unsigned char) (accent->b * 255.f * 0.45f))
+			: nvgRGB(0xb5, 0x22, 0x16);
+		ring = accent ? *accent : nvgRGB(0xe8, 0x38, 0x28);
 	}
+
+	// A MOMENTARY CAP GOES DOWN, and a cap going down turns the light over: the dome is lit
+	// from below while it is held, which is the whole of what pressed looks like here.
+	nvgBeginPath(vg);
+	nvgCircle(vg, cx, cy, r);
+	nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy + (down ? 1.f : -1.f), 0.5f, r,
+		down ? dark : bright, down ? bright : dark));
+	nvgFill(vg);
+	nvgStrokeColor(vg, ring);
+	nvgStrokeWidth(vg, lit ? 1.f : 1.3f);
+	nvgStroke(vg);
 }
+
 
 DreamerButton::DreamerButton() {
 	// MOMENTARY, which Rack's Switch is not unless it is told. Left as it comes, a press
@@ -432,13 +443,27 @@ void DreamerLatch::draw(const DrawArgs& args) {
 	drawRaisedButton(args.vg, box.size, on, on);
 }
 
+DreamerRedLatch::DreamerRedLatch() {
+	box.size = mm2px(math::Vec(6.2f, 6.2f));
+}
+
+void DreamerRedLatch::draw(const DrawArgs& args) {
+	const bool on = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	// Round, so it is not mistaken for one of the square latches, and red when it is live.
+	static const NVGcolor RED = nvgRGB(0xff, 0x5a, 0x50);
+	drawRaisedButton(args.vg, box.size, on, on, &RED, 0.5f);
+}
+
 /** The ink a transport symbol is cut in: dark, so it reads as a mark ON the cap rather than as
 another thing beside it. */
 static const NVGcolor TRANSPORT_INK = nvgRGB(0x14, 0x18, 0x1e);
+/** And the ink for a cap that is NOT lit, which is now dark: a dark mark on a dark cap is no
+mark at all. Light enough to read, not so light that it competes with a lit cap. */
+static const NVGcolor TRANSPORT_INK_OFF = nvgRGB(0xc4, 0xc9, 0xd1);
 
 void drawPlayGlyph(NVGcontext* vg, math::Vec size, bool playing) {
 	const float w = size.x, h = size.y;
-	nvgFillColor(vg, TRANSPORT_INK);
+	nvgFillColor(vg, playing ? TRANSPORT_INK : TRANSPORT_INK_OFF);
 	if (playing) {
 		// Two bars, which is pause: what pressing it now would do.
 		const float bw = w * 0.13f;
@@ -460,7 +485,8 @@ void drawPlayGlyph(NVGcontext* vg, math::Vec size, bool playing) {
 
 void drawRewindGlyph(NVGcontext* vg, math::Vec size) {
 	const float w = size.x, h = size.y;
-	nvgFillColor(vg, TRANSPORT_INK);
+	// Rewind is momentary: its cap is dark whenever anybody can see it.
+	nvgFillColor(vg, TRANSPORT_INK_OFF);
 	for (int i = 0; i < 2; i++) {
 		const float x = w * (0.30f + i * 0.24f);
 		nvgBeginPath(vg);
@@ -713,30 +739,221 @@ void Readout::draw(const DrawArgs& args) {
 	panelText(args.vg, w / 2.f, h / 2.f, text.c_str(), true);
 }
 
+/** THE LIST A PLATE OPENS.
+
+OVER THE PLATE, NOT BESIDE IT. Rack's menus hang down and to the right of wherever they were asked
+for, which is right for a menu of commands and wrong for a chooser: the value in force ends up
+somewhere other than where it was being read, and the eye has to find it again. This puts the
+current value exactly where the plate's own text is, with the others above and below it — so
+choosing what is already chosen means no movement at all, and the distance to any other value is
+the distance you would expect from looking at the list.
+
+SHIFTED WHEN IT MUST BE, and no further. A list longer than the room below it is slid up until it
+fits; the current value is then no longer over the plate, but it is still the highlighted one, and
+that is the part worth keeping.
+
+EACH LINE IS A NAME AND A FEW WORDS. The name is what the plate shows; the words after the dash are
+what the name cannot say. Both are drawn, and the whole line is put up as a note so that holding
+Option reads it out — which is the only way the words reach somebody who cannot read the list. */
+/** THE LIST IS THE LIST, AND NOT THE WHOLE WINDOW.
+
+It used to be a widget the size of the scene with the list drawn inside it, so that a click
+anywhere else could close it. That shape is how an OVERLAY is told from a WINDOW by anything else
+looking at the scene — Clarity decides whether something floating over the rack owns its own
+clicks that way, since its own overlays cover everything and a thing covering everything cannot
+own a particular point. So Clarity did not stand back, and its click-to-move-cables took the press
+on the jack behind the list: choosing a style pulled out a cable.
+
+It is now a plain widget the size of the list, inside one of Rack's own menu overlays. The
+overlay closes it on a click anywhere else and on Escape, which is what the full-window box was
+for, and every plugin that already stands back from a menu stands back from this. */
+struct ReadoutList : widget::OpaqueWidget {
+	ParamQuantity* pq = NULL;
+	std::vector<std::string> names;
+	std::vector<std::string> notes;
+	int current = 0;
+	int hovered = -1;
+	float lineH = 0.f;
+	WeakPtr<ui::Tooltip> note;
+
+	static constexpr float PAD = 6.f;
+
+	~ReadoutList() {
+		dropNote();
+	}
+
+	void dropNote() {
+		if (ui::Tooltip* t = note) {
+			if (t->parent)
+				t->parent->removeChild(t);
+			delete t;
+		}
+		note = NULL;
+	}
+
+	int lineAt(math::Vec pos) {
+		if (lineH <= 0.f || !box.zeroPos().contains(pos))
+			return -1;
+		const int i = (int) ((pos.y - PAD) / lineH);
+		return (i >= 0 && i < (int) names.size()) ? i : -1;
+	}
+
+	/** The words for one line, which are also what is spoken. */
+	std::string lineText(int i) const {
+		if (i < 0 || i >= (int) names.size())
+			return "";
+		if (i < (int) notes.size() && !notes[i].empty())
+			return names[i] + " — " + notes[i];
+		return names[i];
+	}
+
+	void onHover(const HoverEvent& e) override {
+		const int was = hovered;
+		hovered = lineAt(e.pos);
+		if (hovered != was)
+			showNote();
+		e.consume(this);
+	}
+
+	/** THE LINE UNDER THE POINTER, PUT UP AS A NOTE. Rack draws it, and Dreamer Help reads out
+	whatever note Rack is showing while Option is held — so the words reach the ear through the
+	same channel a module's description does, and this widget needs to know nothing about speech. */
+	void showNote() {
+		dropNote();
+		if (hovered < 0)
+			return;
+		ui::Tooltip* t = new ui::Tooltip;
+		t->text = lineText(hovered);
+		APP->scene->addChild(t);
+		note = t;
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action != GLFW_PRESS) {
+			widget::OpaqueWidget::onButton(e);
+			return;
+		}
+		e.consume(this);
+		const int i = lineAt(e.pos);
+		if (i >= 0 && pq)
+			pq->setValue((float) (i + (int) std::round(pq->getMinValue())));
+		close();
+	}
+
+	/** A CLICK ANYWHERE ELSE, AND ESCAPE, ARE THE OVERLAY'S. Both delete it, and this with it. */
+	void close() {
+		dropNote();
+		if (parent)
+			parent->requestDelete();
+		else
+			requestDelete();
+	}
+
+	void draw(const DrawArgs& args) override {
+		std::shared_ptr<window::Font> font = bodyFont();
+		if (!font || font->handle < 0)
+			return;
+
+		// The ground, with a rim: a list floating over a panel needs an edge or it reads as part
+		// of whatever is behind it.
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 4.f);
+		nvgFillColor(args.vg, nvgRGBA(0x1b, 0x1f, 0x26, 0xf8));
+		nvgFill(args.vg);
+		nvgStrokeColor(args.vg, PANEL_EDGE);
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		nvgFontFaceId(args.vg, font->handle);
+		nvgFontSize(args.vg, 11.f);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+		for (size_t i = 0; i < names.size(); i++) {
+			const float y = PAD + lineH * (float) i;
+			const bool under = ((int) i == hovered);
+			const bool chosen = ((int) i == current);
+			if (under || chosen) {
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, 2.f, y, box.size.x - 4.f, lineH, 2.f);
+				nvgFillColor(args.vg, under ? nvgRGBA(0x3d, 0xd6, 0x8c, 0x55)
+					: nvgRGBA(0xff, 0xff, 0xff, 0x14));
+				nvgFill(args.vg);
+			}
+			// THE NAME IN THE PANEL'S INK AND THE WORDS AFTER IT DIMMER, so the line reads as one
+			// thing said twice rather than as two columns.
+			nvgFillColor(args.vg, chosen ? PANEL_EDGE : PANEL_INK);
+			float x = PAD;
+			x = crispText(args.vg, x, y + lineH / 2.f, names[i].c_str(), NULL);
+			if (i < notes.size() && !notes[i].empty()) {
+				nvgFillColor(args.vg, PANEL_DIM);
+				const std::string rest = "  —  " + notes[i];
+				crispText(args.vg, x, y + lineH / 2.f, rest.c_str(), NULL);
+			}
+		}
+	}
+};
+
+
 void Readout::openList() {
 	ParamQuantity* pq = getParamQuantity();
 	if (!pq)
 		return;
 	const int lo = (int) std::round(pq->getMinValue());
 	const int hi = (int) std::round(pq->getMaxValue());
-	// A LIST, NOT A RANGE. Anything with more steps than a menu can hold is not a thing to
-	// choose from a list, and a knob is the right control for it.
+	// A LIST, NOT A RANGE. Anything with more steps than a list can hold is not a thing to
+	// choose from one, and a knob is the right control for it.
 	if (hi - lo > 128)
 		return;
-	const int now = (int) std::round(pq->getValue());
-	ui::Menu* menu = createMenu();
-	menu->addChild(createMenuLabel(pq->getLabel()));
+
+	ReadoutList* popup = new ReadoutList;
+	popup->pq = pq;
+	popup->current = math::clamp((int) std::round(pq->getValue()) - lo, 0, hi - lo);
 	for (int v = lo; v <= hi; v++) {
 		// Asked of the parameter rather than printed here, so a switch lists its names and a
 		// count lists its counts, each with whatever unit the module gave it.
 		const float was = pq->getValue();
 		pq->setValue((float) v);
-		const std::string text = pq->getDisplayValueString() + pq->getUnit();
+		popup->names.push_back(pq->getDisplayValueString() + pq->getUnit());
 		pq->setValue(was);
-		ParamQuantity* q = pq;
-		menu->addChild(createCheckMenuItem(text, "", [=]() { return v == now; },
-			[=]() { q->setValue((float) v); }));
 	}
+	popup->notes = notes;
+
+	// AS WIDE AS THE WIDEST LINE and as tall as all of them, measured rather than guessed.
+	std::shared_ptr<window::Font> font = bodyFont();
+	float widest = 60.f;
+	if (font && font->handle >= 0) {
+		NVGcontext* vg = APP->window->vg;
+		nvgFontFaceId(vg, font->handle);
+		nvgFontSize(vg, 11.f);
+		for (size_t i = 0; i < popup->names.size(); i++) {
+			std::string line = popup->names[i];
+			if (i < popup->notes.size() && !popup->notes[i].empty())
+				line += "  —  " + popup->notes[i];
+			widest = std::fmax(widest, nvgTextBounds(vg, 0.f, 0.f, line.c_str(), NULL, NULL));
+		}
+	}
+	popup->lineH = 15.f;
+	const float w = widest + ReadoutList::PAD * 2.f;
+	const float h = popup->lineH * (float) popup->names.size() + ReadoutList::PAD * 2.f;
+
+	// THE CURRENT LINE OVER THE PLATE'S OWN TEXT. Everything else follows from that.
+	const math::Vec plate = getAbsoluteOffset(math::Vec());
+	float x = plate.x + box.size.x / 2.f - w / 2.f;
+	float y = plate.y + box.size.y / 2.f
+		- (ReadoutList::PAD + popup->lineH * ((float) popup->current + 0.5f));
+	// Slid back inside the window when it will not fit, which costs the alignment and keeps the
+	// list.
+	const math::Vec scene = APP->scene->box.size;
+	x = math::clamp(x, 2.f, std::fmax(2.f, scene.x - w - 2.f));
+	y = math::clamp(y, 2.f, std::fmax(2.f, scene.y - h - 2.f));
+	popup->box.pos = math::Vec(x, y);
+	popup->box.size = math::Vec(w, h);
+
+	// INSIDE ONE OF RACK'S OWN MENU OVERLAYS. It closes on a click anywhere else and on Escape,
+	// and everything that already knows to keep its hands off an open menu keeps them off this.
+	ui::MenuOverlay* over = new ui::MenuOverlay;
+	over->addChild(popup);
+	APP->scene->addChild(over);
 }
 
 void Readout::onButton(const ButtonEvent& e) {
@@ -851,9 +1068,12 @@ void Lamps::draw(const DrawArgs& args) {
 		const bool on = (i == value);
 		nvgBeginPath(args.vg);
 		nvgCircle(args.vg, c.x, c.y, LAMP_R);
-		nvgFillColor(args.vg, on ? nvgRGB(0xe8, 0x38, 0x28) : nvgRGB(0x2e, 0x34, 0x3d));
+		// ORANGE FOR A CHOSEN LAMP, now that red is what a button that is on looks like. One
+		// colour cannot mean both "this button is switched on" and "this is the choice", and a
+		// panel carrying both was asking the eye to tell them apart by shape.
+		nvgFillColor(args.vg, on ? nvgRGB(0xf2, 0x84, 0x1f) : nvgRGB(0x2e, 0x34, 0x3d));
 		nvgFill(args.vg);
-		nvgStrokeColor(args.vg, on ? nvgRGB(0xff, 0xa0, 0x92) : nvgRGB(0x4a, 0x52, 0x5e));
+		nvgStrokeColor(args.vg, on ? nvgRGB(0xff, 0xcb, 0x8a) : nvgRGB(0x4a, 0x52, 0x5e));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 		// A lit lamp glows a little, which is what makes it read as lit rather than as merely
@@ -862,7 +1082,7 @@ void Lamps::draw(const DrawArgs& args) {
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, LAMP_R * 2.4f);
 			NVGpaint glow = nvgRadialGradient(args.vg, c.x, c.y, LAMP_R, LAMP_R * 2.4f,
-				nvgRGBA(0xe8, 0x38, 0x28, 0x60), nvgRGBA(0xe8, 0x38, 0x28, 0x00));
+				nvgRGBA(0xf2, 0x84, 0x1f, 0x60), nvgRGBA(0xf2, 0x84, 0x1f, 0x00));
 			nvgFillPaint(args.vg, glow);
 			nvgFill(args.vg);
 		}
@@ -917,11 +1137,58 @@ void Lamps::draw(const DrawArgs& args) {
 }
 
 void Lamps::onEnter(const EnterEvent& e) {
-	(void) e;   // not passed on: see plugin.hpp
+	(void) e;   // Rack's own is not made: see plugin.hpp
 }
 
 void Lamps::onLeave(const LeaveEvent& e) {
 	(void) e;
+	described = -2;
+	dropNote();
+}
+
+/** THE LAMP UNDER THE POINTER, DESCRIBED.
+
+Rack's own note for this control would be one long description of every option at once, which is
+why it was suppressed. This is the opposite: the one lamp the pointer is on, in a clause. It is put
+up as a note so that Dreamer Help reads it out while Option is held — the words have nowhere to be
+drawn on a panel this size, so being spoken is the whole of what they are for.
+
+BETWEEN LAMPS, THE GROUP'S OWN LINE, which is what the whole thing is for rather than what one
+setting does. */
+void Lamps::onHover(const HoverEvent& e) {
+	const int i = lampAt(e.pos);
+	if (i != described) {
+		described = i;
+		showNote(i);
+	}
+	ParamWidget::onHover(e);
+}
+
+void Lamps::showNote(int lamp) {
+	dropNote();
+	std::string text;
+	if (lamp >= 0 && lamp < (int) notes.size() && !notes[lamp].empty()) {
+		const std::string name = (lamp < (int) names.size()) ? names[lamp] : "";
+		text = name.empty() ? notes[lamp] : name + " — " + notes[lamp];
+	}
+	else if (lamp < 0) {
+		text = groupNote;
+	}
+	if (text.empty())
+		return;
+	ui::Tooltip* t = new ui::Tooltip;
+	t->text = text;
+	APP->scene->addChild(t);
+	note = t;
+}
+
+void Lamps::dropNote() {
+	if (ui::Tooltip* t = note) {
+		if (t->parent)
+			t->parent->removeChild(t);
+		delete t;
+	}
+	note = NULL;
 }
 
 void Lamps::onButton(const ButtonEvent& e) {
