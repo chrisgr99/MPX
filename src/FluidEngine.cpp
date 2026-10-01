@@ -33,7 +33,7 @@ FluidEngine::~FluidEngine() {
 }
 
 
-bool FluidEngine::start(double sampleRate, int channels, int polyphony) {
+bool FluidEngine::start(double sampleRate, int channels, int polyphony, int groups) {
 	stop();
 	settings = new_fluid_settings();
 	if (!settings) {
@@ -48,6 +48,10 @@ bool FluidEngine::start(double sampleRate, int channels, int polyphony) {
 	fluid_settings_setnum(settings, "synth.sample-rate", sampleRate);
 	fluid_settings_setint(settings, "synth.midi-channels", channels);
 	fluid_settings_setint(settings, "synth.polyphony", polyphony);
+	groupCount = (groups > 0) ? groups : 1;
+	fluid_settings_setint(settings, "synth.audio-channels", groupCount);
+	fluid_settings_setint(settings, "synth.audio-groups", groupCount);
+	fluid_settings_setint(settings, "synth.effects-groups", 1);
 	// THE GAIN IS LEFT WHERE IT IS. FluidSynth's default is quiet on purpose, since a General
 	// MIDI bank has to hold a whole orchestra without clipping; the module's own level makes up
 	// for it where it is wanted, which is one place rather than two.
@@ -192,6 +196,19 @@ void FluidEngine::render(float* left, float* right, int frames) {
 	if (!synth || frames <= 0)
 		return;
 	fluid_synth_write_float(synth, frames, left, 0, 1, right, 0, 1);
+}
+
+
+void FluidEngine::renderGroups(float** out, float** fx, int frames) {
+	if (frames <= 0)
+		return;
+	for (int i = 0; i < 2 * groupCount; i++)
+		std::memset(out[i], 0, sizeof(float) * (size_t) frames);
+	for (int i = 0; i < 4; i++)
+		std::memset(fx[i], 0, sizeof(float) * (size_t) frames);
+	if (!synth)
+		return;
+	fluid_synth_process(synth, frames, 4, fx, 2 * groupCount, out);
 }
 
 

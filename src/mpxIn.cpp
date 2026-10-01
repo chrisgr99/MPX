@@ -127,10 +127,10 @@ struct NoteModule : Module, NoteSource {
 	void process(const ProcessArgs& args) override {
 		// A note cable carries no voltage. It is a real cable so that Rack owns it — draws it,
 		// saves it, undoes it, removes it with either module — and the events travel through
-		// the bus. Patching it into an oscillator therefore does nothing rather than something
-		// surprising.
+		// the bus. All it carries as a voltage is a five-millisecond pulse as each note starts,
+		// which is what lights the plugs at both ends; see busFlashVolts.
 		outputs[O_VOICE].setChannels(1);
-		outputs[O_VOICE].setVoltage(0.f);
+		outputs[O_VOICE].setVoltage(busFlashVolts(slot));
 
 		// THE PEDALS, every sample, as state: whatever is listening knows where the pedal is the
 		// moment it starts listening. Unpatched is up.

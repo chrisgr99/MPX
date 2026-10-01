@@ -408,8 +408,24 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					// THE WHAMMY BAR MOVES EVERY STRING of the beat, so a note with no bend of
 					// its own takes the bar's movement as its bend. A note that is bent as well
 					// keeps its own, which is the more specific statement.
-					if (p.note.bend.empty() && !beat.whammy.empty())
+					//
+					// NO HIGHER THAN A GUITAR GOES. Files carry raises no hand could make —
+					// a whammy bar pulled up three and a half tones, standing in for a pitch
+					// pedal — and played as written they sound like a mistake. A bar pulls up a
+					// tone and a half at most, and a string bends three tones, which is as far
+					// as Guitar Pro's own bend editor goes. Downward is left alone: a bar
+					// dives a long way.
+					static const float BAR_UP_CENTS = 300.f;
+					static const float BEND_UP_CENTS = 600.f;
+					if (p.note.bend.empty() && !beat.whammy.empty()) {
 						p.note.bend = beat.whammy;
+						for (auto& point : p.note.bend)
+							point.second = std::min(point.second, BAR_UP_CENTS);
+					}
+					else {
+						for (auto& point : p.note.bend)
+							point.second = std::min(point.second, BEND_UP_CENTS);
+					}
 					lastOnString[key] = played.size();
 					played.push_back(p);
 				}

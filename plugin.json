@@ -126,10 +126,30 @@
     },
     {
       "slug": "mpxGuitarChart",
-      "name": "mpxGuitarChart",
+      "name": "mpxGuitarChart12",
       "description": "Plays a Guitar Pro file: each track on its own MPX cable, with a mute beside each one. Reads .gp, .gpx and .gp3 to .gp5.",
       "tags": [
         "Sequencer",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "mpxGuitarChart6",
+      "name": "mpxGuitarChart6",
+      "description": "Plays a Guitar Pro file: six tracks, each on its own MPX cable with a mute, and a built-in General MIDI band with an audio output and gain per track and a stereo mix, shown from the menu.",
+      "tags": [
+        "Sequencer",
+        "Sampler",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "mpxGuitarChartExpander",
+      "name": "mpxGuitarChartExpander",
+      "description": "Placed to the right of mpxGuitarChart, plays all twelve of its tracks through FluidSynth on the instruments the file names. An audio output and a gain for each track, and the whole band as a stereo pair.",
+      "tags": [
+        "Sampler",
+        "Expander",
         "Polyphonic"
       ]
     },

@@ -852,9 +852,36 @@ static bool readGpif(const std::string& xml, GpSong& out, std::string* why) {
 					track.capo = toInt(X::textOf(xml, capo, t1, "Fret"), 0);
 				// Percussion is named in the instrument set rather than by a flag.
 				const std::string kind = X::textOf(xml, t0, t1, "Type");
+				// The older of these files say it in the General MIDI table instead.
 				track.percussion = kind.find("drum") != std::string::npos
 					|| kind.find("Drum") != std::string::npos
-					|| kind.find("percussion") != std::string::npos;
+					|| kind.find("percussion") != std::string::npos
+					|| findIn(xml, "table=\"Percussion\"", t0, t1) != std::string::npos;
+				// THE INSTRUMENT, as the first General MIDI program the track names: in
+				// <GeneralMidi> in the older files and in its first <Sound> in the newer ones.
+				const std::string program = X::textOf(xml, t0, t1, "Program");
+				if (!program.empty())
+					track.midiProgram = std::max(0, std::min(127, toInt(program, 0)));
+				// WHERE IT SITS, the twelfth of the channel strip's parameters, nought at the
+				// left and one at the right.
+				const size_t strip = findIn(xml, "<ChannelStrip", t0, t1);
+				if (strip != std::string::npos) {
+					const std::string text = X::textOf(xml, strip, t1, "Parameters");
+					std::vector<float> values;
+					size_t at = 0;
+					while (at < text.size()) {
+						const size_t end = text.find(' ', at);
+						const std::string one = text.substr(at, (end == std::string::npos)
+							? std::string::npos : end - at);
+						if (!one.empty())
+							values.push_back(toFloat(one, 0.5f));
+						if (end == std::string::npos)
+							break;
+						at = end + 1;
+					}
+					if (values.size() > 11)
+						track.pan = std::max(-1.f, std::min(1.f, (values[11] - 0.5f) * 2.f));
+				}
 				out.tracks.push_back(track);
 				from = t1;
 			}
@@ -1458,9 +1485,12 @@ struct Binary {
 			const int32_t value = r.i32();
 			r.boolean();                     // vibrato on that point
 			// The binary formats count position in sixtieths of the note and height in
-			// twenty-fifths of a SEMITONE, so twenty-five is a hundred cents. Both are turned
-			// into what GpNote says they are: a fraction of the note, and cents.
-			const std::pair<float, float> point((float) position / 60.f, (float) value * 4.f);
+			// twenty-fifths of a QUARTER TONE, so a hundred is a whole tone — a full bend — and
+			// two hundred cents, as in the newer format. Read as twenty-fifths of a semitone,
+			// every bend and whammy dip came out twice as deep: across a folder of real files
+			// the commonest bend read as four hundred cents here and two hundred there. Both
+			// are turned into what GpNote says they are: a fraction of the note, and cents.
+			const std::pair<float, float> point((float) position / 60.f, (float) value * 2.f);
 			if (note)
 				note->bend.push_back(point);
 			else if (bar)
@@ -1860,9 +1890,16 @@ struct Binary {
 				r.i8();                             // octave
 		}
 
+		// THE MIXER: sixty-four MIDI channels, four ports of sixteen, each with the instrument it
+		// plays and where it sits. A track names a port and a channel, and takes both from here.
+		// Volume and pan are nought to sixteen, with eight the middle.
+		int32_t channelProgram[64] = {};
+		int8_t channelBalance[64] = {};
 		for (int i = 0; i < 64; i++) {
-			r.i32();                                // instrument
-			r.i8(); r.i8(); r.i8(); r.i8(); r.i8(); r.i8();
+			channelProgram[i] = r.i32();            // instrument
+			r.i8();                                 // volume
+			channelBalance[i] = r.i8();
+			r.i8(); r.i8(); r.i8(); r.i8();         // chorus, reverb, phaser, tremolo
 			r.skip(2);
 		}
 		// WHERE THE NAVIGATION SIGNS ARE: nineteen bar numbers in a fixed order, one per kind of
@@ -1960,8 +1997,15 @@ struct Binary {
 				if (k < stringCount && stringCount <= 7)
 					tuning.push_back(pitch);
 			}
-			r.i32();                                // port
+			const int32_t port = r.i32();
 			const int32_t channel = r.i32();
+			const int mixer = (port - 1) * 16 + (channel - 1);
+			if (mixer >= 0 && mixer < 64) {
+				track.midiProgram = std::max(0, std::min(127, (int) channelProgram[mixer]));
+				track.pan = std::max(-1.f, std::min(1.f,
+					((float) channelBalance[mixer] - 8.f) / 8.f));
+			}
+			track.midiChannel = channel;
 			r.i32();                                // the effects channel
 			r.i32();                                // how many frets
 			track.capo = r.i32();

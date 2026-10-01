@@ -353,6 +353,8 @@ struct Instrument {
 	/** What to call it on a panel: "Jazz Guitar", "Bass", "Drums". Fixed length, because this is
 	shared memory read from the audio thread and a string that reallocates is not. */
 	char name[24] = {};
+	/** Where the source places it, from -1 at the left to 1 at the right. */
+	float pan = 0.f;
 	uint32_t change = 0;
 
 	void setName(const std::string& text) {
@@ -369,6 +371,8 @@ struct Bus {
 	std::atomic<uint32_t> generation{0};
 	std::atomic<uint32_t> write{0};
 	Event ring[BUS_RING];
+	/** The engine frame the last note started on, for busFlashVolts. */
+	std::atomic<int64_t> lastOn{-1000000000};
 
 	/** A seqlock, because the harmony is larger than a word and Rack may run several engine
 	threads: the writer raises the count before and after, and a reader that sees it change
@@ -408,6 +412,11 @@ void busRelease(int slot);
 
 /** Appends an event. Audio thread, one writer per bus. */
 void busPush(int slot, const Event& e);
+/** WHAT AN MPX OUTPUT CARRIES AS A VOLTAGE: ten volts for five milliseconds whenever a note
+starts on its bus, and nothing otherwise. The notes travel through the bus, not the cable, so
+the voltage is free to say something — and Rack lights every plug by its cable's voltage, so
+both ends of an MPX cable flash with its notes as any other cable shows its signal. */
+float busFlashVolts(int slot);
 
 /** Publishes the pedals on this bus. Audio thread, one writer per bus. A module that reads an
 upstream and publishes its own bus forwards them, exactly as it forwards the harmony: a processor

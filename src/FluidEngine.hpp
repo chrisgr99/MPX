@@ -43,8 +43,12 @@ struct FluidEngine {
 	~FluidEngine();
 
 	/** Makes the synthesiser, at the host's sample rate. Called again when the rate changes;
-	the bank then has to be loaded again. Main thread. */
-	bool start(double sampleRate, int channels, int polyphony);
+	the bank then has to be loaded again. Main thread.
+
+	GROUPS are separate stereo outputs: a MIDI channel sounds on group channel % groups, so a
+	part whose channels are all congruent to its number, modulo the group count, has an output
+	of its own. See renderGroups. */
+	bool start(double sampleRate, int channels, int polyphony, int groups = 1);
 	void stop();
 	bool running() const { return synth != NULL; }
 
@@ -75,11 +79,16 @@ struct FluidEngine {
 
 	/** Writes `frames` of stereo into two buffers. */
 	void render(float* left, float* right, int frames);
+	/** Writes each group's dry stereo into out[2g] and out[2g + 1], and the effects — reverb
+	left and right, then chorus left and right — into fx[0] to fx[3]. Every buffer is cleared
+	first. The effects are one unit shared by every group. */
+	void renderGroups(float** out, float** fx, int frames);
 
 private:
 	_fluid_hashtable_t* settings = NULL;
 	_fluid_synth_t* synth = NULL;
 	int font = -1;
+	int groupCount = 1;
 	std::string path, name, why;
 	/** What each channel's bend range was set to. FluidSynth has no way to ask. */
 	std::vector<int> ranges;

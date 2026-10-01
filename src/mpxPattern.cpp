@@ -304,7 +304,7 @@ struct PatternModule : Module, NoteSource, NoteSink {
 		}
 
 		outputs[O_NOTES].setChannels(1);
-		outputs[O_NOTES].setVoltage(0.f);
+		outputs[O_NOTES].setVoltage(busFlashVolts(slot));
 
 		// THE CHART PASSES THROUGH, so the module can sit in the chain rather than beside it:
 		// what it publishes is the chart's own state plus the notes it writes.

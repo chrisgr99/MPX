@@ -463,7 +463,7 @@ struct RandModule : Module, NoteSource, NoteSink {
 		}
 
 		outputs[O_MPX].setChannels(1);
-		outputs[O_MPX].setVoltage(0.f);
+		outputs[O_MPX].setVoltage(busFlashVolts(slot));
 
 		const int attribute = (int) std::round(params[P_ATTRIBUTE].getValue());
 		const int shape = (int) std::round(params[P_SHAPE].getValue());

@@ -210,7 +210,7 @@ struct VoicingModule : Module, NoteSource, NoteSink {
 		// EVERYTHING PASSES THROUGH. The events, the harmony and the pedals are the upstream's
 		// and are forwarded unchanged; this module adds one thing and takes nothing away.
 		outputs[O_MPX].setChannels(1);
-		outputs[O_MPX].setVoltage(0.f);
+		outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		Event e;
 		while (reader.next(e))
 			busPush(slot, e);

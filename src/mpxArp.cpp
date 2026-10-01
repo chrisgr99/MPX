@@ -291,7 +291,7 @@ struct ArpModule : Module, NoteSource, NoteSink {
 	module into whatever comes next needs one cable rather than a second run back for the beat. */
 	void forwardBus() {
 		outputs[O_MPX].setChannels(1);
-		outputs[O_MPX].setVoltage(0.f);
+		outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		if (slot < 0)
 			return;
 		Event e;

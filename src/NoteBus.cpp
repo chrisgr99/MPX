@@ -76,6 +76,18 @@ void busPush(int slot, const Event& e) {
 	bus.ring[w % BUS_RING] = e;
 	// Released after the event is written, so a reader that sees the new index sees the event.
 	bus.write.store(w + 1, std::memory_order_release);
+	if (e.kind == Event::ON)
+		bus.lastOn.store(APP->engine->getFrame(), std::memory_order_relaxed);
+}
+
+
+float busFlashVolts(int slot) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return 0.f;
+	const int64_t since = APP->engine->getFrame()
+		- gBuses[slot].lastOn.load(std::memory_order_relaxed);
+	const int64_t length = (int64_t) (APP->engine->getSampleRate() * 0.005f);
+	return (since >= 0 && since < length) ? 10.f : 0.f;
 }
 
 

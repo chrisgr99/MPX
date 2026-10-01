@@ -774,7 +774,7 @@ struct ChartModule : Module, NoteSource {
 
 	void process(const ProcessArgs& args) override {
 		outputs[O_MPX].setChannels(1);
-		outputs[O_MPX].setVoltage(0.f);
+		outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		if (slot < 0 || !haveSong.load())
 			return;
 

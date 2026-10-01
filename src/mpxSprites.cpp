@@ -1490,7 +1490,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		// THE CHART PASSES THROUGH, and the sprites' own notes go out with it, so this module can
 		// sit anywhere in a chain rather than only at the head of one.
 		outputs[O_NOTES].setChannels(1);
-		outputs[O_NOTES].setVoltage(0.f);
+		outputs[O_NOTES].setVoltage(busFlashVolts(slot));
 		Event e;
 		while (reader.next(e))
 			busPush(slot, e);

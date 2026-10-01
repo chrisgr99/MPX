@@ -109,8 +109,11 @@ struct GpBar {
 struct GpTrack {
 	std::string name;         /**< "Jazz Guitar", "Bass", "Drums" — what goes on the panel. */
 	std::string shortName;
+	/** The General MIDI instrument the file asks for, nought to 127. */
 	int midiProgram = 0;
 	int midiChannel = 0;
+	/** WHERE THE FILE PLACES IT, from -1 at the left to 1 at the right. */
+	float pan = 0.f;
 	bool percussion = false;
 	/** THE WHOLE PART LETS RING, which some transcriptions say once for the track rather than on
 	every note. Three of the nineteen tracks of the Oasis file do. */
