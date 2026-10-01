@@ -188,6 +188,11 @@ performtest:
 	@c++ -std=c++11 -O1 -Wall test/performtest.cpp src/Perform.cpp -o build/performtest
 	@./build/performtest
 
+# mpxGuitarVoice's envelopes and mix. No Rack in them.
+voicetest:
+	@c++ -std=c++11 -O1 -Wall test/voicetest.cpp src/GuitarVoice.cpp -o build/voicetest
+	@./build/voicetest
+
 # The SoundFont engine. No Rack in it either, so it runs against a bank from the command line.
 soundtest:
 	@c++ -std=c++11 -O1 -Wall -I dep/include test/soundtest.cpp src/FluidEngine.cpp \
@@ -195,4 +200,4 @@ soundtest:
 	@./build/soundtest $(ARGS)
 
 
-.PHONY: test presets phrasesim gptest navtest performtest soundtest
+.PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest

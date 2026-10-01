@@ -144,6 +144,16 @@
       ]
     },
     {
+      "slug": "mpxGuitarVoice",
+      "name": "mpxGuitarVoice",
+      "description": "Plays one MPX part through any polyphonic oscillator: a pitch output with the bends in it, the oscillator's audio coming back through each string's own envelope and level, panned and mixed to stereo.",
+      "tags": [
+        "Polyphonic",
+        "Envelope generator",
+        "Mixer"
+      ]
+    },
+    {
       "slug": "mpxGuitarChartExpander",
       "name": "mpxGuitarChartExpander",
       "description": "Placed to the right of mpxGuitarChart, plays all twelve of its tracks through FluidSynth on the instruments the file names. An audio output and a gain for each track, and the whole band as a stereo pair.",
