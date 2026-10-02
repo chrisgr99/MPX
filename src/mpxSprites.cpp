@@ -94,6 +94,29 @@ enum Source {
 	NUM_SOURCES
 };
 
+/** THE NOTE GRID: where in the bar a sprite's notes may begin. Free is the sprite's own timer and
+nothing else, as it always was; any other value lets a note begin only on a point of that grid,
+counted from the start of each bar of the chart on the cable, at the chart's tempo. Each value's
+length is a fraction of a whole note. */
+enum NoteGrid { GRID_FREE, GRID_WHOLE, GRID_DOTTED_HALF, GRID_HALF, GRID_HALF_TRIPLET,
+	GRID_DOTTED_QUARTER, GRID_QUARTER, GRID_QUARTER_TRIPLET, GRID_DOTTED_EIGHTH, GRID_EIGHTH,
+	GRID_EIGHTH_TRIPLET, GRID_DOTTED_SIXTEENTH, GRID_SIXTEENTH, NUM_GRIDS };
+static const char* GRID_NAMES[NUM_GRIDS] = {
+	"Free", "Whole note", "Dotted half", "Half note", "Half-note triplet", "Dotted quarter",
+	"Quarter note", "Quarter-note triplet", "Dotted eighth", "Eighth note", "Eighth-note triplet",
+	"Dotted sixteenth", "Sixteenth note",
+};
+static const float GRID_WHOLES[NUM_GRIDS] = {
+	0.f, 1.f, 0.75f, 0.5f, 1.f / 3.f, 0.375f, 0.25f, 1.f / 6.f, 0.1875f, 0.125f, 1.f / 12.f,
+	0.09375f, 0.0625f,
+};
+/** The symbol on the plate and in its list: the SMuFL note, then "." for dotted or "3" for a
+triplet. See Readout::glyphs. */
+static const std::vector<std::string> GRID_GLYPHS = {
+	"", "\uE1D2", "\uE1D3.", "\uE1D3", "\uE1D33", "\uE1D5.", "\uE1D5", "\uE1D53", "\uE1D7.",
+	"\uE1D7", "\uE1D73", "\uE1D9.", "\uE1D9",
+};
+
 static const char* SOURCE_NAMES[NUM_SOURCES] = {
 	"bright", "red–cyan", "yellow–blue", "colour", "edge", "odd",
 	"height", "across", "outward",
@@ -179,7 +202,9 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		P_FORCE, P_BLEND, P_TURN,
 		P_SLOW, P_FAST, P_DEPTH, P_LEVEL, P_REGISTER, P_DURATION, P_ARTIC, P_RANGE,
 		P_SYNC,
-		P_SRC_PITCH, P_SRC_LEVEL, P_SRC_RATE, P_SRC_DUR, NUM_PARAMS };
+		P_SRC_PITCH, P_SRC_LEVEL, P_SRC_RATE, P_SRC_DUR,
+		// APPENDED, NEVER INSERTED: a patch stores a parameter by its position in this list.
+		P_GRID, NUM_PARAMS };
 	enum InputId { I_CHART, I_CLOCK, NUM_INPUTS };
 	enum OutputId { O_NOTES, NUM_OUTPUTS };
 	enum LightId { NUM_LIGHTS };
@@ -239,7 +264,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	enum SpriteVal { SV_FIELD, SV_FORCE, SV_BLEND, SV_TURN, SV_SPEED, SV_DRIFT,
 		SV_SLOW, SV_FAST, SV_DEPTH, SV_REGISTER, SV_LEVEL, SV_DURATION, SV_ARTIC,
 		SV_STEER, SV_PUSH, SV_READ, SV_SPAN, SV_ENABLE,
-		SV_SRC_PITCH, SV_SRC_LEVEL, SV_SRC_RATE, SV_SRC_DUR, NUM_SV };
+		SV_SRC_PITCH, SV_SRC_LEVEL, SV_SRC_RATE, SV_SRC_DUR, SV_GRID, NUM_SV };
 
 	/** WHICH KNOB SHOWS EACH OF THEM. One set of controls on the panel, four sets of values
 	underneath: the tab says which set the controls are looking at.
@@ -268,6 +293,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			case SV_SRC_LEVEL: return P_SRC_LEVEL;
 			case SV_SRC_RATE: return P_SRC_RATE;
 			case SV_SRC_DUR: return P_SRC_DUR;
+			case SV_GRID: return P_GRID;
 			default: return -1;   // the three channel choices live in the menu, not on a knob
 		}
 	}
@@ -279,6 +305,28 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	/** A sprite the panel has asked to switch on or off, or minus one. Asked for rather than done
 	there, because the values are the audio thread's to write. */
 	std::atomic<int> flipEnable{-1};
+	/** WHICH TABS ARE SELECTED, a bit for each. The knobs show the sprite `tab` names, which is
+	always among them; a knob turned while several are selected sets that one setting on all of
+	them. */
+	std::atomic<int> selection{1};
+	/** Sprites the panel has asked to put back to their starting settings, a bit for each. */
+	std::atomic<int> resetWanted{0};
+
+	/** ONE SPRITE'S SETTINGS BACK TO WHERE THEY START, as a fresh module has them: every knob at
+	its default, two octaves of range, and the turn that sprite starts with. Whether it is
+	playing, and where it is, are left alone: those are the patch, not its settings. */
+	void defaultsFor(int s) {
+		for (int v = 0; v < NUM_SV; v++) {
+			const int p = paramOf(v);
+			if (p >= 0 && paramQuantities[p])
+				val[s][v].store(paramQuantities[p]->getDefaultValue());
+		}
+		val[s][SV_STEER].store((float) CH_HUE);
+		val[s][SV_PUSH].store((float) CH_SAT);
+		val[s][SV_READ].store((float) CH_VAL);
+		val[s][SV_SPAN].store(24.f);
+		val[s][SV_TURN].store(-135.f + 90.f * (float) s);
+	}
 
 	float valueOf(int sprite, int which) const {
 		return val[math::clamp(sprite, 0, MAX_SPRITES - 1)][which].load();
@@ -293,8 +341,12 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		const int flip = flipEnable.exchange(-1);
 		if (flip >= 0 && flip < MAX_SPRITES)
 			val[flip][SV_ENABLE].store(enabled(flip) ? 0.f : 1.f);
+		const int resets = resetWanted.exchange(0);
+		for (int s = 0; s < MAX_SPRITES; s++)
+			if (resets & (1 << s))
+				defaultsFor(s);
 		const int want = math::clamp(tab.load(), 0, MAX_SPRITES - 1);
-		if (want != shownTab) {
+		if (want != shownTab || (resets & (1 << want))) {
 			shownTab = want;
 			for (int v = 0; v < NUM_SV; v++) {
 				const int p = paramOf(v);
@@ -303,10 +355,19 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			}
 			return;
 		}
+		// A KNOB TURNED SETS ITS SETTING ON EVERY SELECTED SPRITE, and only that setting: the
+		// others keep their own values, so sprites that differ elsewhere still differ.
+		const int chosen = selection.load() | (1 << want);
 		for (int v = 0; v < NUM_SV; v++) {
 			const int p = paramOf(v);
-			if (p >= 0)
-				val[want][v].store(params[p].getValue());
+			if (p < 0)
+				continue;
+			const float now = params[p].getValue();
+			if (now == val[want][v].load())
+				continue;
+			for (int s = 0; s < MAX_SPRITES; s++)
+				if (chosen & (1 << s))
+					val[s][v].store(now);
 		}
 	}
 
@@ -326,6 +387,32 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	/** Set by the panel when a drag ends, read by the physics. */
 	std::atomic<bool> takeHome{false};
 	std::atomic<bool> rewindWanted{false};
+
+	/** THE CHART'S TRANSPORT, as last seen on the cable. Play and stop on the chart set RUN here,
+	and a rewind on the chart rewinds the sprites, so one press works the whole patch; RUN and
+	REWIND on this panel still work between times. A rewind is the chart's position going back
+	without its pass counter going up: the form running off its end and starting another pass
+	goes back too, but counts up, and the sprites carry on through it. A looped section coming
+	round is a rewind nobody pressed, as the chart has it, and rewinds them. */
+	bool chartSeen = false;
+	bool chartHolding = false;
+	double chartBeat = 0.0;
+	uint32_t chartEpoch = 0;
+
+	void followChart(const Harmony& h) {
+		if (!h.valid) {
+			chartSeen = false;
+			return;
+		}
+		if (!chartSeen || h.holding != chartHolding)
+			params[P_RUN].setValue(h.holding ? 0.f : 1.f);
+		if (chartSeen && h.beat + 1e-4 < chartBeat && h.epoch <= chartEpoch)
+			rewindWanted.store(true);
+		chartSeen = true;
+		chartHolding = h.holding;
+		chartBeat = h.beat;
+		chartEpoch = h.epoch;
+	}
 
 	int spanOf(int i) const {
 		const int n = std::abs((int) std::lround(valueOf(i, SV_SPAN)));
@@ -575,6 +662,12 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			"Amplitude parameter", sources);
 		configSwitch(P_SRC_RATE, 0.f, (float) (NUM_SOURCES - 1), (float) SRC_BRIGHT,
 			"Rate parameter", sources);
+		{
+			std::vector<std::string> grids;
+			for (int g = 0; g < NUM_GRIDS; g++)
+				grids.push_back(GRID_NAMES[g]);
+			configSwitch(P_GRID, 0.f, (float) (NUM_GRIDS - 1), 0.f, "Note grid", grids);
+		}
 		configSwitch(P_SRC_DUR, 0.f, (float) (NUM_SOURCES - 1), (float) SRC_BRIGHT,
 			"Duration parameter", sources);
 		configInput(I_CHART, "MPX chart");
@@ -587,6 +680,8 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			wantGenerations[i].store(0);
 		}
 		slot = busClaim(&generation);
+		for (int g = 0; g < NUM_GRIDS; g++)
+			lastGridKey[g] = INT64_MIN;
 	}
 
 	/** EVERY CONTROL BACK TO WHERE IT STARTED, and the picture left alone.
@@ -619,6 +714,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			meanFY[s].store(0.f);
 		}
 		tab.store(0);
+		selection.store(1);
 		// The knobs show the first sprite again, whatever they were showing.
 		shownTab = -1;
 		for (int v = 0; v < NUM_SV; v++) {
@@ -977,8 +1073,10 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		}
 		if (json_t* v = json_object_get(rootJ, "glare"))
 			glare = math::clamp((int) json_integer_value(v), 0, NUM_GLARES - 1);
-		if (json_t* v = json_object_get(rootJ, "tab"))
+		if (json_t* v = json_object_get(rootJ, "tab")) {
 			tab.store(math::clamp((int) json_integer_value(v), 0, MAX_SPRITES - 1));
+			selection.store(1 << tab.load());
+		}
 		if (json_t* valsJ = json_object_get(rootJ, "perSprite")) {
 			for (int sprite = 0; sprite < MAX_SPRITES; sprite++) {
 				json_t* oneJ = json_array_get(valsJ, sprite);
@@ -1320,8 +1418,80 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	wanted; DIVIDE works out that the sprite wants about every third tick and plays exactly every
 	third until the picture changes its mind, which is strictly regular and steps audibly between
 	one division and the next. */
+	// ---- the note grid ----
+
+	/** Where each grid was last seen: the bar and the point within it, packed together. */
+	int64_t lastGridKey[NUM_GRIDS];
+	/** How long since each sprite's last note, in seconds: a gridded note's gap. */
+	float sinceNote[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+	/** THE CHART'S TEMPO, measured from its beat moving, over a twentieth of a second at a time:
+	what a grid's length is in seconds. */
+	double tempoBeat = -1.0;
+	float tempoTime = 0.f;
+	float beatSeconds = 0.5f;
+
+	int gridOf(int i) const {
+		return math::clamp((int) std::lround(valueOf(i, SV_GRID)), 0, NUM_GRIDS - 1);
+	}
+
+	/** A grid's length in the chart's beats: a whole note is as many beats as the bar's unit. */
+	static float gridBeats(int g, const Harmony& h) {
+		return GRID_WHOLES[g] * (float) (h.barUnit > 0 ? h.barUnit : 4);
+	}
+
+	/** WHICH POINT OF A GRID THE MUSIC IS AT, counted from the start of the bar: the grid begins
+	again at every bar line, so a dotted quarter in four is three, three and two eighths. Straight
+	eighths and sixteenths in a bar of quarters lean where the chart's swing puts them; dotted and
+	triplet grids are played as written. */
+	static int gridPoint(int g, const Harmony& h) {
+		const float b = std::fmax(0.f, h.beatInBar);
+		if (h.barUnit == 4 && g == GRID_EIGHTH && h.swingEighth > 1.0001f) {
+			const float r = h.swingEighth, f = b - std::floor(b);
+			return (int) std::floor(b) * 2 + (f >= r / (1.f + r) ? 1 : 0);
+		}
+		if (h.barUnit == 4 && g == GRID_SIXTEENTH && h.swingSixteenth > 1.0001f) {
+			const float r = h.swingSixteenth, e = std::floor(b * 2.f), f = b * 2.f - e;
+			return (int) e * 2 + (f >= r / (1.f + r) ? 1 : 0);
+		}
+		return (int) std::floor(b / gridBeats(g, h) + 1e-4f);
+	}
+
+	void measureTempo(const Harmony& h, float dt) {
+		if (!h.valid || h.holding) {
+			tempoBeat = -1.0;
+			return;
+		}
+		if (tempoBeat < 0.0) {
+			tempoBeat = h.beat;
+			tempoTime = 0.f;
+			return;
+		}
+		tempoTime += dt;
+		if (tempoTime < 0.05f)
+			return;
+		const double moved = h.beat - tempoBeat;
+		if (moved > 0.0)
+			beatSeconds = (float) (tempoTime / moved);
+		tempoBeat = h.beat;
+		tempoTime = 0.f;
+	}
+
 	void stepNotes(const ProcessArgs& args, const Harmony& h, bool running) {
 		const bool clocked = inputs[I_CLOCK].isConnected();
+		// THE CHART'S GRIDS, which of them have reached a new point this sample.
+		const bool chart = h.valid;
+		const bool chartRunning = chart && running && !h.holding;
+		measureTempo(h, args.sampleTime);
+		bool crossed[NUM_GRIDS] = {};
+		for (int g = 1; g < NUM_GRIDS; g++) {
+			if (!chartRunning) {
+				lastGridKey[g] = INT64_MIN;
+				continue;
+			}
+			const int64_t key = (int64_t) h.bar * 256 + gridPoint(g, h);
+			crossed[g] = key != lastGridKey[g];
+			lastGridKey[g] = key;
+		}
 		bool edge = false;
 		if (clocked) {
 			sinceTick += args.sampleTime;
@@ -1356,6 +1526,57 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 				noteEndIn[i] -= args.sampleTime;
 				if (noteEndIn[i] <= 0.f)
 					endNote(i);
+			}
+
+			// ON A GRID, with a chart to count it from: the sprite's timer runs as ever and says
+			// when a note is wanted, and the note begins on a point of the grid — the next one, or
+			// the nearest, or every so many, as Sync says. The TRIG input is not used.
+			const int grid = gridOf(i);
+			if (grid != GRID_FREE && chart) {
+				sinceNote[i] += args.sampleTime;
+				if (!chartRunning) {
+					ticksSince[i] = -1;
+					continue;
+				}
+				const float rate = rateFor(i);
+				notePhase[i] += rate * args.sampleTime;
+				if (!crossed[grid])
+					continue;
+				const float gridSec = gridBeats(grid, h) * beatSeconds;
+				bool play = false;
+				// The first point after the chart starts, or after a rewind, plays.
+				if (ticksSince[i] < 0) {
+					play = true;
+					notePhase[i] = 0.f;
+					lockCount[i] = 0;
+				}
+				else if (mode == SYNC_DIVIDE) {
+					const int every = math::clamp(
+						(int) std::lround(1.f / std::max(rate * gridSec, 1e-4f)), 1, 64);
+					if (++lockCount[i] >= every) {
+						play = true;
+						lockCount[i] = 0;
+					}
+				}
+				else {
+					const float reach = (mode == SYNC_NEAREST) ? 0.5f * rate * gridSec : 0.f;
+					if (notePhase[i] + reach >= 1.f) {
+						play = true;
+						notePhase[i] -= 1.f;
+						if (notePhase[i] < -1.f || notePhase[i] > 1.f)
+							notePhase[i] = 0.f;
+					}
+				}
+				if (play) {
+					// THE GAP THE GRID ACTUALLY GAVE IT, which is what the duration setting is
+					// a share of.
+					const float gap = (ticksSince[i] >= 0 && sinceNote[i] > 0.f)
+						? sinceNote[i] : 1.f / std::max(rate, 0.01f);
+					noteEndIn[i] = fire(i, gap, h);
+					ticksSince[i] = 0;
+					sinceNote[i] = 0.f;
+				}
+				continue;
 			}
 
 			if (clocked) {
@@ -1498,6 +1719,10 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		const bool haveHarmony = reader.harmony(h);
 		if (haveHarmony)
 			busPublishHarmony(slot, h);
+		if (haveHarmony)
+			followChart(h);
+		else
+			chartSeen = false;
 		stepNotes(args, h, params[P_RUN].getValue() > 0.5f);
 		ChordVoicing v;
 		if (reader.voicing(v))
@@ -1839,14 +2064,16 @@ struct PictureFrame : widget::OpaqueWidget {
 			// already say.
 			const float flash = module->firing[i].load();
 			nvgStrokeColor(args.vg, edge);
-			// THE SELECTED SPRITE WEARS A HEAVIER RING, so that the one the controls are pointed
-			// at can be picked out of four without having to guess.
+			// THE SPRITE THE KNOBS SHOW WEARS A HEAVIER RING, so that the one the controls are
+			// pointed at can be picked out of four without having to guess.
 			const bool chosen = (i == math::clamp(module->tab.load(), 0, MAX_SPRITES - 1));
+			const bool selected = chosen || (module->selection.load() & (1 << i));
 			nvgStrokeWidth(args.vg, (chosen ? 3.2f : 2.f) + 3.f * math::clamp(flash, 0.f, 1.f));
 			nvgStroke(args.vg);
 
-			// And a thread of its own colour just outside it, which is what ties it to its tab.
-			if (chosen) {
+			// And a thread of its own colour just outside it, which is what ties it to its tab:
+			// every selected sprite has one, so a group being set together can be seen.
+			if (selected) {
 				const NVGcolor ink = SPRITE_INK[i];
 				nvgBeginPath(args.vg);
 				nvgCircle(args.vg, at.x, at.y, DOT_R + 3.f);
@@ -2167,7 +2394,10 @@ struct PictureFrame : widget::OpaqueWidget {
 			int which = -1;
 			if (whatIsHere(e.pos, &which)) {
 				// TOUCHING A SPRITE SELECTS IT, so the controls below follow the hand rather than
-				// having to be pointed at a tab first.
+				// having to be pointed at a tab first. One already among several selected stays
+				// among them and becomes the one the knobs show.
+				if (!(module->selection.load() & (1 << which)))
+					module->selection.store(1 << which);
 				module->tab.store(which);
 				dragging = DRAG_MOVE;
 				dragIndex = which;
@@ -2228,10 +2458,25 @@ the discs wear the picture instead. A tab is therefore recognised without being 
 struct TabStrip : widget::OpaqueWidget {
 	SpritesModule* module = NULL;
 
+	/** WHERE THE TABS BEGIN: after the ALL button, a square as tall as the strip, and a gap. */
+	float tabsFrom() const {
+		return box.size.y + 3.f;
+	}
+
+	float tabWidth() const {
+		return (box.size.x - tabsFrom()) / MAX_SPRITES;
+	}
+
+	/** The tab at a point, or ALL_BUTTON over the button, or -1. */
+	static const int ALL_BUTTON = -2;
 	int at(math::Vec pos) {
 		if (box.size.x <= 0.f)
 			return -1;
-		const int i = (int) (pos.x / (box.size.x / MAX_SPRITES));
+		if (pos.x < box.size.y)
+			return ALL_BUTTON;
+		if (pos.x < tabsFrom())
+			return -1;
+		const int i = (int) ((pos.x - tabsFrom()) / tabWidth());
 		return math::clamp(i, 0, MAX_SPRITES - 1);
 	}
 
@@ -2240,22 +2485,54 @@ struct TabStrip : widget::OpaqueWidget {
 	tab it costs nothing at all, it is next to the number it belongs to, and all four states are
 	visible at once instead of only the one whose tab is showing. */
 	math::Rect lampRect(int i) const {
-		const float w = box.size.x / MAX_SPRITES;
+		const float w = tabWidth();
 		const float r = std::min(w * 0.18f, box.size.y * 0.34f);
-		return math::Rect(math::Vec(i * w + 4.f, box.size.y / 2.f - r), math::Vec(2.f * r, 2.f * r));
+		return math::Rect(math::Vec(tabsFrom() + i * w + 4.f, box.size.y / 2.f - r),
+			math::Vec(2.f * r, 2.f * r));
 	}
 
+	/** SELECTING TABS. A click selects one tab alone. Shift and a click adds a tab to the
+	selection, or takes it out; the knobs keep showing the tab they showed, unless that is the one
+	taken out. The ALL button selects all four. Command and a click puts a tab's sprite back to its
+	starting settings — every selected sprite, when the tab clicked is one of several selected. */
 	void onButton(const ButtonEvent& e) override {
 		if (module && e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			const int i = at(e.pos);
+			const int mods = e.mods & RACK_MOD_MASK;
+			const int all = (1 << MAX_SPRITES) - 1;
+			if (i == ALL_BUTTON) {
+				module->selection.store(all);
+				e.consume(this);
+				return;
+			}
 			if (i >= 0) {
+				const int chosen = module->selection.load() | (1 << module->tab.load());
+				const int bit = 1 << i;
+				if (mods == RACK_MOD_CTRL) {
+					module->resetWanted.fetch_or((chosen & bit) ? chosen : bit);
+				}
+				else if (mods == GLFW_MOD_SHIFT) {
+					int next = chosen ^ bit;
+					if (next == 0)
+						next = bit;
+					module->selection.store(next);
+					// The tab the knobs show, taken out: the lowest one left takes its place.
+					if (!(next & (1 << module->tab.load())))
+						for (int k = 0; k < MAX_SPRITES; k++)
+							if (next & (1 << k)) {
+								module->tab.store(k);
+								break;
+							}
+				}
 				// THE LIGHT SWITCHES THAT SPRITE ON OR OFF; the rest of the tab selects it. A tab
 				// that had to be selected before its sprite could be switched on would make
 				// turning the fourth one on a two-click job.
-				if (lampRect(i).contains(e.pos))
+				else if (lampRect(i).contains(e.pos))
 					module->flipEnable.store(i);
-				else
+				else {
+					module->selection.store(bit);
 					module->tab.store(i);
+				}
 				e.consume(this);
 				return;
 			}
@@ -2266,13 +2543,38 @@ struct TabStrip : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
 		std::shared_ptr<window::Font> font = APP->window->loadFont(
 			asset::system("res/fonts/DejaVuSans.ttf"));
-		const int chosen = module ? math::clamp(module->tab.load(), 0, MAX_SPRITES - 1) : 0;
+		const int shown = module ? math::clamp(module->tab.load(), 0, MAX_SPRITES - 1) : 0;
+		const int chosen = module ? (module->selection.load() | (1 << shown)) : 1;
+		const int all = (1 << MAX_SPRITES) - 1;
 
-		const float w = box.size.x / MAX_SPRITES;
+		// THE ALL BUTTON: a square tab of its own, lit pale when all four are selected.
+		{
+			const float s = box.size.y;
+			const bool lit = chosen == all;
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, 0.75f, 0.75f, s - 1.5f, s - 1.5f, 2.f);
+			nvgFillColor(args.vg, lit ? nvgRGB(0xd8, 0xde, 0xe6) : nvgRGB(0x2a, 0x30, 0x3a));
+			nvgFill(args.vg);
+			nvgStrokeColor(args.vg, nvgRGBA(0xd8, 0xde, 0xe6, lit ? 255 : 150));
+			nvgStrokeWidth(args.vg, lit ? 1.4f : 0.8f);
+			nvgStroke(args.vg);
+			if (font && font->handle >= 0) {
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 7.f);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+				nvgFillColor(args.vg, lit ? nvgRGB(0x14, 0x18, 0x1e) : nvgRGB(0xc8, 0xd0, 0xd8));
+				crispText(args.vg, s / 2.f, s / 2.f, "ALL", NULL);
+			}
+		}
+
+		const float w = tabWidth();
 
 		for (int i = 0; i < MAX_SPRITES; i++) {
-			const float x = i * w;
-			const bool on = (i == chosen);
+			const float x = tabsFrom() + i * w;
+			// SELECTED TABS ARE FILLED in their sprite's colour; the one the knobs show also has
+			// the heavier outline.
+			const bool on = (chosen & (1 << i)) != 0;
+			const bool primary = (i == shown);
 			// EVERY TAB IS DRAWN AT FULL STRENGTH, whether its sprite is playing or not. The light
 			// beside the number already says which are on, and fading the others as well made
 			// three of the four numbers hard to read for no information anybody needed twice.
@@ -2285,9 +2587,10 @@ struct TabStrip : widget::OpaqueWidget {
 				? nvgRGBA(ink.r * 255, ink.g * 255, ink.b * 255, (unsigned char) (210 * fade))
 				: nvgRGBA(0x2a, 0x30, 0x3a, (unsigned char) (255 * fade)));
 			nvgFill(args.vg);
-			nvgStrokeColor(args.vg, nvgRGBA(ink.r * 255, ink.g * 255, ink.b * 255,
-				(unsigned char) ((on ? 255 : 150) * fade)));
-			nvgStrokeWidth(args.vg, on ? 1.4f : 0.8f);
+			nvgStrokeColor(args.vg, primary && chosen != (1 << i)
+				? nvgRGB(0xff, 0xff, 0xff)
+				: nvgRGBA(ink.r * 255, ink.g * 255, ink.b * 255, (unsigned char) ((on ? 255 : 150) * fade)));
+			nvgStrokeWidth(args.vg, primary ? 1.6f : (on ? 1.2f : 0.8f));
 			nvgStroke(args.vg);
 
 			// THE LIGHT: red for a sprite that is playing, dark for one that is not. Red because
@@ -2422,25 +2725,25 @@ static Layout spritesLayout() {
 	// Grouped, it is a panel you read by knowing roughly where a thing lives: what the picture
 	// does to a sprite, how the sprite then travels, when it plays, and what the note is. A title
 	// and a rule cost four millimetres and save the hunting.
-	// THE COLUMNS. One for the plates, three for the knobs beside them, and five for the motion
+	// THE COLUMNS. Three for the knobs, one for the plates to their right, and five for the motion
 	// band which has no plate and therefore the whole width.
-	static const float PLATE_X = 19.f;
-	static const float KNOBS_X = 33.f;
-	static const float KNOBS_W = 47.f;
-	const float kx[3] = {41.f, 57.5f, 74.f};
+	static const float PLATE_X = 67.8f;
+	static const float KNOBS_X = 4.86f;
+	static const float KNOBS_W = 51.94f;
+	const float kx[3] = {10.86f, 27.36f, 43.86f};
 	const float mx[5] = {12.f, 28.5f, 45.f, 61.5f, 78.f};
 
 	const float wide = COLUMN - 10.f;
 
 	// A GROUP'S TITLE SITS OVER ITS KNOBS, not over the whole width, because the parameter column
-	// to its left is not part of that group — it is one column running the height of the panel,
+	// to its right is not part of that group — it is one column running the height of the panel,
 	// with its own heading at the top.
 	auto group = [&](const std::string& key, float y, const std::string& title) {
 		label("l." + key, KNOBS_X + KNOBS_W / 2.f, y, title);
 		Item i;
 		i.key = "r." + key; i.kind = Item::RULE; i.horizontal = true;
 		// ALL THE WAY ACROSS, the parameter column included. The line says where a group starts,
-		// and the parameter on its left belongs to that group as much as the knobs do — stopping
+		// and the parameter on its right belongs to that group as much as the knobs do — stopping
 		// the line at the column's edge said the opposite.
 		i.x = 5.f; i.y = y + 2.5f; i.w = wide;
 		L.items.push_back(i);
@@ -2482,15 +2785,15 @@ static Layout spritesLayout() {
 			label(key + ".group", PLATE_X, y - 4.2f, which, 0.f, key);
 	};
 
-	// THE PARAMETER FIRST, THEN THE KNOBS THAT SHAPE IT.
+	// THE KNOBS FIRST, THEN THE PARAMETER DRIVING THEM.
 	//
-	// Each group is one subject, and the plate on its left is what drives that subject: the
-	// reading the sprite takes. The knobs to the right say how far it drives, between what limits,
-	// and whatever else belongs to the same question. Reading a group left to right therefore
-	// reads as a sentence — this is driven by that, this much, between here and here.
+	// Each group is one subject. On the left are the knobs setting what changes — its limits, and
+	// how far it moves — and on the right the plate choosing what drives it: the reading the
+	// sprite takes. Reading a group left to right goes from the effect to its cause, and the knob
+	// most about the parameter, the depth or the articulation, sits next to it.
 	//
-	// The plates line up at one x and the knobs at three more, so the panel is columns as well as
-	// rows whichever group you are looking at.
+	// The knobs line up at three x positions and the plates at one more, so the panel is columns as
+	// well as rows whichever group you are looking at.
 
 	// EVERYTHING THE PICTURE AND THE PHYSICS DO TO A SPRITE, in one band. No parameter: none of
 	// these is driven by a reading — they are the terms of the motion itself.
@@ -2509,9 +2812,9 @@ static Layout spritesLayout() {
 	knob("p.speed", mx[3], 28.5f, SpritesModule::P_SPEED, "PEAK\nSPEED", 9.f);
 	knob("p.drift", mx[4], 28.5f, SpritesModule::P_DRIFT, "RANDOM\nDRIFT", 9.f);
 
-	// NOTE TIMING, read left to right: the parameter, then how far it reaches, then the two limits
-	// it reaches between. Depth belongs at the head of the row for that reason — it is about the
-	// parameter beside it rather than about the rate itself.
+	// NOTE TIMING, read left to right: the two limits the rate moves between, then how far the
+	// parameter moves it, then the parameter. Depth sits next to the parameter because it is
+	// about the parameter rather than about the rate itself.
 	// A LINE UNDER THE MOTION BAND, closing it off: what is above belongs to how a sprite moves
 	// and what is below to what it plays, and without a line the two run together.
 	{
@@ -2521,21 +2824,30 @@ static Layout spritesLayout() {
 		L.items.push_back(i);
 	}
 
-	// THE PARAMETER COLUMN: one heading at the top of it, and a line down its right-hand side
-	// saying where it ends and the groups begin.
+	// THE PARAMETER COLUMN: one heading at the top of it, and a line down its left-hand side
+	// saying where the knobs end and it begins.
 	label("l.param", PLATE_X, 46.5f, "PARAMETERS");
 	{
 		Item i;
 		i.key = "r.param"; i.kind = Item::RULE; i.horizontal = false;
-		i.x = 30.5f; i.y = 43.5f; i.h = 74.f;
+		i.x = 56.8f; i.y = 43.5f; i.h = 74.f;
 		L.items.push_back(i);
 	}
 
 	group("when", 46.5f, "NOTE TIMING");
 	plate("p.srcRate", 57.5f, SpritesModule::P_SRC_RATE);
-	knob("p.depth", kx[0], 56.5f, SpritesModule::P_DEPTH, "DEPTH");
-	knob("p.slow", kx[1], 56.5f, SpritesModule::P_SLOW, "MIN RATE");
-	knob("p.fast", kx[2], 56.5f, SpritesModule::P_FAST, "MAX RATE");
+	// THE NOTE GRID at the head of the row, where in the bar a note may begin, and the three
+	// knobs moved along to make room for it.
+	{
+		Item i;
+		i.key = "p.grid"; i.kind = Item::PARAM; i.id = SpritesModule::P_GRID; i.x = kx[0];
+		i.y = 56.f; i.style = "readout"; i.chars = 4; i.h = 3.2f; i.glyphs = GRID_GLYPHS;
+		L.items.push_back(i);
+		label("p.grid.label", kx[0], 63.7f, "GRID", 0.f, "p.grid");
+	}
+	knob("p.slow", 24.5f, 56.5f, SpritesModule::P_SLOW, "MIN RATE");
+	knob("p.fast", 37.5f, 56.5f, SpritesModule::P_FAST, "MAX RATE");
+	knob("p.depth", 50.f, 56.5f, SpritesModule::P_DEPTH, "DEPTH");
 
 	group("high", 69.f, "NOTE PITCH");
 	plate("p.srcPitch", 79.f, SpritesModule::P_SRC_PITCH);

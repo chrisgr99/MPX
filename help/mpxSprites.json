@@ -142,6 +142,13 @@
       ],
       "name": "Duration parameter",
       "text": "What decides how long each note lasts, as a share of the gap to the next, either side of the duration knob. Articulation says how far — at nought this has no effect. This belongs to the sprite whose tab is showing; the other three keep their own."
+    },
+    {
+      "ids": [
+        20
+      ],
+      "name": "Note grid",
+      "text": "Where in the bar this sprite's notes may begin. Free: whenever its timer says, or on the TRIG input's ticks. A note value: only on that grid, counted from each bar line of the chart on the MPX input at its tempo; the timer says when a note is wanted and Sync picks the point, as it picks a tick. Eighths and sixteenths swing with the chart. Without a chart, Free. This is per sprite."
     }
   ],
   "inputs": [
@@ -181,7 +188,9 @@
     "A sprite's ring thickens for a moment when it sounds a note, so which sprite played what is visible with four of them wandering about.",
     "Any image file is resampled to a square of 1024 by 1024 when it is loaded, whatever shape it was, by averaging each block rather than by sampling it.",
     "A bounce off a wall does nothing but turn the sprite round: no note and no trigger. It also flips the sign that sprite's force is multiplied by for that axis, so a region that drove it into a wall drives it away from that wall afterwards rather than pinning it there.",
-    "The readings taken from the picture are stretched to use their whole range, so a low-contrast photograph drives the sprites as firmly as a vivid one. The stretch pulls the ends out rather than evening the values, so where the picture is genuinely flat the sprite still coasts."
+    "The readings taken from the picture are stretched to use their whole range, so a low-contrast photograph drives the sprites as firmly as a vivid one. The stretch pulls the ends out rather than evening the values, so where the picture is genuinely flat the sprite still coasts.",
+    "With a chart on the MPX input, the chart's transport works the sprites: play and stop on the chart set Run, and a rewind on the chart, or a looped section coming round, rewinds them. The form running on into another pass does not. Run and Rewind on this panel work in between too.",
+    "A click on a tab shows that sprite's settings. Shift and a click adds a tab to the selection or takes it out, and ALL, the square at the left, selects all four; a knob turned then sets that one setting on every selected sprite, their other settings left as they are. Command and a click on a tab puts its sprite back to its starting settings, or every selected sprite if it is one of them."
   ],
   "menu": [
     "Reset the controls: puts every control back to where it started — all four sprites' settings, not just the one whose tab is showing — and returns the sprites to their row across the middle. The picture is left alone, as is the list of pictures used before. Rack's own Initialize does the same thing.",

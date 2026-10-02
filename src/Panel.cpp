@@ -35,6 +35,52 @@ static std::shared_ptr<window::Font> bodyFont() {
 	return APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 }
 
+/** THE MUSIC FONT, for a note symbol a plate shows in place of a word: Petaluma, as the chart
+uses. */
+static std::shared_ptr<window::Font> musicFont() {
+	return APP->window->loadFont(asset::plugin(pluginInstance, "res/Petaluma.otf"));
+}
+
+/** A NOTE SYMBOL, as Readout::glyphs writes it, drawn to fit a height and centred on `cx`. The
+note's head sits on the baseline and its stem rises about seven eighths of an em above it, so an
+em is the whole height. A dotted note has the augmentation dot after the head; a triplet has a
+small 3 over the note. */
+static void drawNoteSymbol(NVGcontext* vg, float cx, float top, float height, std::string g,
+	NVGcolor colour) {
+	std::shared_ptr<window::Font> music = musicFont();
+	if (!music || music->handle < 0 || g.empty())
+		return;
+	bool dotted = false, triplet = false;
+	if (g.back() == '.') {
+		dotted = true;
+		g.pop_back();
+	}
+	else if (g.back() == '3') {
+		triplet = true;
+		g.pop_back();
+	}
+	// A TRIPLET'S NOTE IS SMALLER, to leave the 3 room above it inside the same height.
+	const float size = triplet ? height * 0.72f : height;
+	const float baseline = top + height - 0.125f * size;
+	nvgFontFaceId(vg, music->handle);
+	nvgFontSize(vg, size);
+	nvgFillColor(vg, colour);
+	const float noteW = nvgTextBounds(vg, 0.f, 0.f, g.c_str(), NULL, NULL);
+	static const char* DOT = "\uE1E7";      // augmentationDot
+	static const char* THREE = "\uE883";    // tuplet3
+	const float dotW = dotted ? 0.45f * size : 0.f;
+	const float left = cx - (noteW + dotW) / 2.f;
+	nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+	nvgText(vg, left, baseline, g.c_str(), NULL);
+	if (dotted)
+		nvgText(vg, left + noteW + 0.12f * size, baseline, DOT, NULL);
+	if (triplet) {
+		nvgFontSize(vg, height * 0.42f);
+		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+		nvgText(vg, left + noteW * 0.5f, top - height * 0.02f, THREE, NULL);
+	}
+}
+
 static std::shared_ptr<window::Font> titleFont() {
 	return APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
 }
@@ -697,8 +743,11 @@ void Readout::setFigures(int n, float fig) {
 	const float perFigure = figureMM * FIGURE_ADVANCE / FIGURE_CAP;
 	// Two if nobody said, which holds anything up to 99 and is the commonest case by far.
 	const int wide = (chars > 0) ? chars : 2;
-	box.size = mm2px(math::Vec((float) wide * perFigure + FIGURE_SURROUND,
-		figureMM + FIGURE_SURROUND));
+	// A PLATE OF NOTE SYMBOLS IS TALLER, NOT WIDER: a note is mostly stem, and drawn to a
+	// figure's height its head was a speck. Its width still follows the figures, for the word a
+	// value without a symbol shows.
+	const float tall = glyphs.empty() ? figureMM + FIGURE_SURROUND : GLYPH_PLATE_MM;
+	box.size = mm2px(math::Vec((float) wide * perFigure + FIGURE_SURROUND, tall));
 	box.pos = centre.minus(box.size.div(2.f));
 }
 
@@ -729,8 +778,16 @@ void Readout::draw(const DrawArgs& args) {
 	// in Rack's own menu, where "120" alone means nothing — but on a plate an inch wide the unit
 	// takes room from the figures and repeats what the caption underneath already says.
 	std::string text = "--";
-	if (ParamQuantity* pq = getParamQuantity())
+	if (ParamQuantity* pq = getParamQuantity()) {
 		text = pq->getDisplayValueString();
+		// A SYMBOL IN PLACE OF THE WORD, where the value has one.
+		const int i = (int) std::round(pq->getValue() - pq->getMinValue());
+		if (i >= 0 && i < (int) glyphs.size() && !glyphs[i].empty()) {
+			const float gh = h * GLYPH_FILL;
+			drawNoteSymbol(args.vg, w / 2.f, (h - gh) / 2.f, gh, glyphs[i], nvgRGB(0x3d, 0xe0, 0x7a));
+			return;
+		}
+	}
 	nvgFontFaceId(args.vg, face->handle);
 	// The size that makes a capital exactly as tall as the figure height asked for.
 	nvgFontSize(args.vg, mm2px(math::Vec(0, figureMM)).y / FIGURE_CAP);
@@ -771,24 +828,36 @@ struct ReadoutList : widget::OpaqueWidget {
 	ParamQuantity* pq = NULL;
 	std::vector<std::string> names;
 	std::vector<std::string> notes;
+	std::vector<std::string> glyphs;
 	int current = 0;
 	int hovered = -1;
 	float lineH = 0.f;
 	WeakPtr<ui::Tooltip> note;
 
 	static constexpr float PAD = 6.f;
+	/** The column the symbols sit in, when the plate has any. */
+	static constexpr float GLYPH_W = 28.f;
 
 	~ReadoutList() {
 		dropNote();
 	}
 
+	/** THE NOTE GOES BY REQUEST, never by removing and deleting it here. This is called from the
+	destructor, which Rack runs while it is walking the scene's children deleting the overlay — and
+	the note is the overlay's neighbour in that list. Taking it out of the list there pulled the
+	ground from under the walk, and Rack crashed on the next step. Asked to delete, it goes when
+	the walk reaches it. */
 	void dropNote() {
-		if (ui::Tooltip* t = note) {
-			if (t->parent)
-				t->parent->removeChild(t);
-			delete t;
-		}
+		if (ui::Tooltip* t = note)
+			t->requestDelete();
 		note = NULL;
+	}
+
+	/** The pointer leaving the list takes its note with it, rather than leaving it standing. */
+	void onLeave(const LeaveEvent& e) override {
+		hovered = -1;
+		dropNote();
+		widget::OpaqueWidget::onLeave(e);
 	}
 
 	int lineAt(math::Vec pos) {
@@ -883,6 +952,17 @@ struct ReadoutList : widget::OpaqueWidget {
 			// thing said twice rather than as two columns.
 			nvgFillColor(args.vg, chosen ? PANEL_EDGE : PANEL_INK);
 			float x = PAD;
+			// THE SYMBOL FIRST, in a column of its own, then the name.
+			if (!glyphs.empty()) {
+				if (i < glyphs.size() && !glyphs[i].empty())
+					drawNoteSymbol(args.vg, x + GLYPH_W / 2.f, y + 1.5f, lineH - 3.f, glyphs[i],
+						chosen ? PANEL_EDGE : PANEL_INK);
+				x += GLYPH_W;
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 11.f);
+				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+				nvgFillColor(args.vg, chosen ? PANEL_EDGE : PANEL_INK);
+			}
 			x = crispText(args.vg, x, y + lineH / 2.f, names[i].c_str(), NULL);
 			if (i < notes.size() && !notes[i].empty()) {
 				nvgFillColor(args.vg, PANEL_DIM);
@@ -917,6 +997,7 @@ void Readout::openList() {
 		pq->setValue(was);
 	}
 	popup->notes = notes;
+	popup->glyphs = glyphs;
 
 	// AS WIDE AS THE WIDEST LINE and as tall as all of them, measured rather than guessed.
 	std::shared_ptr<window::Font> font = bodyFont();
@@ -932,8 +1013,8 @@ void Readout::openList() {
 			widest = std::fmax(widest, nvgTextBounds(vg, 0.f, 0.f, line.c_str(), NULL, NULL));
 		}
 	}
-	popup->lineH = 15.f;
-	const float w = widest + ReadoutList::PAD * 2.f;
+	popup->lineH = glyphs.empty() ? 15.f : 26.f;
+	const float w = widest + ReadoutList::PAD * 2.f + (glyphs.empty() ? 0.f : ReadoutList::GLYPH_W);
 	const float h = popup->lineH * (float) popup->names.size() + ReadoutList::PAD * 2.f;
 
 	// THE CURRENT LINE OVER THE PLATE'S OWN TEXT. Everything else follows from that.
@@ -1183,11 +1264,9 @@ void Lamps::showNote(int lamp) {
 }
 
 void Lamps::dropNote() {
-	if (ui::Tooltip* t = note) {
-		if (t->parent)
-			t->parent->removeChild(t);
-		delete t;
-	}
+	// BY REQUEST, as the list's note is: see ReadoutList::dropNote.
+	if (ui::Tooltip* t = note)
+		t->requestDelete();
 	note = NULL;
 }
 

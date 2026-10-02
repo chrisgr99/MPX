@@ -68,6 +68,8 @@ struct Item {
 	— so these sit beside the names they explain, which is at least next to what they describe.
 	*/
 	std::vector<std::string> notes;
+	/** PARAM, style readout: a note symbol for each value; see Readout::glyphs. */
+	std::vector<std::string> glyphs;
 	std::string groupNote;
 
 	/** The name this item is saved under. Stable for the life of the module: rename one and

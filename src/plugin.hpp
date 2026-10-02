@@ -198,6 +198,11 @@ size and a digit advances 0.6011 of it. Everything a readout's size depends on c
 two, so a plate is exactly as big as what is written on it. */
 static const float FIGURE_CAP = 0.7041f;
 static const float FIGURE_ADVANCE = 0.6011f;
+/** HOW TALL A PLATE OF NOTE SYMBOLS IS, in millimetres, and how much of it the symbol fills: a
+symbol ten millimetres from the foot of its head to the top of its stem, large enough to tell a
+dotted quarter from a quarter across a room. */
+static const float GLYPH_PLATE_MM = 10.5f;
+static const float GLYPH_FILL = 0.95f;
 /** The surround, in millimetres, top to bottom and side to side together. */
 static const float FIGURE_SURROUND = 1.f;
 /** HOW MUCH SLOWER THAN A KNOB the wheel moves a readout.
@@ -227,6 +232,12 @@ struct Readout : ParamWidget {
 	itself keeps the name alone, so it stays the size it is. Empty for a plate whose values need no
 	explaining, which is most of them. */
 	std::vector<std::string> notes;
+	/** A NOTE SYMBOL FOR EACH VALUE, in the parameter's order; empty for a value shown by its
+	name. Written as the SMuFL note itself in UTF-8, then "." for a dotted note or "3" for a
+	triplet: "\uE1D5." is a dotted quarter. The plate shows the symbol where there is one, drawn
+	in Petaluma, and the list shows it before the value's name, which is still what is read
+	aloud. */
+	std::vector<std::string> glyphs;
 	/** Wheel gathered but not yet spent. A trackpad sends a great many small movements where a
 	wheel sends one large one, and adding them up rather than counting them means both behave
 	the same. */

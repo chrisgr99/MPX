@@ -458,6 +458,7 @@ static ParamWidget* makeParam(engine::Module* module, Item& item) {
 	if (item.style == "readout") {
 		Readout* r = createParam<Readout>(pos, module, item.id);
 		r->notes = item.notes;
+		r->glyphs = item.glyphs;
 		r->setFigures(item.chars, item.h > 0.f ? item.h : 2.8f);
 		r->box.pos = pos.minus(r->box.size.div(2.f));
 		return r;
