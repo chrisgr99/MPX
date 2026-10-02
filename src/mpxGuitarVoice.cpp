@@ -51,6 +51,13 @@ static float knobFor(float seconds, float least, float ratio) {
 }
 
 
+//?module Plays one MPX part through an oscillator: a polyphonic pitch output, a channel per string,
+//? for the oscillator, and its audio returned through a filter and an amplitude envelope on
+//? each string, panned and mixed to stereo.
+//?note A hammer-on, pull-off or legato slide is not struck again: the pitch moves under envelopes
+//? that carry on from where the string was.
+//?note The performance rules are read from DreamerMPX/perform.txt and read again from the right-
+//? click menu.
 struct GuitarVoiceModule : Module, NoteSink {
 	enum ParamId {
 		P_ATTACK,
@@ -101,56 +108,58 @@ struct GuitarVoiceModule : Module, NoteSink {
 
 	GuitarVoiceModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		//? How long a struck string takes to reach its level, from 1 ms, a hard pick, to 1 s, a
-		//? swell.
 		configParam(P_ATTACK, 0.f, 1.f, knobFor(0.002f, ATTACK_MIN, ATTACK_RATIO), "Attack",
 			" ms", ATTACK_RATIO, ATTACK_MIN * 1000.f);
-		//? How long a held string takes to die away by 60 dB, from 0.1 s, a muted plunk, to
-		//? 20 s. A string has no sustain level: it falls for as long as it is held.
+		//? How long a struck string takes to reach its level, from 1 ms, a hard pick, to 1 s, a
+		//? swell.
 		configParam(P_DECAY, 0.f, 1.f, knobFor(3.f, DECAY_MIN, DECAY_RATIO), "Decay", " s",
 			DECAY_RATIO, DECAY_MIN);
-		//? How long a string takes to fall silent by 60 dB once its note has ended, from 5 ms
-		//? to 2 s.
+		//? How long a held string takes to fall 60 dB, from 0.1 s, a muted plunk, to 20 s. There is
+		//? no sustain level: the string falls for as long as it is held.
 		configParam(P_RELEASE, 0.f, 1.f, knobFor(0.08f, RELEASE_MIN, RELEASE_RATIO), "Release",
 			" ms", RELEASE_RATIO, RELEASE_MIN * 1000.f);
-		//? The filter's cutoff for a string at middle C, 20 Hz to 20 kHz. Key tracking moves it
-		//? with each string's pitch, and the performer's timbre moves it darker for a palm mute
-		//? or a dead note and brighter for a harmonic.
+		//? How long a string takes to fall 60 dB once its note has ended, from 5 ms to 2 s.
 		configParam(P_CUTOFF, 0.f, 1.f, knobFor(2000.f, CUTOFF_MIN, CUTOFF_RATIO),
 			"Cutoff", " Hz", CUTOFF_RATIO, CUTOFF_MIN);
-		//? Emphasis at the cutoff, from a flat response to a peak about 20 dB high.
+		//? The filter's cutoff for a string at middle C, from 20 Hz to 20 kHz. Key tracking moves it
+		//? with each string's pitch, and the performer's timbre moves it down for a palm mute or a
+		//? dead note and up for a harmonic.
 		configParam(P_RESONANCE, 0.f, 1.f, 0.1f, "Resonance", "%", 0.f, 100.f);
-		//? How far the cutoff follows each string's pitch: at 100% an octave for every octave,
-		//? so a setting that suits the low strings does not muffle the high ones.
+		//? Emphasis at the cutoff, from a flat response at 0% to a peak about 20 dB high at 100%.
 		configParam(P_KEYTRACK, 0.f, 1.f, 1.f, "Key tracking", "%", 0.f, 100.f);
-		//? The filter's slope: 12 dB per octave, gentle, or 24, steep.
+		//? How far the cutoff follows each string's pitch: at 100%, an octave of cutoff for every
+		//? octave of pitch.
 		configSwitch(P_SLOPE, 0.f, 1.f, 0.f, "Slope", {"12 dB per octave", "24 dB per octave"});
-		//? Lit, each string goes through the filter; unlit, its audio goes straight to its
-		//? envelope, as the oscillator made it.
+		//? The filter's slope: 12 dB per octave unlit, 24 dB per octave lit.
 		configSwitch(P_FILTER, 0.f, 1.f, 1.f, "Filter", {"Off", "On"});
-		//? How long each string's filter envelope takes to rise, from 1 ms to 1 s.
+		//? Lit, each string's audio passes through the filter; unlit, it goes to its envelope
+		//? unfiltered.
 		configParam(P_FATTACK, 0.f, 1.f, knobFor(0.001f, FATTACK_MIN, FATTACK_RATIO),
 			"Filter attack", " ms", FATTACK_RATIO, FATTACK_MIN * 1000.f);
-		//? How long each string's filter envelope takes to fall by 60 dB after its peak, from
-		//? 20 ms to 10 s, whether the note is held or not: the brightness of a pluck dying away.
+		//? How long each string's filter envelope takes to rise to its peak, from 1 ms to 1 s.
 		configParam(P_FDECAY, 0.f, 1.f, knobFor(0.4f, FDECAY_MIN, FDECAY_RATIO), "Filter decay",
 			" s", FDECAY_RATIO, FDECAY_MIN);
-		//? How far the filter envelope raises the cutoff at its peak, from nothing to six
-		//? octaves.
+		//? How long each string's filter envelope takes to fall 60 dB from its peak, from 20 ms to 10
+		//? s, whether the note is held or not.
 		configParam(P_FDEPTH, 0.f, FDEPTH_MAX, 2.f, "Filter envelope depth", " octaves");
+		//? How far the filter envelope raises the cutoff at its peak, from 0 to 6 octaves.
 		configInput(I_MPX, "MPX note");
-		//? The oscillator's audio, one channel per string, in the order the pitch output sends
-		//? them. A single channel is used for every string, which only sounds right for a part
-		//? that plays one note at a time.
+		//? One part: its notes and how each is played, from Guitar Chart or any MPX source.
 		configInput(I_RETURN, "Return audio");
-		//? Volts per octave, one channel per string, with the bends, slides and vibrato in it.
-		//? Patch it to a polyphonic oscillator and the oscillator's output to the return.
+		//? The oscillator's audio, one channel per string in the order the pitch output sends them. A
+		//? single channel is used for every string, which sounds right only for a part that plays one
+		//? note at a time.
 		configOutput(O_PITCH, "1V/oct, as played");
+		//? Each string's pitch as played, 1V per octave with 0V at middle C, one channel per string,
+		//? with the bends, slides and vibrato in it, for a polyphonic oscillator whose output comes
+		//? back to the return.
 		configOutput(O_L, "Left");
+		//? The strings, filtered, shaped and panned, mixed to stereo.
 		configOutput(O_R, "Right");
-		//? Each string's filter envelope as 0 to 10 V, one channel per string as the pitch
-		//? output has them, for driving anything else in time with the plucks.
+		//? The strings, filtered, shaped and panned, mixed to stereo.
 		configOutput(O_ENV, "Filter envelope");
+		//? Each string's filter envelope, 0 to 10V, one channel per string, for driving other modules
+		//? in time with the plucks.
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);

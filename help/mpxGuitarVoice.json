@@ -1,0 +1,32 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxGuitarVoice",
+  "description": "Plays one MPX part through an oscillator: a polyphonic pitch output, a channel per string, for the oscillator, and its audio returned through a filter and an amplitude envelope on each string, panned and mixed to stereo.",
+  "params": [
+    {"ids": [0], "name": "Attack", "text": "How long a struck string takes to reach its level, from 1 ms, a hard pick, to 1 s, a swell."},
+    {"ids": [1], "name": "Decay", "text": "How long a held string takes to fall 60 dB, from 0.1 s, a muted plunk, to 20 s. There is no sustain level: the string falls for as long as it is held."},
+    {"ids": [2], "name": "Release", "text": "How long a string takes to fall 60 dB once its note has ended, from 5 ms to 2 s."},
+    {"ids": [3], "name": "Cutoff", "text": "The filter's cutoff for a string at middle C, from 20 Hz to 20 kHz. Key tracking moves it with each string's pitch, and the performer's timbre moves it down for a palm mute or a dead note and up for a harmonic."},
+    {"ids": [4], "name": "Resonance", "text": "Emphasis at the cutoff, from a flat response at 0% to a peak about 20 dB high at 100%."},
+    {"ids": [5], "name": "Key tracking", "text": "How far the cutoff follows each string's pitch: at 100%, an octave of cutoff for every octave of pitch."},
+    {"ids": [6], "name": "Slope", "text": "The filter's slope: 12 dB per octave unlit, 24 dB per octave lit."},
+    {"ids": [7], "name": "Filter", "text": "Lit, each string's audio passes through the filter; unlit, it goes to its envelope unfiltered."},
+    {"ids": [8], "name": "Filter attack", "text": "How long each string's filter envelope takes to rise to its peak, from 1 ms to 1 s."},
+    {"ids": [9], "name": "Filter decay", "text": "How long each string's filter envelope takes to fall 60 dB from its peak, from 20 ms to 10 s, whether the note is held or not."},
+    {"ids": [10], "name": "Filter envelope depth", "text": "How far the filter envelope raises the cutoff at its peak, from 0 to 6 octaves."}
+  ],
+  "inputs": [
+    {"ids": [0], "name": "MPX note", "text": "One part: its notes and how each is played, from Guitar Chart or any MPX source."},
+    {"ids": [1], "name": "Return audio", "text": "The oscillator's audio, one channel per string in the order the pitch output sends them. A single channel is used for every string, which sounds right only for a part that plays one note at a time."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "1V/oct, as played", "text": "Each string's pitch as played, 1V per octave with 0V at middle C, one channel per string, with the bends, slides and vibrato in it, for a polyphonic oscillator whose output comes back to the return."},
+    {"ids": [1], "name": "Left", "text": "The strings, filtered, shaped and panned, mixed to stereo."},
+    {"ids": [2], "name": "Right", "text": "The strings, filtered, shaped and panned, mixed to stereo."},
+    {"ids": [3], "name": "Filter envelope", "text": "Each string's filter envelope, 0 to 10V, one channel per string, for driving other modules in time with the plucks."}
+  ],
+  "notes": [
+    "A hammer-on, pull-off or legato slide is not struck again: the pitch moves under envelopes that carry on from where the string was.",
+    "The performance rules are read from DreamerMPX/perform.txt and read again from the right- click menu."
+  ]
+}

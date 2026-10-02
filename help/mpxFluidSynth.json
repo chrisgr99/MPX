@@ -1,0 +1,23 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxFluidSynth",
+  "description": "Plays up to six MPX parts through one FluidSynth and one SoundFont: each part on its own sound from the bank, with a channel for each of its strings so that bends and legato stay on the string they belong to, mixed to stereo.",
+  "params": [
+    {"ids": [0], "name": "Level", "text": "How loud the whole band is, from 0 to 4 times: at 1, a note sounds as loud as the same note from mpxGuitar."},
+    {"ids": [1], "name": "Humanise", "text": "How much the timing, loudness and lengths of the notes are varied, from 0%, where the same notes come out the same way every time, through 100%, the amount the rules file sets, to 200%."},
+    {"ids": [2], "name": "Reverb", "text": "FluidSynth's own reverb, on or off."},
+    {"ids": [3], "name": "Chorus", "text": "FluidSynth's own chorus, on or off."},
+    {"ids": [4, 5, 6, 7, 8, 9], "text": "Silences one part without unpatching it."}
+  ],
+  "inputs": [
+    {"ids": [0, 1, 2, 3, 4, 5], "text": "One part: its notes and how each is played, from Guitar Chart or any MPX source, on the sound chosen for it."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "Left", "text": "The band, mixed to stereo."},
+    {"ids": [1], "name": "Right", "text": "The band, mixed to stereo."}
+  ],
+  "notes": [
+    "The bank is the first SoundFont in DreamerMPX/banks; another is chosen from the right-click menu. A part's sound is chosen by clicking its name, from the bank's own list.",
+    "Drums are a part like any other: a kit from the bank, playing General MIDI drum numbers."
+  ]
+}

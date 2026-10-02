@@ -18,6 +18,8 @@ extern Model* modelMpxPiano;
 extern Model* modelMpxGuitarChart;
 extern Model* modelMpxGuitarChart6;
 extern Model* modelMpxGuitarVoice;
+extern Model* modelMpxGuitar;
+extern Model* modelMpxFingerPicker;
 extern Model* modelMpxGuitarChartExpander;
 extern Model* modelMpxFluidSynth;
 extern Model* modelMpxGuitarist;

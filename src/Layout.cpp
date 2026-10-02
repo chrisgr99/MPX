@@ -7,6 +7,16 @@
 namespace px {
 
 
+/** GREEN, ORANGE AND RED on three light ids: a level lamp. */
+struct LevelLight : GrayModuleLightWidget {
+	LevelLight() {
+		addBaseColor(SCHEME_GREEN);
+		addBaseColor(SCHEME_ORANGE);
+		addBaseColor(SCHEME_RED);
+	}
+};
+
+
 Item* Layout::find(const std::string& key) {
 	for (Item& item : items) {
 		if (item.key == key)
@@ -387,7 +397,9 @@ void layoutRefreshPanel(Panel* panel, Layout& layout) {
 			sc.textSize = item.nameSize > 0.f ? item.nameSize : 6.f;
 			panel->scales.push_back(sc);
 		}
-		if (item.kind == Item::RULE) {
+		// A hidden rule is not drawn, as a hidden label is not: one deleted in the editor, or one
+		// belonging to a part of the panel that is folded away.
+		if (item.kind == Item::RULE && !item.hidden) {
 			Panel::Rule r;
 			r.x = mm2px(math::Vec(item.x, 0)).x;
 			r.y = mm2px(math::Vec(0, item.y)).y;
@@ -509,9 +521,14 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 			} break;
 			case Item::LIGHT: {
 				// A LAMP THAT CAN SAY NO. Two colours where a module has something to report
-				// besides yes: green for right, red for wrong, dark for neither.
+				// besides yes: green for right, red for wrong, dark for neither. A LEVEL LAMP has
+				// three, green, orange and red, since green and red lit together make yellow, not
+				// the orange a level meter warns in.
 				widget::Widget* l = (item.style == "light.greenred")
 					? (widget::Widget*) createLightCentered<SmallLight<GreenRedLight>>(
+						pos, module, item.id)
+					: (item.style == "light.level")
+					? (widget::Widget*) createLightCentered<SmallLight<LevelLight>>(
 						pos, module, item.id)
 					: (widget::Widget*) createLightCentered<SmallLight<GreenLight>>(
 						pos, module, item.id);

@@ -52,6 +52,11 @@ struct Chord {
 	/** -1 flat, 0 natural, 1 sharp — so a flat sixth or a sharp fourth can be written. */
 	int8_t accidental = 0;
 	uint8_t quality = Q_MAJOR;
+	/** THE BASS, when a chart writes one under a slash: C over G. A degree and an accidental of
+	the key, as the root is, so it transposes with it. Nought means no slash, the bass is the
+	root, and every chord made without one is right as it stands. */
+	int8_t bassDegree = 0;
+	int8_t bassAccidental = 0;
 };
 
 /** A key: a tonic pitch class and a mode. */
@@ -62,6 +67,9 @@ struct Key {
 
 /** The pitch class this chord is rooted on. */
 int chordRootPitchClass(const Chord& chord, const Key& key);
+
+/** The pitch class the chord's bass is on: the slash bass, or the root. */
+int chordBassPitchClass(const Chord& chord, const Key& key);
 
 /** The chord's tones as pitch classes, ascending from the root. Returns how many were written,
 which is three or four. */

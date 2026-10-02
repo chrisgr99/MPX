@@ -27,6 +27,16 @@ band only.
 namespace px {
 
 
+/** FROM THE SYNTHESISER'S OUTPUT TO RACK'S VOLTS, for every module that plays through this core.
+
+A General MIDI bank is quiet on purpose, so that a whole orchestra fits in it without clipping,
+and FluidSynth's own gain is a fifth on top of that. Scaled by five, as it first was, a guitar note
+at a moderate dynamic peaked at about 0.15 V — some twenty decibels under mpxGuitar's 2.1 V for
+the same note, which is where Rack's audio sits. At sixty-five the two match; `make leveltest`
+holds them to it. */
+static const float SOUND_VOLTS = 65.f;
+
+
 struct SoundCore {
 	static const int MAX_PARTS = 12;
 	/** Channels per part: one per voice the performer holds, which is one per string of a

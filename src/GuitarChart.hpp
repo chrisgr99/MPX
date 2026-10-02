@@ -95,9 +95,9 @@ static std::string instrumentName(const GpTrack& track) {
 }
 
 #if CHART_AUDIO
-/** From the synthesiser's output to Rack's ten volts peak: a General MIDI bank is quiet on
-purpose, so that a whole orchestra fits without clipping. */
-static const float AUDIO_LEVEL = 5.f;
+/** From the synthesiser's output to Rack's volts: SoundCore's, so the band is as loud as an
+mpxGuitar playing the same part. */
+static const float AUDIO_LEVEL = SOUND_VOLTS;
 #endif
 
 /** A note's length is the file's, within reason: a note held to the end of a long let-ring

@@ -316,8 +316,12 @@ struct ChartModule : Module, NoteSource {
 	readout follows the clock and the knob stops being the answer. */
 	std::atomic<float> soundingBpm{120.f};
 
+	/** The top byte holds whether it is valid in its lowest bit, then the slash bass's degree in
+	three bits and its accidental in two, which keeps the word positive. */
 	static int32_t packChord(const Chord& chord) {
 		return (int32_t) ((chord.valid ? 1 : 0) << 24)
+			| ((chord.bassDegree & 0x7) << 25)
+			| (((chord.bassAccidental + 1) & 0x3) << 28)
 			| ((chord.degree & 0xff) << 16)
 			| (((chord.accidental + 1) & 0xff) << 8)
 			| (chord.quality & 0xff);
@@ -327,7 +331,9 @@ struct ChartModule : Module, NoteSource {
 		Chord out;
 		if (packed < 0)
 			return out;
-		out.valid = ((packed >> 24) & 0xff) != 0;
+		out.valid = ((packed >> 24) & 0x1) != 0;
+		out.bassDegree = (int8_t) ((packed >> 25) & 0x7);
+		out.bassAccidental = (int8_t) (((packed >> 28) & 0x3) - 1);
 		out.degree = (int8_t) ((packed >> 16) & 0xff);
 		out.accidental = (int8_t) (((packed >> 8) & 0xff) - 1);
 		out.quality = (uint8_t) (packed & 0xff);
@@ -699,7 +705,8 @@ struct ChartModule : Module, NoteSource {
 	Removed rather than hidden, and safe to remove, because nothing had shipped: the plugin has
 	never been tagged or released, so no patch outside this machine can hold a cable on them. */
 
-	/** THE ROOT, AN OCTAVE UNDER THE CHORD, HELD FOR AS LONG AS THE CHORD LASTS.
+	/** THE BASS, AN OCTAVE UNDER THE CHORD, HELD FOR AS LONG AS THE CHORD LASTS: the root, or the
+	note a chart writes under a slash, C over G playing G.
 
 	O_ROOT is a pitch class, which is the right answer for a quantizer and the wrong one to play:
 	the chord's own voices are built upward from that same pitch class, so a bass part on it sits
@@ -716,8 +723,8 @@ struct ChartModule : Module, NoteSource {
 	will ask for, which is how the first note of a run knows it is the first. */
 	float bassWas = -99.f;
 
-	void writeBass(int root, float lowestChordVoice) {
-		float v = (float) root / 12.f;
+	void writeBass(int bass, float lowestChordVoice) {
+		float v = (float) bass / 12.f;
 
 		// THE NEAREST OCTAVE TO THE NOTE BEFORE, which is what makes this a line.
 		//
@@ -769,7 +776,9 @@ struct ChartModule : Module, NoteSource {
 			outputs[O_CHORD].setVoltage(0.f, 0);
 		outputs[O_ROOT].setChannels(1);
 		outputs[O_ROOT].setVoltage((float) root / 12.f);
-		writeBass(root, count > 0 ? outputs[O_CHORD].getVoltage(0) : (float) root / 12.f);
+		// The written bass, which is the root unless the chart puts another note under a slash.
+		writeBass(chordBassPitchClass(chord, key),
+			count > 0 ? outputs[O_CHORD].getVoltage(0) : (float) root / 12.f);
 	}
 
 	void process(const ProcessArgs& args) override {

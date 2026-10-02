@@ -1,0 +1,37 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxGuitar",
+  "description": "Plays one MPX part on a modelled guitar: each string a digital waveguide, picked, hammered, slid, palm-muted, bent and touched for harmonics as the part's notes say, through a nylon or steel-string acoustic body or an electric's pickup and amplifier, mixed to stereo.",
+  "params": [
+    {"ids": [0], "name": "Pick position", "text": "Where along the strings they are picked, from 2% of their length from the bridge, glassy and thin, to 50%, the middle of the string, hollow and soft. A string picked at a point sounds none of the partials with a node there."},
+    {"ids": [1], "name": "Brightness", "text": "The pick's hardness, from a fingertip, which rounds the string's shape and takes its upper partials down from about 200 Hz, to a hard plectrum at two thirds of the way, which leaves the shape sharp and adds a click as it leaves the string. Above that the click grows, to three times a plectrum's at the top."},
+    {"ids": [2], "name": "Sustain", "text": "How long the open low E string rings: the time its fundamental takes to fall 60 dB, from 0.5 s to 20 s. Higher notes ring shorter as Taper says, fretted notes shorter as Fret damping says. Shorter is also duller, the upper partials dying faster in proportion, which is how old strings sound."},
+    {"ids": [3], "name": "Body", "text": "On the nylon and the steel-string, how much of the body is heard, from the bare strings to the full body at two thirds of the way: its air resonance near 100 Hz, the top plate's modes above it, and its highs rolled away. Above that the resonances are pushed past a real body's. On the electric, where the pickup is, from the bridge, thin and bright, to the neck, round and warm."},
+    {"ids": [4], "name": "Guitar", "text": "The guitar. Nylon: a classical, its strings soft, quick to lose their highs and played with the flesh of the finger, its body warm. Steel: a steel-string acoustic, brighter and stiffer. Electric: steel strings heard by a magnetic pickup through an amplifier, with tone, drive, bass, middle and treble beside the panel."},
+    {"ids": [5], "name": "Tone", "text": "The electric guitar's tone, two low-pass stages before the amplifier, from open at the top to rolled off from 300 Hz at the bottom."},
+    {"ids": [6], "name": "Drive", "text": "How hard the electric's strings drive its amplifier, a drive of 1 to 18: at the bottom a single note is clean and a chord played hard begins to break up; at the top everything is broken up, heavily."},
+    {"ids": [8], "name": "Sympathy", "text": "How much the strings not being played ring in sympathy with those that are, each at its open pitch, from the vibration that reaches it through the bridge. At the bottom, none; at a third of the way, an ordinary acoustic's; at the top, three times that."},
+    {"ids": [9], "name": "Finger noise", "text": "How loud the squeak of a finger sliding along a wound string is, in slides into, out of and between notes. At the bottom, silent; at the top, plainly louder than any player's. A bend makes none."},
+    {"ids": [10], "name": "Stiffness", "text": "How stiff the strings are: the stiffer, the sharper their upper partials stand above whole multiples of the fundamental. At the top the eighth partial is 9 cents sharp, on any string, past any real string's. The nylon's strings take a sixth of it."},
+    {"ids": [14], "name": "Taper", "text": "How much shorter high notes ring than low ones. At the bottom every note rings as long as Sustain says. Above it each octave over the open low E rings shorter: at a third of the way 0.66 of the octave below, at the top 0.29, so the treble dies away under a ringing bass."},
+    {"ids": [15], "name": "Fret damping", "text": "How much a fretting finger shortens and dulls a note compared with the same string open. At the bottom fretted and open notes ring alike; at a third of the way a fretted note rings three quarters as long; at the top a quarter as long and much duller, and the open strings stand out."},
+    {"ids": [11], "name": "Bass", "text": "The electric amplifier's low shelf, below about 100 Hz, from -18 dB to +18 dB."},
+    {"ids": [12], "name": "Middle", "text": "The electric amplifier's middle band, around 500 Hz, from -18 dB to +18 dB. Below nought, the scooped middle of a clean amplifier."},
+    {"ids": [13], "name": "Treble", "text": "The electric amplifier's high shelf, above about 3 kHz, from -18 dB to +18 dB."}
+  ],
+  "inputs": [
+    {"ids": [0], "name": "MPX note", "text": "One part, played on the guitar: its notes, with how each is played, from Guitar Chart or any MPX source. The instrument the cable names is shown below the guitars and gives the strings their tuning and capo."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "Left", "text": "The guitar, left and right. A single note at a moderate dynamic peaks about 2V."},
+    {"ids": [1], "name": "Right", "text": "The guitar, left and right. A single note at a moderate dynamic peaks about 2V."}
+  ],
+  "lights": [
+    {"ids": [0], "name": "Level", "text": "Flashes green as each note is struck, lights orange when the output passes 7.07V, 3 dB under clipping, and red when it reaches 10V, where Rack's audio interface clips. Red is held for a second and orange for 0.3 s, so a single peak can be seen."}
+  ],
+  "notes": [
+    "How each note is played, its timing, dynamics, strum, bends and articulations, comes from the part through the same performer as mpxGuitarist, whose rules are read from DreamerMPX/perform.txt when the module starts and again from the right-click menu.",
+    "A knob turned while a string rings takes effect when that string is next picked.",
+    "Choosing the electric widens the module with a column of five more controls; choosing the nylon or the steel-string narrows it again. The modules to its right are pushed along as it widens and stay where they are as it narrows."
+  ]
+}

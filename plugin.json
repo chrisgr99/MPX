@@ -144,6 +144,24 @@
       ]
     },
     {
+      "slug": "mpxGuitar",
+      "name": "mpxGuitar",
+      "description": "Plays one MPX part on a modelled guitar, nylon, steel-string or electric: waveguide strings picked, hammered, slid, palm-muted, bent and touched for harmonics as the part says, through an acoustic body or a pickup and amplifier, in stereo.",
+      "tags": [
+        "Physical modeling",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "mpxFingerPicker",
+      "name": "mpxFingerPicker",
+      "description": "Plays the chords on an mpxChart cable finger-style: a folk picking pattern on the chart's beat, the thumb on the bass and the fingers on the treble strings, each note sent with its string and fret for mpxGuitar.",
+      "tags": [
+        "Arpeggiator",
+        "Sequencer"
+      ]
+    },
+    {
       "slug": "mpxGuitarVoice",
       "name": "mpxGuitarVoice",
       "description": "Plays one MPX part through any polyphonic oscillator: a pitch output with the bends in it, the oscillator's audio coming back through each string's own envelope and level, panned and mixed to stereo.",

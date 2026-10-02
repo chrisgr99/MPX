@@ -100,6 +100,14 @@ int chordRootPitchClass(const Chord& chord, const Key& key) {
 	return ((key.tonic + ivs[d] + chord.accidental) % 12 + 12) % 12;
 }
 
+int chordBassPitchClass(const Chord& chord, const Key& key) {
+	if (chord.bassDegree < 1)
+		return chordRootPitchClass(chord, key);
+	const int* ivs = key.minor ? MINOR : MAJOR;
+	const int d = clamp((int) chord.bassDegree, 1, 7) - 1;
+	return ((key.tonic + ivs[d] + chord.bassAccidental) % 12 + 12) % 12;
+}
+
 int chordPitchClasses(const Chord& chord, const Key& key, int* out) {
 	const int root = chordRootPitchClass(chord, key);
 	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
@@ -179,7 +187,7 @@ int chordVoicingTones(const Chord& chord, const Key& key, ChordTone* out) {
 	return n;
 }
 
-std::string chordRoman(const Chord& chord) {
+static std::string romanHead(const Chord& chord) {
 	const int d = clamp((int) chord.degree, 1, 7) - 1;
 	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
 	std::string s;
@@ -200,6 +208,22 @@ std::string chordRoman(const Chord& chord) {
 	if (q == Q_MINMAJ7)
 		return s + "Maj7";
 	return s + QUALITY_SUFFIX[q];
+}
+
+/** A slash bass as a degree: "/5", "/b7". */
+static std::string romanBass(const Chord& chord) {
+	if (chord.bassDegree < 1)
+		return "";
+	std::string s = "/";
+	if (chord.bassAccidental < 0)
+		s += "b";
+	else if (chord.bassAccidental > 0)
+		s += "#";
+	return s + std::to_string(clamp((int) chord.bassDegree, 1, 7));
+}
+
+std::string chordRoman(const Chord& chord) {
+	return romanHead(chord) + romanBass(chord);
 }
 
 /** Which letter a degree of this key is written on. C major's third is E whatever it has been
@@ -252,6 +276,20 @@ static void addSymbol(ChordText& out, const char* symbol, bool raised) {
 	out.parts.push_back(run);
 }
 
+/** A slash bass, "/G" or "/b7", set full size on the baseline after the quality, its accidental
+a glyph as the root's is. */
+static void addBass(ChordText& out, const std::string& bass) {
+	for (size_t i = 0; i < bass.size(); i++) {
+		// A small b is always a flat: the letter B is a capital.
+		if (bass[i] == 'b')
+			addSymbol(out, SYM_FLAT, false);
+		else if (bass[i] == '#')
+			addSymbol(out, SYM_SHARP, false);
+		else
+			addText(out, std::string(1, bass[i]), false);
+	}
+}
+
 /** The quality, set as a chart sets it: the triangle for a major seventh, the small circle for a
 diminished, the slashed circle for a half diminished, and real flats and sharps in alterations.
 Everything that is a SYMBOL becomes a glyph from the music font; everything that is a NUMBER or a
@@ -297,6 +335,8 @@ static void engraveQuality(ChordText& out, const std::string& suffix) {
 	}
 }
 
+static std::string letterBass(const Chord& chord, const Key& key);
+
 ChordText chordTextLetter(const Chord& chord, const Key& key) {
 	ChordText out;
 	const std::string whole = chordLetter(chord, key);
@@ -308,6 +348,7 @@ ChordText chordTextLetter(const Chord& chord, const Key& key) {
 		i++;
 	}
 	engraveQuality(out, QUALITY_SUFFIX[q]);
+	addBass(out, letterBass(chord, key));
 	return out;
 }
 
@@ -322,8 +363,10 @@ ChordText chordTextRoman(const Chord& chord) {
 		addSymbol(out, SYM_SHARP, false);
 	addText(out, minorNumeral(q) ? ROMAN_LOWER[d] : ROMAN_UPPER[d], false);
 	// The numeral already says the third is minor, so the suffix does not repeat it.
-	if (q == Q_MINOR)
+	if (q == Q_MINOR) {
+		addBass(out, romanBass(chord));
 		return out;
+	}
 	if (q == Q_MIN7)
 		addText(out, "7", true);
 	else if (q == Q_MIN6)
@@ -336,21 +379,21 @@ ChordText chordTextRoman(const Chord& chord) {
 	}
 	else
 		engraveQuality(out, QUALITY_SUFFIX[q]);
+	addBass(out, romanBass(chord));
 	return out;
 }
 
-std::string chordLetter(const Chord& chord, const Key& key) {
+/** A degree of the key as a letter and its accidentals.
+
+SPELLED FROM THE DEGREE, not from the pitch class. A flattened seventh in C is B flat and never A
+sharp, and the chord already knows it is a seventh — which is what the degree storage is for.
+Spelling from the pitch class alone loses that and a musician sees it at once, especially in a
+chromatic descent. */
+static std::string spellDegree(int degree, int pc, const Key& key) {
 	static const char* LETTERS = "CDEFGAB";
 	static const int LETTER_PC[7] = {0, 2, 4, 5, 7, 9, 11};
-	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
-
-	// SPELLED FROM THE DEGREE, not from the pitch class. A flattened seventh in C is B flat and
-	// never A sharp, and the chord already knows it is a seventh — which is what the degree
-	// storage is for. Spelling from the pitch class alone loses that and a musician sees it at
-	// once, especially in a chromatic descent.
-	const int li = (letterIndexOfTonic(key) + clamp((int) chord.degree, 1, 7) - 1) % 7;
-	const int rootPc = chordRootPitchClass(chord, key);
-	int delta = ((rootPc - LETTER_PC[li]) % 12 + 12) % 12;
+	const int li = (letterIndexOfTonic(key) + clamp(degree, 1, 7) - 1) % 7;
+	int delta = ((pc - LETTER_PC[li]) % 12 + 12) % 12;
 	if (delta > 6)
 		delta -= 12;
 
@@ -359,7 +402,19 @@ std::string chordLetter(const Chord& chord, const Key& key) {
 		s += "#";
 	for (int i = 0; i > delta && i > -2; i--)
 		s += "b";
-	return s + QUALITY_SUFFIX[q];
+	return s;
+}
+
+static std::string letterBass(const Chord& chord, const Key& key) {
+	if (chord.bassDegree < 1)
+		return "";
+	return "/" + spellDegree(chord.bassDegree, chordBassPitchClass(chord, key), key);
+}
+
+std::string chordLetter(const Chord& chord, const Key& key) {
+	const int q = clamp((int) chord.quality, 0, NUM_QUALITIES - 1);
+	return spellDegree(chord.degree, chordRootPitchClass(chord, key), key) + QUALITY_SUFFIX[q]
+		+ letterBass(chord, key);
 }
 
 

@@ -22,7 +22,46 @@ static std::string readFile(const char* path) {
 	return ss.str();
 }
 
+/** SLASH CHORDS: the bass kept as a degree of the key, spelled back as written. */
+static int checkSlashes() {
+	struct Case { const char* symbol; int tonic; bool minor; const char* letter; const char* roman; };
+	const Case cases[] = {
+		{"C/G", 0, false, "C/G", "I/5"},
+		{"D-7/C", 0, false, "Dm7/C", "ii7/1"},
+		{"F/A", 0, false, "F/A", "IV/6"},
+		{"Ab/Bb", 3, false, "Ab/Bb", "IV/5"},
+		{"G7/B", 0, false, "G7/B", "V7/7"},
+		{"C/C", 0, false, "C", "I"},
+		{"E7", 9, true, "E7", "V7"},
+	};
+	int failures = 0;
+	for (const Case& c : cases) {
+		Key key;
+		key.tonic = (int8_t) c.tonic;
+		key.minor = c.minor;
+		Chord chord;
+		irealParseChord(c.symbol, key, chord);
+		const std::string letter = chordLetter(chord, key), roman = chordRoman(chord);
+		const bool ok = letter == c.letter && roman == c.roman;
+		std::printf("%s  %-6s reads as %s, %s\n", ok ? "ok  " : "FAIL", c.symbol, letter.c_str(),
+			roman.c_str());
+		if (!ok)
+			failures++;
+	}
+	Key c;
+	Chord g;
+	irealParseChord("C/G", c, g);
+	if (chordBassPitchClass(g, c) != 7 || chordRootPitchClass(g, c) != 0) {
+		std::printf("FAIL  C/G's bass is G and its root C\n");
+		failures++;
+	}
+	std::printf("\n");
+	return failures;
+}
+
 int main(int argc, char** argv) {
+	if (checkSlashes() > 0)
+		return 1;
 	int totalSongs = 0, totalUnsupported = 0, totalEmpty = 0, totalSpans = 0;
 	std::map<std::string, int> unknownReasons;
 

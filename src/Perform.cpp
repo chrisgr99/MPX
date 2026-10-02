@@ -236,7 +236,8 @@ float Performer::noise() {
 }
 
 
-void Performer::push(uint8_t kind, int voice, int key, float value) {
+void Performer::push(uint8_t kind, int voice, int key, float value, uint32_t technique,
+		int fret) {
 	if (queued >= (int) (sizeof(queue) / sizeof(queue[0]))) {
 		// A block that produced more messages than this is a patch doing something no player
 		// could; the oldest are the ones already acted on, so the newest are kept.
@@ -248,6 +249,8 @@ void Performer::push(uint8_t kind, int voice, int key, float value) {
 	m.voice = voice;
 	m.key = key;
 	m.value = value;
+	m.technique = technique;
+	m.fret = fret;
 }
 
 
@@ -399,6 +402,7 @@ void Performer::note(const PerformNote& n) {
 	next.handle = n.handle;
 	next.pan = n.pan;
 	next.technique = n.technique;
+	next.fret = n.fret;
 	next.vibrato = n.vibrato;
 	next.bendCount = (n.bendCount > 4) ? 4 : n.bendCount;
 	for (int k = 0; k < next.bendCount; k++) {
@@ -430,7 +434,7 @@ void Performer::note(const PerformNote& n) {
 		// The note is not struck again, so its loudness is what the string still has, taken
 		// down a little: a hammered note is weaker than a picked one.
 		next.level = clamp(voices[i].level * rules.hammerLevel, 0.f, 1.f);
-		push(PerformMessage::LEVEL, i, next.key, next.level);
+		push(PerformMessage::LEVEL, i, next.key, next.level, n.technique, n.fret);
 	}
 
 	p = next;
@@ -450,7 +454,7 @@ void Performer::shape(Plan& p, float dt, int index) {
 		if (p.startDelay > 0.f)
 			return;
 		p.struck = true;
-		push(PerformMessage::ATTACK, index, p.key, p.level);
+		push(PerformMessage::ATTACK, index, p.key, p.level, p.technique, p.fret);
 		push(PerformMessage::TIMBRE, index, p.key, p.timbre);
 	}
 

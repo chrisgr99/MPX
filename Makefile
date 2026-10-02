@@ -188,6 +188,44 @@ performtest:
 	@c++ -std=c++11 -O1 -Wall test/performtest.cpp src/Perform.cpp -o build/performtest
 	@./build/performtest
 
+# One modelled guitar string: its tuning, decay and pick, measured, and a few files to listen to.
+stringtest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/stringtest.cpp src/GuitarString.cpp -o build/stringtest
+	@./build/stringtest
+
+# The modelled guitar's articulations: palm mutes, dead notes, harmonics, hammer-ons, damping.
+guitartest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/guitartest.cpp src/GuitarModel.cpp src/GuitarString.cpp -o build/guitartest
+	@./build/guitartest
+
+# The built-in band's level against mpxGuitar's, the same note through each.
+leveltest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall -I dep/include test/leveltest.cpp src/FluidEngine.cpp src/GuitarModel.cpp \
+		src/GuitarString.cpp dep/lib/libfluidsynth.a -framework CoreFoundation -o build/leveltest
+	@./build/leveltest $(ARGS)
+
+# The fretting hand: the shapes it finds against the familiar ones. No Rack in it.
+fretboardtest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/fretboardtest.cpp src/Fretboard.cpp -o build/fretboardtest
+	@./build/fretboardtest
+
+# The finger picker's two hands, played through a progression. No Rack in them.
+pickertest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pickertest.cpp src/FingerPicking.cpp src/Fretboard.cpp -o build/pickertest
+	@./build/pickertest
+
+# The same, through the performer and the modelled guitar, written to build/ to be listened to.
+pickrender:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pickrender.cpp src/FingerPicking.cpp src/Fretboard.cpp \
+		src/Perform.cpp src/GuitarModel.cpp src/GuitarString.cpp -o build/pickrender
+	@./build/pickrender
+
 # mpxGuitarVoice's envelopes and mix. No Rack in them.
 voicetest:
 	@c++ -std=c++11 -O1 -Wall test/voicetest.cpp src/GuitarVoice.cpp -o build/voicetest
@@ -200,4 +238,4 @@ soundtest:
 	@./build/soundtest $(ARGS)
 
 
-.PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest
+.PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender

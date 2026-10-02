@@ -35,18 +35,24 @@ channels each part has, one per string, are the shared core's; see SoundCore.hpp
 static const int PARTS = 6;
 
 
+//?module Plays up to six MPX parts through one FluidSynth and one SoundFont: each part on its own
+//? sound from the bank, with a channel for each of its strings so that bends and legato stay on
+//? the string they belong to, mixed to stereo.
+//?note The bank is the first SoundFont in DreamerMPX/banks; another is chosen from the right-click
+//? menu. A part's sound is chosen by clicking its name, from the bank's own list.
+//?note Drums are a part like any other: a kit from the bank, playing General MIDI drum numbers.
 struct SoundModule : Module, NoteSink {
 	enum ParamId {
 		P_LEVEL,
 		P_HUMANISE,
 		P_REVERB,
 		P_CHORUS,
-		P_MUTE,
-		NUM_PARAMS = P_MUTE + PARTS
+		ENUMS(P_MUTE, PARTS),
+		NUM_PARAMS
 	};
 	enum InputId {
-		I_PART,
-		NUM_INPUTS = I_PART + PARTS
+		ENUMS(I_PART, PARTS),
+		NUM_INPUTS
 	};
 	enum OutputId {
 		O_L,
@@ -56,8 +62,8 @@ struct SoundModule : Module, NoteSink {
 	enum LightId {
 		/** Lit once the bank has been read and the module can make a sound. */
 		L_BANK,
-		L_PART,
-		NUM_LIGHTS = L_PART + PARTS
+		ENUMS(L_PART, PARTS),
+		NUM_LIGHTS
 	};
 
 	SoundCore core;
@@ -69,25 +75,30 @@ struct SoundModule : Module, NoteSink {
 
 	SoundModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		//? How loud the whole band is. A General MIDI bank is quiet on purpose, so that a
-		//? hundred instruments can play at once without clipping; this makes that up.
 		configParam(P_LEVEL, 0.f, 4.f, 1.f, "Level");
-		//? How much the playing is moved about — the timing, the loudness and the lengths. At
-		//? nought the same notes come out the same way every time.
+		//? How loud the whole band is, from 0 to 4 times: at 1, a note sounds as loud as the same
+		//? note from mpxGuitar.
 		configParam(P_HUMANISE, 0.f, 2.f, 1.f, "Humanise", "%", 0.f, 100.f);
-		//? The synthesiser's own reverb, which is the one the Ultimate Guitar player uses.
+		//? How much the timing, loudness and lengths of the notes are varied, from 0%, where the same
+		//? notes come out the same way every time, through 100%, the amount the rules file sets, to
+		//? 200%.
 		configSwitch(P_REVERB, 0.f, 1.f, 1.f, "Reverb", {"Off", "On"});
-		//? Its chorus, likewise.
+		//? FluidSynth's own reverb, on or off.
 		configSwitch(P_CHORUS, 0.f, 1.f, 1.f, "Chorus", {"Off", "On"});
+		//? FluidSynth's own chorus, on or off.
 		for (int p = 0; p < PARTS; p++) {
-			//? Silences this part without unpatching it.
 			configSwitch(P_MUTE + p, 0.f, 1.f, 0.f, string::f("Mute %d", p + 1),
 				{"Playing", "Muted"});
+			//? Silences one part without unpatching it.
 			configInput(I_PART + p, string::f("MPX part %d", p + 1));
+			//? One part: its notes and how each is played, from Guitar Chart or any MPX source, on the
+			//? sound chosen for it.
 			sound[p] = -1;
 		}
 		configOutput(O_L, "Left");
+		//? The band, mixed to stereo.
 		configOutput(O_R, "Right");
+		//? The band, mixed to stereo.
 		core.setParts(PARTS);
 		core.logName = "mpxFluidSynth";
 		core.onBankRead = [this]() {
@@ -244,7 +255,7 @@ struct SoundModule : Module, NoteSink {
 			left += core.partLeft(p);
 			right += core.partRight(p);
 		}
-		const float level = params[P_LEVEL].getValue() * 5.f;    // To Rack's ten volts peak.
+		const float level = params[P_LEVEL].getValue() * SOUND_VOLTS;    // To Rack's volts.
 		outputs[O_L].setVoltage(left * level);
 		outputs[O_R].setVoltage(right * level);
 	}

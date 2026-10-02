@@ -215,7 +215,7 @@ int main() {
 		r.play(n);
 		r.run(0.1f);
 		ok("a palm mute is dark", r.p.voice(5).timbre < 0.3f, num("timbre", r.p.voice(5).timbre));
-		r.run(0.1f);
+		r.run(0.6f);
 		ok("and short", !r.p.voice(5).gate);
 	}
 	{

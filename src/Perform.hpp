@@ -59,9 +59,12 @@ struct PerformRules {
 	float slideOutFade = 0.3f;       /**< What the level falls to by the end of it. */
 
 	// Palm mute, dead notes, ghost notes, staccato: all of them length and level and brightness.
+	// A palm mute's note lasts long enough for a modelled string to die away by itself, about
+	// 0.7 s, and is struck nearly as hard as an open one: the hand is on the strings, not holding
+	// back the pick.
 	float palmLength = 0.35f;
-	float palmMaxMs = 150.f;
-	float palmLevel = 0.85f;
+	float palmMaxMs = 600.f;
+	float palmLevel = 0.95f;
 	float palmTimbre = 0.25f;
 	float deadMs = 25.f;
 	float deadLevel = 0.6f;
@@ -171,6 +174,13 @@ struct PerformMessage {
 	int voice = 0;
 	int key = 60;
 	float value = 0.f;
+	/** WHAT KIND OF NOTE, on a strike and on a note the left hand sounds without one: the
+	cable's technique bits, unchanged, and the fret it is played at, or -1. A renderer that
+	shapes a sound can ignore them, since the level, the length and the brightness already
+	carry their effect; one that models a string needs them, because a palm mute is a hand on
+	the string and not merely a darker note. */
+	uint32_t technique = 0;
+	int fret = -1;
 };
 
 
@@ -225,6 +235,7 @@ private:
 		int key = 60;
 		int64_t handle = 0;
 		uint32_t technique = 0;
+		int fret = -1;
 		uint8_t vibrato = 0;
 		int bendCount = 0;
 		float bendAt[4] = {0.f, 0.f, 0.f, 0.f};
@@ -247,7 +258,8 @@ private:
 	PerformMessage queue[64];
 	int queued = 0, taken = 0;
 
-	void push(uint8_t kind, int voice, int key, float value);
+	void push(uint8_t kind, int voice, int key, float value, uint32_t technique = 0,
+		int fret = -1);
 	int voiceFor(const PerformNote& n);
 	float noise();               /**< Minus one to one, from the seed. */
 	void shape(Plan& p, float dt, int index);

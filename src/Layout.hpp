@@ -91,7 +91,8 @@ struct Item {
 	float x = 0.f, y = 0.f;
 
 	/** PARAM: which control to make. knob, knob.large, knob.huge, lamps, readout.
-	LIGHT: light for a plain green one, light.greenred for one that can also go red. */
+	LIGHT: light for a plain green one, light.greenred for one that can also go red, light.level
+	for a level lamp of three colours, green, orange and red, on three light ids from `id`. */
 	std::string style = "knob";
 
 	/** PARAM, style readout: how many figures it has to hold, and how tall the plate is. The

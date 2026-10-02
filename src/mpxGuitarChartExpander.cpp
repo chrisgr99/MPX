@@ -122,7 +122,7 @@ struct ExpanderModule : Module {
 		core.step(args.sampleTime, NULL, params[P_HUMANISE].getValue(),
 			params[P_REVERB].getValue() > 0.5f, params[P_CHORUS].getValue() > 0.5f);
 
-		const float level = params[P_LEVEL].getValue() * 5.f;    // To Rack's ten volts peak.
+		const float level = params[P_LEVEL].getValue() * SOUND_VOLTS;    // To Rack's volts.
 		float left = core.wetLeft(), right = core.wetRight();
 		for (int t = 0; t < TRACKS; t++) {
 			const float gain = params[P_GAIN + t].getValue();

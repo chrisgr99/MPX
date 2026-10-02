@@ -150,6 +150,35 @@ static uint8_t qualityOf(const std::string& q) {
 }
 
 
+/** A pitch class AS A DEGREE OF THE KEY, which is the whole point: the chart then transposes by
+changing one number, and every rule that asks about function has its answer directly.
+
+A NATURAL DEGREE ALWAYS BEATS AN ALTERED ONE. Reading B in C major as a flattened tonic rather
+than as the seventh is how a chart comes out spelled C flat, which is not a thing anybody writes.
+After that, an alteration spelled the way the chart spelled it beats the other one. */
+static void degreeOf(int pc, int written, const Key& key, int* degree, int* accidental) {
+	const int* steps = key.minor ? MINOR_STEPS : MAJOR_STEPS;
+	*degree = 1;
+	*accidental = 0;
+	int best = 9999;
+	for (int d = 0; d < 7; d++) {
+		const int natural = ((key.tonic + steps[d]) % 12 + 12) % 12;
+		for (int a = -1; a <= 1; a++) {
+			if (((natural + a) % 12 + 12) % 12 != pc)
+				continue;
+			int cost = d;
+			if (a != 0)
+				cost += (a == written && written != 0) ? 100 : 300;
+			if (cost < best) {
+				best = cost;
+				*degree = d + 1;
+				*accidental = a;
+			}
+		}
+	}
+}
+
+
 bool irealParseChord(const std::string& symbol, const Key& key, Chord& out) {
 	if (symbol.empty())
 		return false;
@@ -177,29 +206,22 @@ bool irealParseChord(const std::string& symbol, const Key& key, Chord& out) {
 			quality += symbol[i];
 	}
 
-	// AS A DEGREE OF THE KEY, which is the whole point: the chart then transposes by changing
-	// one number, and every rule that asks about function has its answer directly.
-	//
-	// A NATURAL DEGREE ALWAYS BEATS AN ALTERED ONE. Reading B in C major as a flattened tonic
-	// rather than as the seventh is how a chart comes out spelled C flat, which is not a thing
-	// anybody writes. After that, an alteration spelled the way the chart spelled it beats the
-	// other one.
-	const int* steps = key.minor ? MINOR_STEPS : MAJOR_STEPS;
-	int degree = 1, accidental = 0;
-	int best = 9999;
-	for (int d = 0; d < 7; d++) {
-		const int natural = ((key.tonic + steps[d]) % 12 + 12) % 12;
-		for (int a = -1; a <= 1; a++) {
-			if (((natural + a) % 12 + 12) % 12 != pc)
-				continue;
-			int cost = d;
-			if (a != 0)
-				cost += (a == written && written != 0) ? 100 : 300;
-			if (cost < best) {
-				best = cost;
-				degree = d + 1;
-				accidental = a;
-			}
+	int degree, accidental;
+	degreeOf(pc, written, key, &degree, &accidental);
+
+	// THE SLASH BASS, a letter and an accidental after the slash: what a guitarist's thumb and
+	// a bass player play. Kept as a degree like the root. A slash naming the root itself is no
+	// slash at all.
+	int bassDegree = 0, bassAccidental = 0;
+	if (i < symbol.size() && symbol[i] == '/' && i + 1 < symbol.size()) {
+		int bassPc = letterPitchClass(symbol[i + 1]);
+		if (bassPc >= 0) {
+			int bassWritten = 0;
+			if (i + 2 < symbol.size() && (symbol[i + 2] == '#' || symbol[i + 2] == 'b'))
+				bassWritten = (symbol[i + 2] == '#') ? 1 : -1;
+			bassPc = ((bassPc + bassWritten) % 12 + 12) % 12;
+			if (bassPc != pc)
+				degreeOf(bassPc, bassWritten, key, &bassDegree, &bassAccidental);
 		}
 	}
 
@@ -207,6 +229,8 @@ bool irealParseChord(const std::string& symbol, const Key& key, Chord& out) {
 	out.degree = (int8_t) degree;
 	out.accidental = (int8_t) accidental;
 	out.quality = qualityOf(quality);
+	out.bassDegree = (int8_t) bassDegree;
+	out.bassAccidental = (int8_t) bassAccidental;
 	return true;
 }
 

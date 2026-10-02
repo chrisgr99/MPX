@@ -34,7 +34,7 @@ Repeats and alternate endings are unfolded into the played order, as mpxChart al
 
 Many transcriptions carry no chord symbols — Michelle has none, and its chord collection is empty. So the harmony is worked out from what is played.
 
-Over each window — a bar, or the span between changes where the file marks them — the pitches sounding in the accompaniment tracks are collected and weighted by how long they sound and where they fall in the bar. That is matched against chord templates, and the reading that keeps the root moving smoothly is preferred over judging each window on its own. The melody track is left out of the vote, or passing notes drag the answer about. Where the file does carry chord symbols, they are used and nothing is inferred.
+Over each window — a bar, or the span between changes where the file marks them — the pitches sounding in the accompaniment tracks are collected and weighted by how long they sound and where they fall in the bar. That is matched against chord templates, and the reading that keeps the root moving smoothly is preferred over judging each window on its own. The melody track is left out of the vote, or passing notes drag the answer about. Where the file does carry chord symbols, they are used and nothing is inferred. The full design, and how it is measured against the files that do name their chords, is docs/chord-inference.md.
 
 What it is for is the modules that vary an imported part: re-voicing a chord, substituting a figure or moving a line all need to know what chord is sounding. It also gives the module a chart to draw, when the notation view is built.
 

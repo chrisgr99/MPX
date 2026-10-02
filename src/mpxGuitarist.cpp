@@ -34,6 +34,14 @@ static std::string rulesPath() {
 }
 
 
+//?module Plays one MPX part as control voltage, the way a guitarist would: each string a channel of a
+//? polyphonic cable, its pitch carrying the bends, slides and vibrato, its gate, level and
+//? timbre shaped by how each note is played. The number of strings, their tuning and the capo
+//? come from the instrument on the cable.
+//?note A hammer-on, pull-off or legato slide sends no new gate: the pitch moves while the gate is
+//? held, so an envelope patched to the gate carries on through the change of note.
+//?note The performance rules are read from DreamerMPX/perform.txt, which is written with the
+//? defaults the first time, and read again from the right-click menu.
 struct GuitaristModule : Module, NoteSink {
 	enum ParamId {
 		P_HUMANISE,
@@ -77,19 +85,30 @@ struct GuitaristModule : Module, NoteSink {
 
 	GuitaristModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		//? How much the playing is moved about — the timing, the loudness and the lengths.
-		//? At nought the same notes come out the same way every time, which is what to use when
-		//? comparing two settings; one is the amount the rules file asks for.
 		configParam(P_HUMANISE, 0.f, 2.f, 1.f, "Humanise", "%", 0.f, 100.f);
+		//? How much the timing, loudness and lengths of the notes are varied, from 0%, where the same
+		//? notes come out the same way every time, through 100%, the amount the rules file sets, to
+		//? 200%.
 		configInput(I_MPX, "MPX note");
+		//? One part: its notes and how each is played, from Guitar Chart or any MPX source.
 		configOutput(O_GATE, "Gate");
+		//? 10V while each string sounds, one channel per string. A hammer-on or legato slide keeps
+		//? the gate high rather than starting a new one.
 		configOutput(O_PITCH, "1V/oct, as played");
+		//? Each string's pitch as played, 1V per octave with 0V at middle C, one channel per string,
+		//? with the bends, slides and vibrato in it.
 		configOutput(O_LEVEL, "Level");
-		//? How open the sound is, nought to ten volts: a palm mute and a dead note are dark, a
-		//? harmonic bright, an ordinary note between. Patch it into a filter.
+		//? Each string's loudness, 0 to 10V, one channel per string: the note's dynamic with its
+		//? accents, ghost notes and palm mutes in it.
 		configOutput(O_TIMBRE, "Timbre");
+		//? Each string's brightness, 0 to 10V, one channel per string: low for a palm mute or a dead
+		//? note, high for a harmonic, 6V for an ordinary note.
 		configOutput(O_PRESSURE, "Pressure");
+		//? Each string's pressure, 0 to 10V, one channel per string, passed through from the part
+		//? when its source sends one.
 		configOutput(O_PAN, "Pan");
+		//? Each string's place in the stereo field, -5V at the left to 5V at the right, one channel
+		//? per string.
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);
