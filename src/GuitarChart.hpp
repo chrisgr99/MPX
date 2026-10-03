@@ -23,8 +23,9 @@ SongModule are two types and not one type defined twice.
 
 A BAND OF ITS OWN, where CHART_AUDIO says so. The rows play through the shared synthesiser
 (SoundCore.hpp) on the instruments the file names, each with a gain and a mono output, and the
-whole band on a stereo pair. Shown and run only when asked for, from the menu. A row whose MPX
-output has a cable in it is the cable's to voice instead: its notes go down the cable and the
+whole band on a stereo pair. The rows' outputs are shown only when the menu asks for them, the
+stereo pair always, and the synthesiser runs while either can be heard. A row whose MPX output has
+a cable in it is the cable's to voice instead: its notes go down the cable, at its gain, and the
 synthesiser leaves it alone.
 */
 #include "plugin.hpp"
@@ -98,6 +99,8 @@ static std::string instrumentName(const GpTrack& track) {
 /** From the synthesiser's output to Rack's volts: SoundCore's, so the band is as loud as an
 mpxGuitar playing the same part. */
 static const float AUDIO_LEVEL = SOUND_VOLTS;
+/** The SoundFont the band plays, in SoundCore's folder. */
+static const char* CHART_BANK = "GeneralUser-GS.sf2";
 #endif
 
 /** A note's length is the file's, within reason: a note held to the end of a long let-ring
@@ -196,9 +199,9 @@ struct SongModule : Module, NoteSource {
 #if CHART_AUDIO
 	SoundCore core;
 	/** Whether the audio outputs are shown, and so whether the synthesiser runs. */
+	/** THE BAND AND ITS AUDIO OUTPUTS, hidden unless the menu shows them: they are mostly for
+	testing, the rows' MPX cables being how the module is usually played. */
 	std::atomic<bool> showAudio{false};
-	/** The bank a patch asked for, used when the synthesiser is next started. */
-	std::string wantBank;
 #endif
 
 	dsp::SchmittTrigger clockTrigger, resetTrigger, rewindTrigger;
@@ -239,7 +242,7 @@ struct SongModule : Module, NoteSource {
 		}
 #if CHART_AUDIO
 		for (int r = 0; r < ROWS; r++) {
-			//? This track's loudness, on its own output and in the stereo pair.
+			//? This row's level: the notes on its MPX cable when that is patched, otherwise its sound in the band, on its own output and in the stereo pair.
 			configParam(P_GAIN + r, 0.f, 2.f, 1.f, string::f("Gain %d", r + 1), "%", 0.f, 100.f);
 			configOutput(O_AUDIO + r, string::f("Track %d audio", r + 1));
 		}
@@ -255,38 +258,52 @@ struct SongModule : Module, NoteSource {
 #if CHART_AUDIO
 	// ---- the band ------------------------------------------------------------------------------
 
-	/** Starts or stops the synthesiser, with the outputs. Main thread. */
+	/** Shows or hides the rows' audio outputs. Main thread. */
 	void setShowAudio(bool on) {
-		if (on == showAudio.load())
-			return;
 		showAudio = on;
-		if (on)
+		updateBand();
+	}
+
+	/** Whether the synthesiser is running. Main thread. */
+	bool bandRunning = false;
+
+	/** THE SYNTHESISER RUNS WHILE ANYTHING CAN HEAR IT: the rows' outputs shown, or a cable in
+	the stereo pair, which is always shown. Main thread: called from the widget every frame, since
+	a cable can be plugged in at any time. */
+	void updateBand() {
+		const bool want = showAudio.load() || outputs[O_MIX_L].isConnected()
+			|| outputs[O_MIX_R].isConnected();
+		if (want == bandRunning)
+			return;
+		bandRunning = want;
+		if (want)
 			startEngine(APP->engine->getSampleRate());
 		else
 			core.stopEngine();
 	}
 
 	void startEngine(float rate) {
-		core.startEngine(rate, false, false, wantBank);
+		// THE BAND'S OWN SOUNDFONT, always: there is no choosing another.
+		core.startEngine(rate, false, false, SoundCore::bankFolder() + "/" + CHART_BANK);
 	}
 
 	void onAdd(const AddEvent& e) override {
-		if (showAudio.load())
-			startEngine(APP->engine->getSampleRate());
+		updateBand();
 	}
 
 	void onRemove(const RemoveEvent& e) override {
 		core.stopEngine();
+		bandRunning = false;
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
-		if (showAudio.load())
+		if (bandRunning)
 			startEngine(e.sampleRate);
 	}
 
-	/** Whether any audio output has a cable in it, which keeps them from being hidden. */
+	/** Whether a row's audio output has a cable in it, which keeps them from being hidden. */
 	bool audioPatched() {
-		for (int o = O_AUDIO; o < NUM_OUTPUTS; o++) {
+		for (int o = O_AUDIO; o < O_AUDIO + ROWS; o++) {
 			if (outputs[o].isConnected())
 				return true;
 		}
@@ -296,7 +313,7 @@ struct SongModule : Module, NoteSource {
 	/** THE ROWS THE SYNTHESISER PLAYS, every frame: each row with a track and no cable in its MPX
 	output. The bus is read exactly as a cable's far end reads it. */
 	void playBand(const ProcessArgs& args) {
-		if (!showAudio.load() || !core.engine.running()) {
+		if (!core.engine.running()) {
 			for (int o = O_AUDIO; o < NUM_OUTPUTS; o++)
 				outputs[o].setVoltage(0.f);
 			return;
@@ -519,19 +536,15 @@ struct SongModule : Module, NoteSource {
 		json_object_set_new(rootJ, "rows", rowsJ);
 #if CHART_AUDIO
 		json_object_set_new(rootJ, "audio", json_boolean(showAudio.load()));
-		if (!core.engine.bankPath().empty())
-			json_object_set_new(rootJ, "bank", json_string(core.engine.bankPath().c_str()));
 #endif
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 #if CHART_AUDIO
-		json_t* bankJ = json_object_get(rootJ, "bank");
-		if (json_is_string(bankJ))
-			wantBank = json_string_value(bankJ);
 		// Shown before onAdd, which starts the synthesiser for a patch that had it running.
-		showAudio = json_is_true(json_object_get(rootJ, "audio"));
+		json_t* audioJ = json_object_get(rootJ, "audio");
+		showAudio = audioJ && json_is_true(audioJ);
 #endif
 		json_t* fileJ = json_object_get(rootJ, "file");
 		if (!json_is_string(fileJ))
@@ -768,9 +781,21 @@ struct SongModule : Module, NoteSource {
 				continue;
 			const std::vector<GpPlayedNote>& notes = L.line.tracks[(size_t) t];
 			const bool muted = params[P_MUTE + r].getValue() > 0.5f;
+#if CHART_AUDIO
+			// THE GAIN ON THE CABLE, where the row goes out by its cable rather than through the
+			// band: the notes leave that much softer or louder. Not on a row the band is playing,
+			// whose gain is applied to the band's own sound and would otherwise count twice.
+			const float cableGain = outputs[O_TRACK + r].isConnected()
+				? params[P_GAIN + r].getValue() : 1.f;
+#else
+			const float cableGain = 1.f;
+#endif
 			while (cursor[r] < notes.size() && notes[cursor[r]].startQuarters <= quarters) {
 				const GpPlayedNote& n = notes[cursor[r]];
 				cursor[r]++;
+				// THE ROW'S LIGHT FLASHES MUTED OR NOT, so a muted row shows what would be heard
+				// were it turned back on.
+				rowLamp[r] = 1.f;
 				if (muted)
 					continue;
 				Event e;
@@ -778,7 +803,7 @@ struct SongModule : Module, NoteSource {
 				e.handle = mintHandle();
 				// Volts, an octave to the volt, with nought at middle C.
 				e.pitch = (float) (n.note.midi - 60) / 12.f;
-				e.level = math::clamp(n.dynamic, 0.f, 1.f);
+				e.level = math::clamp(n.dynamic * cableGain, 0.f, 1.f);
 				// The length at the tempo it is being played at, which is the clock's when one
 				// is patched and the file's when none is.
 				e.duration = math::clamp((float) n.lengthQuarters * quarterSeconds,
@@ -786,7 +811,6 @@ struct SongModule : Module, NoteSource {
 				describe(e, n, L.song.tracks[(size_t) t].letRingThroughout);
 				busPush(slot[r], e);
 				struck = true;
-				rowLamp[r] = 1.f;
 			}
 		}
 
@@ -1055,42 +1079,47 @@ struct SongPosition : widget::Widget {
 };
 
 
-static const float PANEL_W = 60.96f;      /**< Twelve HP. */
-/** TWO COLUMNS, each half the panel: a mute, the jack beside it, and the name, with a millimetre
-between each and at the edges. The jack is 8.03 mm across and the mute 5.6 mm, which leaves the
-name about twelve millimetres. */
-static const float COLUMN_W = PANEL_W / 2.f;
+/** A ROW: a mute, the gain, the MPX jack, the audio jack, then the name, a millimetre between
+each. The gain sets whichever of the two jacks the row goes out by — the notes on its MPX cable when
+that is patched, its sound in the band when not — so it sits ahead of both. With the audio hidden
+the audio jack goes and the name moves up into its place. The same in each column of either
+module. */
 static const float MUTE_D = 5.6f;
 static const float MUTE_DX = 1.5f + MUTE_D / 2.f;
-/** The jack a millimetre from the mute. */
-static const float JACK_DX = MUTE_DX + MUTE_D / 2.f + 1.f + 8.03f / 2.f;
-/** THE ROW'S LAMP, tucked against its jack at forty-five degrees below and to the left, in the
-space between the rows rather than in the row: a small light is 2.2 mm across, and set between
-the mute and the jack it took that much from every name. */
-static const float LAMP_OFFSET = (8.03f / 2.f + 0.6f + 1.1f) * 0.7071f;
-static const float LAMP_DX = JACK_DX - LAMP_OFFSET;
-static const float LAMP_DY = LAMP_OFFSET;
-static const float NAME_DX = JACK_DX + 8.03f / 2.f + 1.f;
-static const float NAME_W = COLUMN_W - NAME_DX - 1.f;
-static const float ROW_TOP = 57.f;
-static const float ROW_STEP = 12.f;
-
-/** SIX ROWS IN ONE COLUMN: a mute, the MPX jack, and — when the audio is shown — the track's gain
-and its audio jack, then the names. A millimetre between each. A little closer together than the
-twelve's rows, to leave room at the bottom for the band's stereo pair, set apart from them. */
-static const float ROW6_TOP = 57.f;
-static const float ROW6_STEP = 10.5f;
-static const float GAIN6_X = JACK_DX + 8.03f / 2.f + 1.f + 6.05f / 2.f;
-static const float AUDIO6_X = GAIN6_X + 6.05f / 2.f + 1.f + 8.03f / 2.f;
+static const float GAIN_DX = MUTE_DX + MUTE_D / 2.f + 1.f + 6.05f / 2.f;
+static const float JACK_DX = GAIN_DX + 6.05f / 2.f + 1.f + 8.03f / 2.f;
+static const float AUDIO_DX = JACK_DX + 8.03f / 2.f + 1.f + 8.03f / 2.f;
+/** THE ROW'S LAMP, below the gap between the mute and the gain, at about forty-five degrees from
+each: down and right of the mute, down and left of the knob. Not by the MPX jack, where the pointer
+covered it while the knob was being turned. */
+static const float LAMP_DX = (MUTE_DX + GAIN_DX) / 2.f;
+static const float LAMP_DY = (6.05f / 2.f + 0.6f + 1.1f) * 0.7071f;
 /** Where the names start with the audio hidden, and how much further right with it shown. */
-static const float NAME6_X = JACK_DX + 8.03f / 2.f + 1.f;
-static const float NAME6_SHIFT = AUDIO6_X + 8.03f / 2.f + 1.f - NAME6_X;
-static const float MIX6_Y = 121.5f;
+static const float NAME_DX = JACK_DX + 8.03f / 2.f + 1.f;
+static const float NAME_SHIFT = AUDIO_DX + 8.03f / 2.f + 1.f - NAME_DX;
+/** The rows close enough together to leave room at the bottom for the band's stereo pair. */
+static const float ROW_TOP = 57.f;
+static const float ROW_STEP = 10.5f;
+static const float MIX_Y = 121.5f;
 
+#if CHART_ROWS == 6
+/** SIX ROWS IN ONE COLUMN, twelve HP whether the audio is shown or not: the transport above
+needs the width, and the names take what the audio jacks leave. */
+static const float PANEL_W = 60.96f;
+static const float PANEL_HP = 12.f;
+#else
+/** TWELVE ROWS IN TWO COLUMNS, eighteen HP with the audio shown and fifteen without: the second
+column moves left by the width the first column's audio jacks gave up. */
+static const float PANEL_W = 91.44f;
+static const float PANEL_HP = 18.f;
+static const float NARROW_W = 76.2f;
+static const float COLUMN_W = PANEL_W / 2.f;
+static const float NARROW_COLUMN_W = NARROW_W / 2.f;
+#endif
 
 static Layout songLayout() {
 	Layout L;
-	L.hp = 12.f;
+	L.hp = PANEL_HP;
 	L.title = CHART_TITLE;
 
 	auto label = [&](const char* key, float x, float y, const char* text, Panel::Align align,
@@ -1154,75 +1183,10 @@ static Layout songLayout() {
 	lamp.x = 3.5f; lamp.y = 36.f;
 	L.items.push_back(lamp);
 
-#if CHART_ROWS == 6
-	// THE ROWS, one column of six. The names are drawn by the module, since they change with the
-	// song; the gains, the audio jacks and their headings are shown only with the audio.
-	for (int r = 0; r < ROWS; r++) {
-		const float y = ROW6_TOP + r * ROW6_STEP;
-		Item mute;
-		mute.key = string::f("p.mute%d", r + 1);
-		mute.kind = Item::PARAM; mute.id = SongModule::P_MUTE + r;
-		mute.style = "latch"; mute.diameter = MUTE_D; mute.x = MUTE_DX; mute.y = y;
-		L.items.push_back(mute);
-
-		Item lamp;
-		lamp.key = string::f("lamp.row%d", r + 1);
-		lamp.kind = Item::LIGHT; lamp.id = SongModule::L_ROW + r;
-		lamp.x = LAMP_DX; lamp.y = y + LAMP_DY;
-		L.items.push_back(lamp);
-
-		Item out;
-		out.key = string::f("out.track%d", r + 1);
-		out.kind = Item::PORT_OUT; out.id = SongModule::O_TRACK + r;
-		out.x = JACK_DX; out.y = y; out.ring = NOTE_CABLE;
-		L.items.push_back(out);
-
-		Item gain;
-		gain.key = string::f("p.gain%d", r + 1);
-		gain.kind = Item::PARAM; gain.id = SongModule::P_GAIN + r;
-		gain.style = "knob.trim"; gain.x = GAIN6_X; gain.y = y;
-		L.items.push_back(gain);
-
-		Item audio;
-		audio.key = string::f("out.audio%d", r + 1);
-		audio.kind = Item::PORT_OUT; audio.id = SongModule::O_AUDIO + r;
-		audio.x = AUDIO6_X; audio.y = y; audio.ring = SIG_AUDIO;
-		L.items.push_back(audio);
-	}
-	// SEVEN POINTS, each over its own column. At eight, MUTE reached within a quarter of a
-	// millimetre of MPX once the jack moved up to the mute.
-	const float headY = ROW6_TOP - 7.f;
-	label("h.mute", MUTE_DX, headY, "MUTE", Panel::CENTRE, true, 7.f, NULL);
-	label("h.out", JACK_DX, headY, "MPX", Panel::CENTRE, true, 7.f, NULL);
-	label("h.gain", GAIN6_X, headY, "GAIN", Panel::CENTRE, true, 7.f, NULL);
-	label("h.audio", AUDIO6_X, headY, "OUT", Panel::CENTRE, true, 7.f, NULL);
-
-	Item names;
-	names.key = "d.rows"; names.kind = Item::DISPLAY;
-	names.x = NAME6_X; names.y = ROW6_TOP - ROW6_STEP / 2.f;
-	names.w = PANEL_W - NAME6_X - 1.f; names.h = ROWS * ROW6_STEP;
-	L.items.push_back(names);
-
-	// THE WHOLE BAND, left and right, under the tracks' own outputs.
-	label("h.mix", AUDIO6_X - 8.03f / 2.f - 1.f, MIX6_Y, "MIX", Panel::RIGHT, true, 8.f, NULL);
-	Item mixL;
-	mixL.key = "out.mixl"; mixL.kind = Item::PORT_OUT; mixL.id = SongModule::O_MIX_L;
-	mixL.x = AUDIO6_X; mixL.y = MIX6_Y; mixL.ring = SIG_AUDIO;
-	L.items.push_back(mixL);
-	label("out.mixl.label", AUDIO6_X + 8.03f / 2.f + 1.f, MIX6_Y, "L", Panel::LEFT, true, 8.f,
-		"out.mixl");
-	const float rightX = AUDIO6_X + 12.5f;
-	Item mixR;
-	mixR.key = "out.mixr"; mixR.kind = Item::PORT_OUT; mixR.id = SongModule::O_MIX_R;
-	mixR.x = rightX; mixR.y = MIX6_Y; mixR.ring = SIG_AUDIO;
-	L.items.push_back(mixR);
-	label("out.mixr.label", rightX + 8.03f / 2.f + 1.f, MIX6_Y, "R", Panel::LEFT, true, 8.f,
-		"out.mixr");
-#else
-	// THE ROWS, in two columns of six: a mute, a cable and the name of the instrument on it.
-	// The names are drawn by the module, since they change with the song.
-	for (int c = 0; c < 2; c++) {
-		const float x = c * COLUMN_W;
+	// THE ROWS, in columns of six. The names are drawn by the module, since they change with
+	// the song; the audio jacks and their heading are shown only with the audio.
+	for (int c = 0; c < COLUMNS; c++) {
+		const float x = c * (PANEL_W / COLUMNS);
 		for (int i = 0; i < ROWS_PER_COLUMN; i++) {
 			const int r = c * ROWS_PER_COLUMN + i;
 			const float y = ROW_TOP + i * ROW_STEP;
@@ -1231,6 +1195,12 @@ static Layout songLayout() {
 			mute.kind = Item::PARAM; mute.id = SongModule::P_MUTE + r;
 			mute.style = "latch"; mute.diameter = MUTE_D; mute.x = x + MUTE_DX; mute.y = y;
 			L.items.push_back(mute);
+
+			Item gain;
+			gain.key = string::f("p.gain%d", r + 1);
+			gain.kind = Item::PARAM; gain.id = SongModule::P_GAIN + r;
+			gain.style = "knob.trim"; gain.x = x + GAIN_DX; gain.y = y;
+			L.items.push_back(gain);
 
 			Item lamp;
 			lamp.key = string::f("lamp.row%d", r + 1);
@@ -1243,22 +1213,48 @@ static Layout songLayout() {
 			out.kind = Item::PORT_OUT; out.id = SongModule::O_TRACK + r;
 			out.x = x + JACK_DX; out.y = y; out.ring = NOTE_CABLE;
 			L.items.push_back(out);
+
+			Item audio;
+			audio.key = string::f("out.audio%d", r + 1);
+			audio.kind = Item::PORT_OUT; audio.id = SongModule::O_AUDIO + r;
+			audio.x = x + AUDIO_DX; audio.y = y; audio.ring = SIG_AUDIO;
+			L.items.push_back(audio);
 		}
-		// Seven points rather than the usual ten, each centred over its own column: any larger
-		// and MUTE runs into OUT now the jack sits a millimetre from the mute.
-		label(c ? "h.mute2" : "h.mute", x + MUTE_DX, ROW_TOP - 8.f, "MUTE", Panel::CENTRE,
-			true, 7.f, NULL);
-		label(c ? "h.out2" : "h.out", x + JACK_DX, ROW_TOP - 8.f, "OUT", Panel::CENTRE, true,
-			7.f, NULL);
+		// SEVEN POINTS, each over its own column. At eight, MUTE reached within a quarter of a
+		// millimetre of MPX once the jack moved up to the mute.
+		const float headY = ROW_TOP - 7.f;
+		label(c ? "h.mute2" : "h.mute", x + MUTE_DX, headY, "MUTE", Panel::CENTRE, true, 7.f,
+			NULL);
+		label(c ? "h.gain2" : "h.gain", x + GAIN_DX, headY, "GAIN", Panel::CENTRE, true, 7.f,
+			NULL);
+		label(c ? "h.out2" : "h.out", x + JACK_DX, headY, "MPX", Panel::CENTRE, true, 7.f, NULL);
+		label(c ? "h.audio2" : "h.audio", x + AUDIO_DX, headY, "OUT", Panel::CENTRE, true, 7.f,
+			NULL);
 
 		Item names;
 		names.key = c ? "d.rows2" : "d.rows"; names.kind = Item::DISPLAY;
 		names.x = x + NAME_DX; names.y = ROW_TOP - ROW_STEP / 2.f;
-		names.w = NAME_W; names.h = ROWS_PER_COLUMN * ROW_STEP;
+		names.w = PANEL_W / COLUMNS - NAME_DX - 1.f; names.h = ROWS_PER_COLUMN * ROW_STEP;
 		L.items.push_back(names);
 	}
 
-#endif
+	// THE WHOLE BAND, left and right, under the last column's audio jacks: the right one under
+	// them, and the left one far enough before it for its letter.
+	const float rightX = PANEL_W - PANEL_W / COLUMNS + AUDIO_DX + (COLUMNS > 1 ? 0.f : 12.5f);
+	const float leftX = rightX - 12.5f;
+	label("h.mix", leftX - 8.03f / 2.f - 1.f, MIX_Y, "MIX", Panel::RIGHT, true, 8.f, NULL);
+	Item mixL;
+	mixL.key = "out.mixl"; mixL.kind = Item::PORT_OUT; mixL.id = SongModule::O_MIX_L;
+	mixL.x = leftX; mixL.y = MIX_Y; mixL.ring = SIG_AUDIO;
+	L.items.push_back(mixL);
+	label("out.mixl.label", leftX + 8.03f / 2.f + 1.f, MIX_Y, "L", Panel::LEFT, true, 8.f,
+		"out.mixl");
+	Item mixR;
+	mixR.key = "out.mixr"; mixR.kind = Item::PORT_OUT; mixR.id = SongModule::O_MIX_R;
+	mixR.x = rightX; mixR.y = MIX_Y; mixR.ring = SIG_AUDIO;
+	L.items.push_back(mixR);
+	label("out.mixr.label", rightX + 8.03f / 2.f + 1.f, MIX_Y, "R", Panel::LEFT, true, 8.f,
+		"out.mixr");
 
 	L.bindOffsets();
 	return L;
@@ -1322,60 +1318,82 @@ struct SongWidget : ModuleWidget {
 #if CHART_AUDIO
 		menu->addChild(new ui::MenuSeparator);
 		// NOT HIDDEN UNDER A CABLE. Rack draws a cable to wherever its jack is, and a hidden jack
-		// with a cable in it leaves the cable pointing at nothing.
+		// with a cable in it leaves the cable pointing at nothing. The stereo pair is never hidden
+		// and does not count.
 		if (m->showAudio.load() && m->audioPatched())
-			menu->addChild(createMenuLabel("Unplug the audio cables to hide the audio outputs"));
+			menu->addChild(createMenuLabel("Unplug the instrument audio cables to hide their outputs"));
 		else
-			menu->addChild(createCheckMenuItem("Show audio outputs", "",
+			menu->addChild(createCheckMenuItem("Show instrument audio outputs", "",
 				[=]() { return m->showAudio.load(); },
 				[=]() { m->setShowAudio(!m->showAudio.load()); }));
-		if (m->showAudio.load()) {
-			menu->addChild(createMenuItem("Choose a SoundFont…", "", [=]() {
-				if (m->core.busy.load())
-					return;
-				std::string dir = SoundCore::bankFolder();
-				system::createDirectories(dir);
-				osdialog_filters* filters = osdialog_filters_parse("SoundFont:sf2,SF2");
-				char* path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
-				osdialog_filters_free(filters);
-				if (!path)
-					return;
-				m->wantBank = path;
-				m->core.loadBank(path);
-				std::free(path);
-			}));
-			if (!m->core.engine.bankPath().empty())
-				menu->addChild(createMenuLabel(m->core.engine.bankPath()));
-		}
 #endif
 	}
 
 #if CHART_AUDIO
-	/** THE AUDIO CONTROLS COME AND GO WITH THE MENU ITEM, the names moving over to make room for
-	them. */
+	/** WHERE EACH ITEM IS WITH THE AUDIO SHOWN, so it can be put back after being moved. */
+	std::vector<float> shownX;
+
+	/** THE AUDIO JACKS COME AND GO WITH THE MENU ITEM, the names moving over to make room for
+	them. On the twelve the panel narrows as well, the second column moving left; widening it
+	pushes the modules to its right along, as mpxGuitar's fold-out does. */
 	void arrange(bool shown) {
-		static const char* LABELS[] = {"h.gain", "h.audio", "h.mix", "out.mixl.label",
-			"out.mixr.label", NULL};
+		if (shownX.empty()) {
+			for (const Item& item : layout.items)
+				shownX.push_back(item.x);
+		}
+		static const char* LABELS[] = {"h.audio", "h.audio2", NULL};
 		for (int i = 0; LABELS[i]; i++) {
 			Item* item = layout.find(LABELS[i]);
 			if (item)
 				item->hidden = !shown;
 		}
-		std::vector<std::string> controls = {"out.mixl", "out.mixr"};
-		for (int r = 0; r < ROWS; r++) {
-			controls.push_back(string::f("p.gain%d", r + 1));
+		std::vector<std::string> controls;
+		for (int r = 0; r < ROWS; r++)
 			controls.push_back(string::f("out.audio%d", r + 1));
-		}
 		for (const std::string& key : controls) {
 			Item* item = layout.find(key);
 			if (item && item->widget)
 				item->widget->visible = shown;
 		}
-		layoutRefreshPanel(panel, layout);
-		for (int c = 0; c < COLUMNS; c++) {
-			if (columns[c])
-				columns[c]->textX = shown ? mm2px(NAME6_SHIFT) : 0.f;
+#if CHART_ROWS == 6
+		const float width = PANEL_W, columnW = PANEL_W;
+#else
+		const float width = shown ? PANEL_W : NARROW_W;
+		const float columnW = shown ? COLUMN_W : NARROW_COLUMN_W;
+		// The second column: everything from its left edge on, below the transport.
+		for (size_t i = 0; i < layout.items.size(); i++) {
+			Item& item = layout.items[i];
+			if (shownX[i] < COLUMN_W - 0.01f || item.y < ROW_TOP - 10.f)
+				continue;
+			item.x = shownX[i] - (shown ? 0.f : COLUMN_W - NARROW_COLUMN_W);
+			if (item.widget && item.kind != Item::DISPLAY)
+				item.widget->box.pos.x = mm2px(item.x) - item.widget->box.size.x / 2.f;
 		}
+#endif
+		for (int c = 0; c < COLUMNS; c++) {
+			SongRows* rows = columns[c];
+			if (!rows)
+				continue;
+			rows->box.pos.x = mm2px(c * columnW + NAME_DX);
+			rows->box.size.x = mm2px(columnW - NAME_DX - 1.f);
+			rows->textX = shown ? mm2px(NAME_SHIFT) : 0.f;
+		}
+		static const char* TOP[] = {"d.title", "d.where", NULL};
+		static const float MARGIN[] = {6.f, 8.f};
+		for (int i = 0; TOP[i]; i++) {
+			Item* item = layout.find(TOP[i]);
+			if (!item)
+				continue;
+			item->w = width - MARGIN[i];
+			if (item->widget)
+				item->widget->box.size.x = mm2px(item->w);
+		}
+		box.size.x = mm2px(width);
+		if (panel)
+			panel->box.size.x = box.size.x;
+		layoutRefreshPanel(panel, layout);
+		if (shown && module && APP->scene && APP->scene->rack && parent)
+			APP->scene->rack->setModulePosForce(this, box.pos);
 	}
 #endif
 
@@ -1383,9 +1401,11 @@ struct SongWidget : ModuleWidget {
 	void step() override {
 		ModuleWidget::step();
 #if CHART_AUDIO
-		// In the module browser there is no module, and the audio is shown so it can be seen.
+		// In the module browser there is no module, and the panel is shown as it is added.
 		SongModule* sm = dynamic_cast<SongModule*>(module);
-		const bool shown = sm ? sm->showAudio.load() : true;
+		const bool shown = sm ? sm->showAudio.load() : false;
+		if (sm)
+			sm->updateBand();
 		if ((int) shown != audioShown) {
 			audioShown = shown;
 			arrange(shown);

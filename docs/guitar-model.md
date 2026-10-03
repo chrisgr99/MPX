@@ -8,7 +8,7 @@ Status: built. Help in help/mpxGuitar.json, from the //? lines beside each contr
 
 ## Purpose
 
-mpxGuitarVoice plays a part through an oscillator and a filter, which can be any sound but is never a string. This module models the strings themselves, so the things a guitarist does — picking at a point on the string, bending it, hammering on, muting it with the palm, touching a harmonic — act on the sound the way they do on an instrument, rather than being imitated by envelopes and a filter.
+mpxGuitarArticulation plays a part through an oscillator and a filter, which can be any sound but is never a string. This module models the strings themselves, so the things a guitarist does — picking at a point on the string, bending it, hammering on, muting it with the palm, touching a harmonic — act on the sound the way they do on an instrument, rather than being imitated by envelopes and a filter.
 
 ## The strings
 
@@ -58,7 +58,7 @@ The strings may also be coupled loosely at the bridge, so that unplayed strings 
 
 ## The performer
 
-The performer library, the same one mpxGuitarist, mpxGuitarVoice and the built-in band use, decides each note's string, start, length, level, bends and slides. A physical model needs some things the performer now only implies — that a note is a palm mute, rather than only that it is darker — so its messages gain those facts in phase 2.
+The performer library, the same one mpxGuitarist, mpxGuitarArticulation and the built-in band use, decides each note's string, start, length, level, bends and slides. A physical model needs some things the performer now only implies — that a note is a palm mute, rather than only that it is darker — so its messages gain those facts in phase 2.
 
 ## Controls
 
@@ -81,10 +81,11 @@ On small knobs, set once for a guitar:
 - **Finger noise**: how loud a finger sliding along a wound string is. The bottom is silent; the top half again as loud as at two thirds.
 - **Stiffness**: how sharp the strings' upper partials sit, from none to the eighth partial nine cents sharp, past any real string; a steel string's six cents at two thirds. Starts at 47%.
 
-In a second row, how the notes ring against one another:
+In a second row, how the notes ring against one another, and how exactly they are played:
 
 - **Taper**: how much shorter high notes ring than low ones. At the bottom every note rings as long as Sustain says; at a third of the way each octave above the open low E rings 0.66 as long as the octave below, where it starts; at the top 0.29.
 - **Fret damping**: how much a fretting finger shortens and dulls a note against the same string open. At the bottom alike; at a third of the way, where it starts, three quarters as long; at the top a quarter as long and much duller.
+- **Humanise**: how far the playing departs from exact, each note's timing, level and length varied a little. At the bottom exact; at a third of the way the performer's own amount, an ordinary player; at the top three times that, notes spread over about 18 ms, where two players on one part are heard as two. A note cannot sound before it arrives, so the performer holds every note back by half the timing range and places it anywhere either side of that, evenly: as many early as late against the guitar's own beat. The constant part is 3 ms at a third of the way and 9 ms at the top, the guitar standing a few metres further off. Each guitar starts its variation from a truly random seed, so two guitars never vary in lockstep.
 
 At the top, the MPX input on the left and on the right the three guitars, **Nylon**, **Steel** and **Electric**: one lamp group reading down, the panel library's radio control, each named on its left, the one playing lit. The setting's values follow that order, nylon nought, steel one, electric two; a patch saved under the earlier numbering is renumbered as it opens. Choosing the electric opens its fold-out; choosing either of the others closes it. The name of the instrument on the cable is below them. To come: an amplified option for the nylon and the steel-string, opening the same fold-out with its tone controls, as an acoustic-electric played through an amplifier is.
 

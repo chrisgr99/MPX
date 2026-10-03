@@ -2,7 +2,7 @@
 
 ITS SLUG IS THE OLD ONE, mpxGuitarChart, so patches made before there were two still open. */
 #define CHART_ROWS 12
-#define CHART_AUDIO 0
+#define CHART_AUDIO 1
 #define CHART_NS chart12
 #define CHART_SLUG "mpxGuitarChart"
 #define CHART_TITLE "mpxGuitarChart12"

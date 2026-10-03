@@ -48,6 +48,10 @@ real instrument does, so that turning one up makes plain what it does, and it ca
 back to taste. Each starts at the same realistic value as before, which now sits two thirds as far
 round the dial. */
 static const float EXAGGERATE = 1.5f;
+/** HUMANISE REACHES FURTHER: three times the performer's own amount at the top, notes up to about
+18 ms late, which is where two players on one part are heard as two. Half again, as the
+character knobs go, was nine — still one player. */
+static const float HUMANISE_TOP = 3.f;
 /** How long the strings ring, 0.5 s to 20 s across the knob. */
 static const float SUSTAIN_MIN = 0.5f, SUSTAIN_RATIO = 40.f;
 
@@ -89,6 +93,7 @@ struct GuitarModule : Module, NoteSink {
 		// APPENDED, NEVER INSERTED: a patch stores a parameter by its position in this list.
 		P_TAPER,
 		P_FRET_DAMPING,
+		P_HUMANISE,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -192,6 +197,12 @@ struct GuitarModule : Module, NoteSink {
 		//? open. At the bottom fretted and open notes ring alike; at a third of the way a fretted
 		//? note rings three quarters as long; at the top a quarter as long and much duller, and
 		//? the open strings stand out.
+		configParam(P_HUMANISE, 0.f, 1.f, 1.f / HUMANISE_TOP, "Humanise", "%", 0.f, 100.f);
+		//? How far the playing departs from exact: each note's timing, level and length varied
+		//? a little, differently on every guitar, so two playing together are two players. At
+		//? the bottom, exact; a third of the way, an ordinary player; at the top three times
+		//? that, notes spread over about 18 ms, as many early as late around a delay of half
+		//? that.
 		configParam(P_BASS, -18.f, 18.f, 3.f, "Bass", " dB");
 		//? The electric amplifier's low shelf, below about 100 Hz, from -18 dB to +18 dB.
 		configParam(P_MIDDLE, -18.f, 18.f, -6.f, "Middle", " dB");
@@ -215,7 +226,10 @@ struct GuitarModule : Module, NoteSink {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);
 		}
-		performer.seed(1u);
+		// A SEED OF ITS OWN, truly random: two guitars with the same one made the same small
+		// departures from exact at the same moments and played in lockstep however much they
+		// were humanised.
+		performer.seed(random::u32() | 1u);
 		readRules();
 	}
 
@@ -334,7 +348,7 @@ struct GuitarModule : Module, NoteSink {
 		}
 
 		// HUMANISE AT ITS OWN AMOUNT, as the built-in band has it.
-		performer.humanise(1.f);
+		performer.humanise(HUMANISE_TOP * params[P_HUMANISE].getValue());
 
 		// THE PANEL, applied as each string is next struck: a knob turned does not change a
 		// string that is already ringing, as it would not on an instrument.
@@ -568,8 +582,9 @@ static Layout guitarLayout() {
 	small("p.finger", GuitarModule::P_FINGER, SMALL2, 84.f, "FINGER NOISE");
 	small("p.stiffness", GuitarModule::P_STIFFNESS, SMALL3, 84.f, "STIFFNESS");
 	// How the notes ring against one another: high against low, fretted against open.
-	small("p.taper", GuitarModule::P_TAPER, MAIN_W / 3.f, 97.f, "TAPER");
-	small("p.fretdamping", GuitarModule::P_FRET_DAMPING, MAIN_W * 2.f / 3.f, 97.f, "FRET DAMPING");
+	small("p.taper", GuitarModule::P_TAPER, SMALL1, 97.f, "TAPER");
+	small("p.fretdamping", GuitarModule::P_FRET_DAMPING, SMALL2, 97.f, "FRET DAMPING");
+	small("p.humanise", GuitarModule::P_HUMANISE, SMALL3, 97.f, "HUMANISE");
 
 	jack("out.l", Item::PORT_OUT, 15.f, 113.f, GuitarModule::O_L, "L", SIG_AUDIO);
 	jack("out.r", Item::PORT_OUT, MAIN_W - 15.f, 113.f, GuitarModule::O_R, "R", SIG_AUDIO);
