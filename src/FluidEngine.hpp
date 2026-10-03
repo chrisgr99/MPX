@@ -8,7 +8,7 @@ looked at, rather than patched and listened to hopefully.
 WHY FLUIDSYNTH. It is the synthesiser the Ultimate Guitar player uses, and the realism of that
 player is not in it — it is in what is sent to it. FluidSynth knows note-on, note-off, pitch bend,
 control changes and programs, and nothing about a hammer-on or a palm mute. Every articulation is
-therefore translated before it arrives here. See docs/guitar-player-spec.md.
+therefore translated before it arrives here. See docs/guitar-player.md.
 
 ONE SYNTH, ONE BANK, MANY CHANNELS. A bank is thirty megabytes, so one is loaded and shared by
 every part: each part gets a block of channels, and one channel per string of a fretted part, so a

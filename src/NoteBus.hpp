@@ -107,7 +107,7 @@ struct Event {
 	renderer decides what that means in pitch, level and length. Both statements are needed and
 	they belong in different modules: a source that sent a finished bend curve would leave nothing
 	for a renderer to vary, and a renderer asked to guess whether a note was picked or hammered
-	would be guessing. See docs/guitar-player-spec.md.
+	would be guessing. See docs/guitar-player.md.
 
 	AT THE NOTE'S START, AND NOT LATER. Every one of these is decided when the note is struck and
 	none of them changes while it sounds, so they are fields rather than messages — and a renderer

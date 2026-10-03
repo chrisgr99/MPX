@@ -1,4 +1,4 @@
-/** mpxFluidSynth — a SoundFont band, played from MPX cables. See docs/guitar-player-spec.md.
+/** mpxFluidSynth — a SoundFont band, played from MPX cables. See docs/guitar-player.md.
 
 ONE SYNTH, ONE BANK, SIX PARTS. A General MIDI bank is thirty megabytes, so it is loaded once and
 shared: each input is one instrument with its own sound out of the bank, and each gets a block of

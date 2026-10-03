@@ -90,7 +90,7 @@ The instrument itself travels as state beside the harmony: the program, the tuni
 
 ## Playing it like a guitarist
 
-How an imported part is performed — per-string channels, bend curves, legato, strum spread, palm mute, humanisation, and a generative guitarist steered by style profiles taken from real transcriptions — is specified in [guitar-player-spec.md](guitar-player-spec.md), to be built after this module.
+How an imported part is performed — per-string channels, bend curves, legato, strum spread, palm mute, humanisation, and a generative guitarist steered by style profiles taken from real transcriptions — is specified in [guitar-player.md](guitar-player.md), to be built after this module.
 
 ## Variations come afterwards
 
