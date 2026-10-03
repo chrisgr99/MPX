@@ -5,7 +5,7 @@ NO RACK IN HERE, and no synthesiser either. Notes and their articulations go in;
 a handful of voices whose pitch, level, gate and brightness move over time, and a queue of the
 moments those things changed. Two modules read that — one puts it on control voltage, the other
 sends it to FluidSynth — and because they read the same thing they cannot disagree about what a
-hammer-on is. See docs/guitar-player-spec.md.
+hammer-on is. See docs/guitar-player.md.
 
 A VOICE IS A STRING. That is the whole reason this is not a note-per-voice allocator: a bend moves
 one string and leaves its neighbours alone, a string is monophonic because a real one is, and let

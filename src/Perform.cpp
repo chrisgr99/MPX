@@ -376,7 +376,15 @@ void Performer::note(const PerformNote& n) {
 			: ((n.strum > 0) ? rules.strumDownMs : rules.strumUpMs);
 		delay = stroke / 1000.f * (float) n.strumIndex;
 	}
-	delay += rules.timingMs / 1000.f * human * noise();
+	// EARLY AS WELL AS LATE, AROUND A SMALL CONSTANT DELAY. A note cannot sound before it
+	// arrives, so every note is held back by half the timing range and placed anywhere either
+	// side of that: from on time to the whole range late, evenly. Heard against the guitar's own
+	// beat, as many notes come early as late. The constant part is half the range — three
+	// milliseconds at the rules' own amount, nine at three times it — which is the guitar
+	// standing a few metres further off, not a delay anyone hears. The offset was taken either
+	// side of nought before, and the negative half clipped to nought: half of all notes landed
+	// exactly on time and the rest only late.
+	delay += rules.timingMs / 1000.f * human * 0.5f * (1.f + noise());
 	if (delay < 0.f)
 		delay = 0.f;
 
