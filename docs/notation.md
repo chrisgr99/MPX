@@ -58,6 +58,26 @@ The container also carries Ubuntu's own GCC 11.4, which is NOT what builds Linux
 
 Each step is useful on its own and none is wasted by the next.
 
+## The phases
+
+Each ends with something to look at or hear, and the work stops there to be judged. The days are working days and rough.
+
+**0. The dependencies build themselves.** A `make dep` target that fetches and builds FluidSynth, and then Verovio, so a clean checkout works and the CI stops failing. Half a day. Nothing to see; everything after it needs it.
+
+**1. A page on the screen.** Verovio linked in, enough of a NanoVG backend to draw what a page actually holds, and a window showing page one of a real score. Two or three days. This answers the question behind the whole project — whether the notation reads at the size it has to be read at — and answers it before anything else is built on top.
+
+**2. The backend finished.** The rest of the drawing calls: beams, slurs, ties, hairpins, rotated text, at several scales. Two or three days. Properly engraved rather than mostly.
+
+**3. The window as something to use.** Paging, a scale control, and the box each bar occupies recorded as it is drawn. Two days. Still fed MusicXML, so nothing follows yet, but a score can be moved around and sized.
+
+**4. Guitar Pro on the page.** The converter from the song model into MusicXML: durations, tuplets, ties, voices, metre and key changes, repeats, endings, jumps, and the articulations in their notation forms. Four or five days, and the place where things will be missing rather than wrong.
+
+**5. Following and navigating.** The cursor from our own timeline, pages turning with the playing, clicking a bar to move there, dragging a loop, clicking a section to loop it, the tinted band across systems and pages. Three days.
+
+**6. Shipping it.** Windows and Linux, the glyph resources packaged, size checked, help written. Two days.
+
+The two likeliest to run over are four and two: articulations are a long tail, and engraving has a great many small drawing cases.
+
 ## What submitting it would still need
 
 The compiler question was the one that could have ended this. It is not the only one.
