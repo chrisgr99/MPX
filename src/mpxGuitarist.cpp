@@ -19,7 +19,7 @@ There is no separate bend output to add back in.
 HOW IT SOUNDS IS IN A FILE. Every number — how long a palm mute lasts, how deep a wide vibrato
 is, how fast the hand crosses the strings — is in DreamerMPX/perform.txt, which is written with
 the defaults the first time the module is used and reloaded from the menu. See Perform.hpp and
-docs/guitar-player-spec.md.
+docs/guitar-player.md.
 */
 #include "plugin.hpp"
 #include "Layout.hpp"
@@ -201,7 +201,8 @@ struct GuitaristModule : Module, NoteSink {
 		}
 
 		performer.humanise(params[P_HUMANISE].getValue());
-		performer.seed(1u);
+		// A seed of its own, truly random, so two of these never humanise in lockstep.
+		performer.seed(random::u32() | 1u);
 
 		Event e;
 		while (reader.next(e)) {
