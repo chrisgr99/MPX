@@ -62,7 +62,7 @@ Each step is useful on its own and none is wasted by the next.
 
 Each ends with something to look at or hear, and the work stops there to be judged. The days are working days and rough.
 
-**1. The dependencies build themselves.** A `make dep` target that fetches and builds FluidSynth, and then Verovio, so a clean checkout works and the CI stops failing. Half a day. Nothing to see; everything after it needs it.
+**1. The dependencies build themselves.** DONE. `make dep` fetches and builds FluidSynth and Verovio into `dep`, in Rack's own idiom, so a clean checkout works — the library's build machine runs `make cleandep`, `make dep` and `make dist`, and hands us its cross compilers. Two things came out of it: debug information had to be turned off for both, since Verovio's archive was 492 megabytes with it and 17 without; and Verovio reads its glyphs with std::filesystem, which Apple marks unavailable before macOS 10.15, so the Mac floor for the whole plugin rises from 10.9 to 10.15.
 
 **2. A page on the screen.** Verovio linked in, enough of a NanoVG backend to draw what a page actually holds, and a window showing page one of a real score. Two or three days. This answers the question behind the whole project — whether the notation reads at the size it has to be read at — and answers it before anything else is built on top.
 

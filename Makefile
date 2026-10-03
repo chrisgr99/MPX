@@ -44,23 +44,27 @@ ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
 	LDFLAGS += -framework Cocoa
 endif
 
-# FLUIDSYNTH, built into dep by tools/build-fluidsynth.sh and linked statically: the SoundFont
-# player inside mpxFluidSynth. Built without audio drivers, MIDI drivers, libsndfile, LADSPA, readline,
-# networking or threads of its own, and without GLib, which it stopped needing in 2.6.
+# ---- WHAT THE PLUGIN IS BUILT ON TOP OF -------------------------------------------------------
 #
-# TESTED WITH TARGET_MACHINE AND NOT ARCH_MAC, because arch.mk has not been included yet — which
-# is the same reason the test above it is written that way. A framework missed here still works,
-# since the host has already loaded it and the undefined symbol is looked up at load; a static
-# library missed here does not, and the module crashes the first time it is created.
+# Two libraries, neither of them in this repository: FluidSynth plays a SoundFont, and Verovio
+# engraves a score. They are built into dep/ by the rules at the foot of this file, which is the
+# arrangement Rack's own dep.mk is for — the library's build machine runs `make cleandep`,
+# `make dep` and `make dist` in that order, in a container whose cross compilers it hands us.
+#
+# So a clean checkout builds, here and there, and neither library is carried in the repository.
+DEPS += $(DEP_PATH)/lib/libfluidsynth.a
+DEPS += $(DEP_PATH)/lib/libverovio.a
+
 FLAGS += -I dep/include
+LDFLAGS += $(DEP_PATH)/lib/libverovio.a $(DEP_PATH)/lib/libfluidsynth.a
+
+# A framework each library wants, named explicitly on the Mac. Tested with TARGET_MACHINE and not
+# ARCH_MAC, because arch.mk has not been included yet — the same reason as the test above.
 ifneq (,$(findstring -darwin,$(TARGET_MACHINE)))
-	LDFLAGS += dep/lib/libfluidsynth.a -framework CoreFoundation
-endif
-ifneq (,$(findstring -linux,$(TARGET_MACHINE)))
-	LDFLAGS += dep/lib/libfluidsynth.a
+	LDFLAGS += -framework CoreFoundation
 endif
 ifneq (,$(findstring -mingw,$(TARGET_MACHINE)))
-	LDFLAGS += dep/lib/libfluidsynth.a -lws2_32 -lole32
+	LDFLAGS += -lws2_32 -lole32
 endif
 
 include $(RACK_DIR)/plugin.mk
@@ -236,6 +240,94 @@ soundtest:
 	@c++ -std=c++11 -O1 -Wall -I dep/include test/soundtest.cpp src/FluidEngine.cpp \
 		dep/lib/libfluidsynth.a -framework CoreFoundation -o build/soundtest
 	@./build/soundtest $(ARGS)
+
+
+# ---- building those two ------------------------------------------------------------------------
+#
+# PINNED, BOTH OF THEM. A synthesiser or an engraver changing under a plugin is a patch that
+# sounds or looks different for no reason anybody can see.
+FLUIDSYNTH_VERSION := v2.6.1
+VEROVIO_VERSION := version-6.3.0
+
+# WITHOUT ANYTHING A MODULE INSIDE A HOST HAS NO BUSINESS OWNING: audio drivers, MIDI drivers,
+# sound files, LADSPA, readline, networking, threads of its own. What is left is the synthesis.
+# Without GLib too, which it stopped needing in 2.6 — before that it would have been the hardest
+# part of this to carry to Windows.
+$(DEP_PATH)/lib/libfluidsynth.a:
+	cd $(DEP_PATH) && test -d fluidsynth-src || git clone --depth 1 \
+		--branch $(FLUIDSYNTH_VERSION) https://github.com/FluidSynth/fluidsynth.git fluidsynth-src
+	$(CMAKE) -S $(DEP_PATH)/fluidsynth-src -B $(DEP_PATH)/build-fluidsynth \
+		-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=off \
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+		-Denable-alsa=off -Denable-aufile=off -Denable-dbus=off -Denable-jack=off \
+		-Denable-ladspa=off -Denable-libsndfile=off -Denable-midishare=off -Denable-network=off \
+		-Denable-oss=off -Denable-pulseaudio=off -Denable-pipewire=off -Denable-readline=off \
+		-Denable-sdl3=off -Denable-coreaudio=off -Denable-coremidi=off -Denable-framework=off \
+		-Denable-dsound=off -Denable-wasapi=off -Denable-waveout=off -Denable-winmidi=off \
+		-Denable-openmp=off -Denable-native-dls=off -Denable-signalsmith=off \
+		-Denable-threads=off -Denable-ipv6=off
+	cmake --build $(DEP_PATH)/build-fluidsynth -j 8
+	cmake --install $(DEP_PATH)/build-fluidsynth
+
+# VEROVIO READS EIGHT NOTATION FORMATS AND WE WANT ONE. Humdrum, ABC, Plaine and Easie, GABC and
+# DARMS all go, which is most of the size. Editor support cannot: a file that is still compiled
+# refers to a class the option removes, and the build fails without it.
+#
+# ONE WORD IS PATCHED. Verovio's CMake builds a SHARED library when asked for a library at all,
+# and a plugin cannot carry a dynamic library of its own — Rack loads it from a folder the host
+# owns, and nothing there is on any library path. Changed here rather than in a fork, so the
+# source stays exactly what the tag says.
+# NO DEBUG INFORMATION IN EITHER OF THEM. Rack's dependency flags carry -g, which is right for
+# the plugin's own code and absurd for these: Verovio's archive came out at 492 megabytes with it
+# and 17 without, and nobody is going to step through an engraver in a debugger.
+DEP_NO_G := $(filter-out -g,$(DEP_CXXFLAGS))
+DEP_NO_G_LD := $(filter-out -g,$(DEP_LDFLAGS))
+
+# AND VEROVIO NEEDS A NEWER MAC THAN THE REST OF THE PLUGIN. It reads its glyphs with
+# std::filesystem, which Apple's library marks unavailable before macOS 10.15, while Rack's
+# dependency rules build everything for 10.9. So this one library is built for 10.15 — which
+# makes 10.15 the floor for the whole plugin, since a plugin that will not load is no use to
+# anybody on 10.13. Catalina is from 2019.
+VEROVIO_CXXFLAGS := $(DEP_NO_G)
+VEROVIO_LDFLAGS := $(DEP_NO_G_LD)
+ifdef ARCH_MAC
+VEROVIO_CXXFLAGS := $(subst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(VEROVIO_CXXFLAGS))
+VEROVIO_LDFLAGS := $(subst -mmacosx-version-min=10.9,-mmacosx-version-min=10.15,$(VEROVIO_LDFLAGS))
+VEROVIO_CMAKE := -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+endif
+
+$(DEP_PATH)/lib/libfluidsynth.a: export CXXFLAGS := $(DEP_NO_G)
+$(DEP_PATH)/lib/libfluidsynth.a: export CFLAGS := $(filter-out -g,$(DEP_CFLAGS))
+$(DEP_PATH)/lib/libverovio.a: export CXXFLAGS := $(VEROVIO_CXXFLAGS)
+$(DEP_PATH)/lib/libverovio.a: export CFLAGS := $(filter-out -g,$(DEP_CFLAGS))
+$(DEP_PATH)/lib/libverovio.a: export LDFLAGS := $(VEROVIO_LDFLAGS)
+
+$(DEP_PATH)/lib/libverovio.a:
+	cd $(DEP_PATH) && test -d verovio-src || git clone --depth 1 \
+		--branch $(VEROVIO_VERSION) https://github.com/rism-digital/verovio.git verovio-src
+	$(SED) 's/add_library(verovio SHARED/add_library(verovio STATIC/' \
+		$(DEP_PATH)/verovio-src/cmake/CMakeLists.txt
+	$(CMAKE) $(VEROVIO_CMAKE) -S $(DEP_PATH)/verovio-src/cmake -B $(DEP_PATH)/build-verovio \
+		-DCMAKE_BUILD_TYPE=Release -DBUILD_AS_LIBRARY=ON \
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+		-DNO_HUMDRUM_SUPPORT=ON -DNO_ABC_SUPPORT=ON -DNO_PAE_SUPPORT=ON \
+		-DNO_GABC_SUPPORT=ON -DNO_DARMS_SUPPORT=ON
+	cmake --build $(DEP_PATH)/build-verovio -j 8
+	mkdir -p $(DEP_PATH)/lib $(DEP_PATH)/include/verovio
+	cp $(DEP_PATH)/build-verovio/libverovio.a $(DEP_PATH)/lib/
+	cp -R $(DEP_PATH)/verovio-src/include/* $(DEP_PATH)/include/verovio/
+	cp -R $(DEP_PATH)/verovio-src/libmei/dist/* $(DEP_PATH)/include/verovio/
+	cp -R $(DEP_PATH)/verovio-src/libmei/addons/* $(DEP_PATH)/include/verovio/
+	# THE GLYPHS ARE READ AT RUN TIME, so they ship rather than compile in. Bravura is needed
+	# whichever font is drawn, because bounding boxes are measured against it; Leipzig is what is
+	# drawn; the text metrics are for lettering. Nothing else of the eleven megabytes is used.
+	rm -rf res/verovio
+	mkdir -p res/verovio
+	cp -R $(DEP_PATH)/verovio-src/data/Bravura res/verovio/
+	cp -R $(DEP_PATH)/verovio-src/data/Leipzig res/verovio/
+	cp -R $(DEP_PATH)/verovio-src/data/text res/verovio/
+	cp $(DEP_PATH)/verovio-src/data/Bravura.xml res/verovio/
+	cp $(DEP_PATH)/verovio-src/data/Leipzig.xml res/verovio/
 
 
 .PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender

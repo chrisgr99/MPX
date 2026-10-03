@@ -10,3 +10,4 @@ docs/*.html
 .DS_Store
 dep/
 build/irealtest
+res/verovio/
