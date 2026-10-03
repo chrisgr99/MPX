@@ -48,6 +48,16 @@ Asked, rather than assumed. The container that cross-compiles Windows and Linux 
 
 The container also carries Ubuntu's own GCC 11.4, which is NOT what builds Linux plugins. A probe that finds that one first proves nothing, which is how the first attempt at this went.
 
+## The order the work goes in
+
+**The display is built first, and fed properly engraved MusicXML.** Not a MuseScore module — just the window, the backend and the paging, with real scores converted by MuseScore's own command-line converter, which costs nothing and needs no interface. The reason is testing: when a page looks wrong, the input is known good, so the fault is in the renderer. Fed our own converter's output first, every fault would have two possible homes and the time would go on deciding which.
+
+**Then the Guitar Pro converter**, from the song model into MusicXML, onto a display already trusted.
+
+**Then, if it is still wanted, a module that plays a MusicXML score.** By that point it is the smallest of the three: a reader and a panel, with everything else built.
+
+Each step is useful on its own and none is wasted by the next.
+
 ## What submitting it would still need
 
 The compiler question was the one that could have ended this. It is not the only one.
