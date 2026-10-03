@@ -549,8 +549,10 @@ struct ChartModule : Module, NoteSource {
 		L.phrases = chartPhrases(L.chartBars, L.playing);
 	}
 
-	/** Main thread. Parses the chunk into the copy that is not being read, then moves over. */
-	void setSong(const std::string& newChunk, const std::string& fromPlaylist) {
+	/** Main thread. Parses the chunk into the copy that is not being read, then moves over.
+	`play`: whether to start playing, which a song chosen does and a song restored with a patch
+	does not — that keeps whatever Play the patch was saved with. */
+	void setSong(const std::string& newChunk, const std::string& fromPlaylist, bool play = true) {
 		const int spare = 1 - live.load();
 		loaded[spare].song = irealParseSong(newChunk);
 		loaded[spare].expansion = irealExpand(loaded[spare].song);
@@ -570,7 +572,14 @@ struct ChartModule : Module, NoteSource {
 		// otherwise carry on from wherever the beat count happened to be, in the middle of a
 		// piece nobody has looked at yet, so the rewind is not optional. What is optional is
 		// stopping, and stopping was wrong: you chose the song because you want to hear it.
-		rewindAndPlay();
+		//
+		// BUT A PATCH OPENING IS NOT A CHOICE. Rack restores Play before it hands back the song,
+		// and starting here overrode it: a chart saved stopped came back playing every time Rack
+		// was started. Restored, the song goes to the top and Play is left as it was saved.
+		if (play)
+			rewindAndPlay();
+		else
+			rewind();
 	}
 
 	const Loaded& current() {
@@ -629,7 +638,7 @@ struct ChartModule : Module, NoteSource {
 		json_t* playlistJ = json_object_get(rootJ, "playlist");
 		if (json_is_string(chunkJ) && json_string_value(chunkJ)[0] != '\0') {
 			setSong(json_string_value(chunkJ),
-				json_is_string(playlistJ) ? json_string_value(playlistJ) : "");
+				json_is_string(playlistJ) ? json_string_value(playlistJ) : "", false);
 			// After the song, since the sections come from it. A letter this chart does not
 			// have leaves the whole chart playing rather than nothing.
 			json_t* sectionJ = json_object_get(rootJ, "section");
