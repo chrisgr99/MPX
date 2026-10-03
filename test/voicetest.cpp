@@ -1,4 +1,4 @@
-/** mpxGuitarVoice's envelopes and mix, from a command line.
+/** mpxGuitarArticulation's envelopes and mix, from a command line.
 
 WHY THERE IS A PROGRAM FOR THIS. An envelope that is a little too slow or never quite finishes is
 heard as a vague wrongness and nothing more; measured, it is a number that is not the one asked

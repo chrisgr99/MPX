@@ -162,8 +162,8 @@
       ]
     },
     {
-      "slug": "mpxGuitarVoice",
-      "name": "mpxGuitarVoice",
+      "slug": "mpxGuitarArticulation",
+      "name": "mpxGuitarArticulation",
       "description": "Plays one MPX part through any polyphonic oscillator: a pitch output with the bends in it, the oscillator's audio coming back through each string's own envelope and level, panned and mixed to stereo.",
       "tags": [
         "Polyphonic",

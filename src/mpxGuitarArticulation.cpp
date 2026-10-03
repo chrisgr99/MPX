@@ -1,5 +1,5 @@
-/** mpxGuitarVoice — an articulated MPX part played through any oscillator. See
-docs/guitar-voice.md.
+/** mpxGuitarArticulation — an articulated MPX part played through any oscillator. See
+docs/guitar-articulation.md.
 
 THE PERFORMANCE IS HERE AND THE SOUND IS NOT. The pitch output, one channel per string, goes to an
 oscillator of the user's choosing, and the oscillator's audio comes back into the return input.
@@ -164,7 +164,8 @@ struct GuitarVoiceModule : Module, NoteSink {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);
 		}
-		performer.seed(1u);
+		// A seed of its own, truly random, so two of these never humanise in lockstep.
+		performer.seed(random::u32() | 1u);
 		readRules();
 	}
 
@@ -407,7 +408,7 @@ struct GuitarVoiceDisplay : widget::Widget {
 static Layout guitarVoiceLayout() {
 	Layout L;
 	L.hp = PANEL_W / 5.08f;
-	L.title = "mpxGuitarVoice";
+	L.title = "mpxGuitarArticulation";
 
 	auto label = [&](const char* key, float x, float y, const char* text, bool heading,
 			const char* owner) {
@@ -504,7 +505,7 @@ struct GuitarVoiceWidget : ModuleWidget {
 	GuitarVoiceWidget(GuitarVoiceModule* module) {
 		setModule(module);
 		layout = guitarVoiceLayout();
-		layoutApplyUser("mpxGuitarVoice", layout);
+		layoutApplyUser("mpxGuitarArticulation", layout);
 		panel = new Panel;
 		addChild(panel);
 		GuitarVoiceDisplay* what = new GuitarVoiceDisplay;
@@ -514,7 +515,7 @@ struct GuitarVoiceWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
-		layoutAppendMenu(menu, this, panel, &layout, "mpxGuitarVoice");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxGuitarArticulation");
 		GuitarVoiceModule* m = dynamic_cast<GuitarVoiceModule*>(module);
 		if (!m)
 			return;
@@ -560,5 +561,5 @@ struct GuitarVoiceWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelMpxGuitarVoice =
-	createModel<px::GuitarVoiceModule, px::GuitarVoiceWidget>("mpxGuitarVoice");
+Model* modelMpxGuitarArticulation =
+	createModel<px::GuitarVoiceModule, px::GuitarVoiceWidget>("mpxGuitarArticulation");

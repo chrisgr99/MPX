@@ -226,7 +226,7 @@ pickrender:
 		src/Perform.cpp src/GuitarModel.cpp src/GuitarString.cpp -o build/pickrender
 	@./build/pickrender
 
-# mpxGuitarVoice's envelopes and mix. No Rack in them.
+# mpxGuitarArticulation's envelopes and mix. No Rack in them.
 voicetest:
 	@c++ -std=c++11 -O1 -Wall test/voicetest.cpp src/GuitarVoice.cpp -o build/voicetest
 	@./build/voicetest

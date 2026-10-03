@@ -1,6 +1,6 @@
 {
   "plugin": "DreamerMPX",
-  "module": "mpxGuitarVoice",
+  "module": "mpxGuitarArticulation",
   "description": "Plays one MPX part through an oscillator: a polyphonic pitch output, a channel per string, for the oscillator, and its audio returned through a filter and an amplitude envelope on each string, panned and mixed to stereo.",
   "params": [
     {"ids": [0], "name": "Attack", "text": "How long a struck string takes to reach its level, from 1 ms, a hard pick, to 1 s, a swell."},

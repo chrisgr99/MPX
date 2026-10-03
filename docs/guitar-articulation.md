@@ -1,8 +1,8 @@
-# Guitar voice
+# Guitar articulation
 
 A module that plays one MPX track, usually a Guitar Chart row, through an oscillator of the user's choosing, with the whole performance applied: bends, vibrato, slides, envelopes, dynamics, articulations, filtering and stereo placement. The user supplies only the sound source.
 
-Name: mpxGuitarVoice.
+Name: mpxGuitarArticulation.
 
 Status: phases 1 to 3 built; phase 4 to do.
 

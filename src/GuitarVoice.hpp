@@ -1,5 +1,6 @@
 #pragma once
-/** What mpxGuitarVoice does to the sound an oscillator sends back. See docs/guitar-voice.md.
+/** What mpxGuitarArticulation does to the sound an oscillator sends back. See
+docs/guitar-articulation.md.
 
 NO RACK IN HERE, for the reason the performer has none: it builds into a command-line program as
 well as into the plugin, so an envelope can be measured rather than listened to hopefully.
