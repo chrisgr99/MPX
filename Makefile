@@ -215,6 +215,40 @@ scoretest:
 		dep/lib/libverovio.a -L$(RACK_DIR) -lRack
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/scoretest $(ARGS)
 
+# GUITAR PRO WRITTEN OUT AS MUSICXML, and whether the bars add up. No Rack and no Verovio: the
+# converter is plain C++ over the song model. See test/gpxmltest.cpp.
+#   make gpxmltest ARGS="$(HOME)/Downloads/*.gp5"
+#   make gpxmltest ARGS="-o /tmp/one.musicxml -t 0 a-file.gp4"
+gpxmltest:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -Wextra -Wno-unused-parameter \
+		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
+	@./build/gpxmltest $(ARGS)
+
+# WHAT A FILE SAYS ABOUT TECHNIQUE: palm mutes, let ring, strums and dead notes, per track and
+# per string. For answering "is it not playing this, or is it not in the file".
+#   make pmcheck ARGS="a-file.gp4"
+pmcheck:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall test/pmcheck.cpp src/GuitarPro.cpp -o build/pmcheck
+	@./build/pmcheck $(ARGS)
+
+# HOW OFTEN A TRANSCRIBER MARKS A STRUM AT ALL, across every file given. The answer is three
+# chords in a thousand, which is why an unmarked chord is strummed anyway — see GpTimeline.cpp.
+#   make brushscan ARGS="$(HOME)/Downloads/*.gp*"
+brushscan:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall test/brushscan.cpp src/GuitarPro.cpp -o build/brushscan
+	@./build/brushscan $(ARGS)
+
+# WHICH WAY THE HAND GOES, bar by bar: how many notes fall in down-strokes and how many in ups.
+#   make strumcheck ARGS="a-file.gp5 0"
+strumcheck:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall test/strumcheck.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		-o build/strumcheck
+	@./build/strumcheck $(ARGS)
+
 # A PAGE OF A SCORE AS AN IMAGE, drawn by the real renderer into a hidden window. The only way to
 # see what the score window will look like without the score window. See test/scorerender.cpp.
 #   make scorerender ARGS="a-file.musicxml"

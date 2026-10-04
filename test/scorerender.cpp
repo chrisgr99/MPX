@@ -39,7 +39,11 @@ rack::plugin::Plugin* pluginInstance = NULL;
 
 
 /** One page, drawn. The pixels are the caller's business; this is the transform the window uses. */
+static int gLettering = -1;
+
 static void drawPage(NVGcontext* vg, px::Score& score, int page, int width, int height) {
+	if (px::ScoreDraw* back = const_cast<px::ScoreDraw*>(score.backend()))
+		back->fallbackFont = gLettering;
 	nvgBeginFrame(vg, (float) width, (float) height, 1.f);
 	const float unit = score.pageScale((float) width);
 	nvgSave(vg);
@@ -47,6 +51,53 @@ static void drawPage(NVGcontext* vg, px::Score& score, int page, int width, int 
 	score.draw(vg, page, unit);
 	nvgRestore(vg);
 	nvgEndFrame(vg);
+}
+
+
+/** EVERY INSTRUMENT OF EVERY SCORE, SWITCHED TO AND DRAWN.
+
+Showing one part means handing Verovio a score cut down to that part, and a cut that leaves
+behind a part list referring to parts that are gone, or a bracket around nothing, gives a
+document that will not load — or worse, one that loads and is missing something. So each part is
+selected in turn and its first page drawn, and the page count is reported: a part that fails to
+load, or lays out to nothing, shows up here.  */
+static int sweepParts(NVGcontext* vg, int from, int argc, char** argv, int width, int height) {
+	int failures = 0;
+	std::printf("\n%-34s %5s  %-38s %6s %7s\n", "score", "part", "instrument", "pages", "glyphs");
+	for (int a = from; a < argc; a++) {
+		px::Score score;
+		std::string why;
+		if (!score.loadFile(argv[a], &why)) {
+			std::printf("%-34s  COULD NOT BE READ: %s\n", argv[a], why.c_str());
+			failures++;
+			continue;
+		}
+		std::string shown = score.title();
+		if (shown.size() > 33)
+			shown = shown.substr(0, 33);
+		const int count = (int) score.parts().size();
+		for (int p = 0; p < count; p++) {
+			if (!score.setPart(p, &why)) {
+				std::printf("%-34s %5d  FAILED: %s\n", (p == 0) ? shown.c_str() : "", p + 1,
+					why.c_str());
+				failures++;
+				continue;
+			}
+			glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+			drawPage(vg, score, 1, width, height);
+			const px::ScoreDraw* back = score.backend();
+			const long glyphs = back ? back->tally.glyphs : 0;
+			std::string who = score.parts()[p].name;
+			if (who.size() > 37)
+				who = who.substr(0, 37);
+			std::printf("%-34s %5d  %-38s %6d %7ld%s\n",
+				(p == 0) ? shown.c_str() : "", p + 1, who.c_str(), score.pageCount(), glyphs,
+				(score.pageCount() < 1 || glyphs < 1) ? "   NOTHING DRAWN" : "");
+			if (score.pageCount() < 1 || glyphs < 1)
+				failures++;
+		}
+	}
+	return failures;
 }
 
 
@@ -165,9 +216,11 @@ int main(int argc, char** argv) {
 	if (argc < 2) {
 		std::printf("usage: scorerender <file.musicxml> [page] [width] [height] [units]\n");
 		std::printf("       scorerender sweep <file.musicxml>...\n");
+		std::printf("       scorerender parts <file.musicxml>...\n");
 		return 1;
 	}
-	const bool sweeping = (std::string(argv[1]) == "sweep");
+	const bool sweeping = (std::string(argv[1]) == "sweep"
+		|| std::string(argv[1]) == "parts");
 	const char* file = argv[1];
 	const int page = (!sweeping && argc > 2) ? std::atoi(argv[2]) : 1;
 	const int width = (!sweeping && argc > 3) ? std::atoi(argv[3]) : 1200;
@@ -204,9 +257,24 @@ int main(int argc, char** argv) {
 		std::printf("no NanoVG context\n");
 		return 1;
 	}
+	// A FONT FOR THE LETTERING. Inside Rack this comes from Rack; here it has to be found, or a
+	// page of tablature draws with every fret number missing — which is most of the page.
+	const int lettering = nvgCreateFont(vg, "text", "/System/Library/Fonts/Supplemental/Arial.ttf");
+	if (lettering < 0)
+		std::printf("no text font found: the lettering will not be drawn\n");
+	gLettering = lettering;
+
 	glViewport(0, 0, width, height);
 	glClearColor(0x1c / 255.f, 0x1e / 255.f, 0x22 / 255.f, 1.f);
 
+	if (std::string(argv[1]) == "parts") {
+		const int bad = sweepParts(vg, 2, argc, argv, width, height);
+		std::printf("\n%s\n", bad ? "SOMETHING WAS NOT DRAWN — see above"
+			: "every instrument of every score drew");
+		glfwDestroyWindow(win);
+		glfwTerminate();
+		return bad ? 1 : 0;
+	}
 	if (sweeping) {
 		const int bad = sweep(vg, 2, argc, argv, width, height);
 		std::printf("\n%s\n", bad ? "SOMETHING WAS NOT DRAWN — see the counts above"
@@ -243,6 +311,12 @@ int main(int argc, char** argv) {
 	}
 	else {
 		drawPage(vg, score, page, width, height);
+	}
+
+	if (const px::ScoreDraw* back = score.backend()) {
+		std::printf("that page: %d glyphs, %d unknown, %d unread, %d runs of lettering skipped\n",
+			back->tally.glyphs, back->tally.glyphsUnknown, back->tally.glyphsUnread,
+			back->tally.wordsSkipped);
 	}
 
 	std::vector<unsigned char> pixels((size_t) width * height * 3);

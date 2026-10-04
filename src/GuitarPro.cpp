@@ -1590,7 +1590,11 @@ struct Binary {
 		note->string = stringNumber;
 		note->ghost = (flags & 0x04) != 0;
 		note->accent = (flags & 0x40) != 0;
-		note->heavyAccent = (flags & 0x02) != 0;
+		// HEAVY ACCENT, AND ONLY FROM VERSION FIVE. The bit is there in the older files and means
+		// something else in them: read as an accent it marks about one note in eleven of a Guitar
+		// Pro 4 file, where MuseScore reading the same file finds none at all, and a page with a
+		// marcato on every other chord is a page nobody wrote.
+		note->heavyAccent = (major >= 5) && (flags & 0x02) != 0;
 
 		int type = 1;                     // 1 normal, 2 tied, 3 dead
 		if (flags & 0x20)
@@ -2035,9 +2039,17 @@ struct Binary {
 					r.intByteSizeString();
 				}
 			}
-			// The strings are written from the highest down, and a note names its string from
-			// the top. Kept as the file has them, lowest first, which readNote counts back through.
-			track.tuning.assign(tuning.rbegin(), tuning.rend());
+			// THE STRINGS AS THE FILE WRITES THEM, HIGHEST FIRST, which is what a note's string
+			// number counts from and what GpTrack::tuning is documented to hold.
+			//
+			// This used to be reversed here, so a Guitar Pro 3, 4 or 5 file came out with its
+			// tuning the opposite way round from a Guitar Pro 6 one, which keeps the file's own
+			// order. Nothing noticed for a long time because note pitches are worked out from
+			// `tunings` below — the untouched copy — so every pitch was right while the tuning
+			// beside it was upside down. What eventually noticed was tablature: handed an
+			// upside-down tuning, an engraver reads the staff as Italian lute tablature, where
+			// the top line is the LOWEST string, and sets the fret numbers in lute figures.
+			track.tuning = tuning;
 			tunings.push_back(tuning);
 			out.tracks.push_back(track);
 		}

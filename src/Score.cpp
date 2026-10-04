@@ -3,6 +3,8 @@
 // of that name.
 #include <vrv/toolkit.h>
 #include <vrv/vrvdef.h>
+// Verovio reads its own XML with this, so it is already here and already linked.
+#include <pugixml.hpp>
 
 #include "Score.hpp"
 #include "ScoreDraw.hpp"
@@ -10,6 +12,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 namespace px {
 
@@ -64,6 +67,79 @@ bool Score::load(const std::string& musicxml, std::string* reason) {
 }
 
 
+/** WHAT INSTRUMENTS THE FILE HOLDS, read from the part list at the top of it.
+
+A part with no name of its own is named by its id, because a chooser with a blank row in it is
+worse than one with an ugly row in it. */
+static std::vector<ScorePart> readParts(const pugi::xml_document& doc) {
+	std::vector<ScorePart> found;
+	const pugi::xml_node list = doc.child("score-partwise").child("part-list");
+	for (pugi::xml_node p = list.child("score-part"); p; p = p.next_sibling("score-part")) {
+		ScorePart part;
+		part.id = p.attribute("id").as_string();
+		part.name = p.child_value("part-name");
+		if (part.name.empty())
+			part.name = part.id.empty() ? "Part" : part.id;
+		found.push_back(part);
+	}
+	return found;
+}
+
+
+std::string Score::onePart(int index) const {
+	if (index < 0 || index >= (int) allParts.size() || allParts.size() <= 1)
+		return source;
+
+	pugi::xml_document doc;
+	if (!doc.load_buffer(source.data(), source.size()))
+		return source;
+	pugi::xml_node root = doc.child("score-partwise");
+	if (!root)
+		return source;   // Timewise MusicXML, which this does not cut up. Shown whole.
+
+	const std::string keep = allParts[index].id;
+
+	// THE PART LIST FIRST. A part-group brackets several parts together, and with only one part
+	// left there is nothing to bracket — leaving the group behind draws a brace around a single
+	// staff, or around nothing.
+	pugi::xml_node list = root.child("part-list");
+	std::vector<pugi::xml_node> doomed;
+	for (pugi::xml_node n = list.first_child(); n; n = n.next_sibling()) {
+		const std::string tag = n.name();
+		if (tag == "part-group")
+			doomed.push_back(n);
+		else if (tag == "score-part" && std::string(n.attribute("id").as_string()) != keep)
+			doomed.push_back(n);
+	}
+	for (size_t i = 0; i < doomed.size(); i++)
+		list.remove_child(doomed[i]);
+
+	// THEN THE MUSIC.
+	doomed.clear();
+	for (pugi::xml_node n = root.child("part"); n; n = n.next_sibling("part")) {
+		if (std::string(n.attribute("id").as_string()) != keep)
+			doomed.push_back(n);
+	}
+	for (size_t i = 0; i < doomed.size(); i++)
+		root.remove_child(doomed[i]);
+
+	std::ostringstream out;
+	doc.save(out, "  ");
+	return out.str();
+}
+
+
+bool Score::setPart(int index, std::string* reason) {
+	if (index < 0 || index >= (int) allParts.size()) {
+		if (reason)
+			*reason = "there is no such part";
+		return false;
+	}
+	chosen = index;
+	return load(onePart(chosen), reason);
+}
+
+
 bool Score::loadFile(const std::string& path, std::string* reason) {
 	std::ifstream file(path.c_str());
 	if (!file) {
@@ -73,6 +149,7 @@ bool Score::loadFile(const std::string& path, std::string* reason) {
 	}
 	std::stringstream all;
 	all << file.rdbuf();
+	source = all.str();
 
 	const size_t slash = path.find_last_of('/');
 	name = (slash == std::string::npos) ? path : path.substr(slash + 1);
@@ -80,7 +157,16 @@ bool Score::loadFile(const std::string& path, std::string* reason) {
 	if (dot != std::string::npos && dot > 0)
 		name = name.substr(0, dot);
 
-	return load(all.str(), reason);
+	allParts.clear();
+	chosen = 0;
+	{
+		pugi::xml_document doc;
+		if (doc.load_buffer(source.data(), source.size()))
+			allParts = readParts(doc);
+	}
+
+	// THE FIRST PART, NOT ALL OF THEM. See parts().
+	return load(onePart(chosen), reason);
 }
 
 

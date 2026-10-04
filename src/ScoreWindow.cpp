@@ -3,6 +3,8 @@
 // declares vrv::Toolkit only, so nothing here has to be included in a particular order.
 #include "ScoreWindow.hpp"
 
+#include "GpMusicXML.hpp"
+#include "GuitarPro.hpp"
 #include "Score.hpp"
 #include "ScoreDraw.hpp"
 #include "plugin.hpp"
@@ -64,6 +66,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 	/** Which module asked for the window, so the window goes when the module does. */
 	int64_t moduleId = -1;
 	std::string path, name, trouble;
+	/** THE SONG, WHERE THERE IS ONE. A window opened on a Guitar Pro file holds the song and
+	writes a track of it out whenever the instrument changes; one opened on a MusicXML file holds
+	a path and cuts the part out of the document instead. Only one of the two is ever set. */
+	std::shared_ptr<const GpSong> song;
 
 	/** THE SCORE, AND THE THREAD THAT LAYS IT OUT.
 
@@ -79,6 +85,12 @@ struct ScoreWindow : widget::OpaqueWidget {
 	should use next, and what it last used. */
 	int wantUnits = 1500;
 	int unitsNow = 0;
+	/** Which instrument is being shown, and which one the worker last fetched. */
+	int wantPart = 0;
+	int partNow = 0;
+	/** Which staves the music is written on, and which the worker last wrote. See GpStaves. */
+	GpStaves wantStaves = GP_BOTH;
+	GpStaves stavesNow = GP_BOTH;
 
 	int page = 1;
 	/** How far down the page the view is, in pixels of the page as drawn. */
@@ -110,18 +122,149 @@ struct ScoreWindow : widget::OpaqueWidget {
 		working.store(true);
 		ready.store(false);
 		const int units = wantUnits;
+		const int part = wantPart;
+		const GpStaves staves = wantStaves;
 		const std::string file = path;
-		worker = std::thread([this, load, units, file]() {
+		const std::shared_ptr<const GpSong> carried = song;
+		worker = std::thread([this, load, units, part, staves, file, carried]() {
 			std::string reason;
 			bool ok = true;
 			score.setPage(units, (int) (units * SW_PAGE_ASPECT));
-			if (load)
-				ok = score.loadFile(file, &reason);
+			if (carried) {
+				// FROM THE SONG ITSELF, one track written out as MusicXML. Converting is quick —
+				// thousandths of a second against the tenths that laying it out takes — so there
+				// is nothing to be gained by keeping the last one.
+				if (load || part != partNow || staves != stavesNow) {
+					std::string note;
+					const std::string xml = gpToMusicXML(*carried, part, staves, &note);
+					if (xml.empty()) {
+						reason = "that instrument could not be written out";
+						ok = false;
+					}
+					else {
+						ok = score.load(xml, &reason);
+						if (ok && !note.empty())
+							reason = note;
+					}
+				}
+				if (ok) {
+					partNow = part;
+					stavesNow = staves;
+				}
+			}
+			else {
+				if (load)
+					ok = score.loadFile(file, &reason);     // Which opens on the first part.
+				else if (part != score.part())
+					ok = score.setPart(part, &reason);
+				partNow = score.part();
+			}
 			unitsNow = units;
 			trouble = ok ? "" : reason;
 			ready.store(ok);
 			working.store(false);
 		});
+	}
+
+	/** THE LIST OF INSTRUMENTS, as Rack's own menu.
+
+	A menu rather than anything drawn here: a score can have twenty parts with long names, which
+	is a list that has to scroll, sit inside the window, and go away when you click elsewhere —
+	all of which Rack's menu already does.
+
+	Nothing is offered while the score is being laid out, because the list is read from the
+	document the worker is rebuilding. */
+	/** How many instruments there are to choose between, from whichever source the window has. */
+	int partCount() {
+		if (song)
+			return (int) song->tracks.size();
+		return (int) score.parts().size();
+	}
+
+	std::string partNamed(int index) {
+		if (song) {
+			if (index < 0 || index >= (int) song->tracks.size())
+				return "";
+			const std::string& said = song->tracks[(size_t) index].name;
+			// A TRACK WITH NO NAME IS STILL AN INSTRUMENT. Plenty of transcriptions leave the
+			// name empty, and a chooser full of blank rows is a chooser nobody can use.
+			return said.empty() ? ("Track " + std::to_string(index + 1)) : said;
+		}
+		if (index < 0 || index >= (int) score.parts().size())
+			return "";
+		return score.parts()[(size_t) index].name;
+	}
+
+	/** Shows the music on other staves. Written out again and laid out again, so, the worker. */
+	void setStaves(GpStaves to) {
+		if (to == wantStaves)
+			return;
+		wantStaves = to;
+		page = 1;
+		scroll = 0.f;
+		beginWork(false);
+	}
+
+	/** EVERYTHING ABOUT WHAT IS SHOWN, UNDER ONE BUTTON: which instrument, and written how.
+	
+	Two buttons would be tidier in the code and worse on the strip, which is an inch of window
+	already carrying four controls and two crosses. They are also one question — what am I
+	looking at — so they are one menu.
+
+	NOTATION, TABLATURE OR BOTH is offered only for a Guitar Pro song, because only a Guitar Pro
+	song knows what string and fret each note is played at. A MusicXML file from elsewhere is
+	written however it was written. */
+	void offerParts() {
+		if (!usable())
+			return;
+		if (partCount() < 2 && !song)
+			return;
+		ui::Menu* menu = createMenu();
+
+		if (song) {
+			menu->addChild(createMenuLabel("Written as"));
+			static const struct { const char* name; GpStaves staves; } FORMS[] = {
+				{"Notation", GP_NOTATION},
+				{"Tablature", GP_TAB},
+				{"Notation and tablature", GP_BOTH},
+			};
+			for (int i = 0; i < 3; i++) {
+				const GpStaves which = FORMS[i].staves;
+				menu->addChild(createCheckMenuItem(FORMS[i].name, "",
+					[=]() { return wantStaves == which; },
+					[=]() { setStaves(which); }));
+			}
+		}
+
+		if (partCount() > 1) {
+			if (song)
+				menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Instrument"));
+			for (int i = 0; i < partCount(); i++) {
+				const int index = i;
+				menu->addChild(createCheckMenuItem(partNamed(i), "",
+					[=]() { return wantPart == index; },
+					[=]() { setPart(index); }));
+			}
+		}
+	}
+
+	/** Shows another instrument. Laying the score out again, so it goes to the worker. */
+	void setPart(int index) {
+		if (index == wantPart)
+			return;
+		wantPart = index;
+		page = 1;
+		scroll = 0.f;
+		beginWork(false);
+	}
+
+	/** What the strip says is being shown, or nothing when the file has only one instrument in
+	it and there is nothing to choose. */
+	std::string partName() {
+		if (!usable() || partCount() < 2)
+			return "";
+		return partNamed(song ? partNow : score.part());
 	}
 
 	/** Larger notation is a narrower page, which is why this takes a step rather than a size. */
@@ -138,8 +281,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// A SIZE ASKED FOR WHILE THE LAST ONE WAS STILL BEING DRAWN. Picked up here rather than
 		// in the button, so pressing plus four times quickly lays the score out once at the end
 		// instead of four times on the way.
-		if (!working.load() && ready.load() && wantUnits != unitsNow)
+		if (!working.load() && ready.load()
+				&& (wantUnits != unitsNow || wantPart != partNow
+					|| (song && wantStaves != stavesNow))) {
 			beginWork(false);
+		}
 		if (usable() && page > score.pageCount())
 			page = std::max(1, score.pageCount());
 		escapeStep();
@@ -171,8 +317,8 @@ struct ScoreWindow : widget::OpaqueWidget {
 			math::Vec(SW_GRIP, SW_GRIP));
 	}
 
-	/** The four controls in the title strip, right to left in front of the close cross: smaller,
-	larger, previous page, next page. Square, the height of the strip. */
+	/** The controls in the title strip, right to left in front of the close cross: smaller,
+	larger, previous page, next page, and the instrument. Square, the height of the strip. */
 	math::Rect toolBox(int which) {
 		const float w = SW_TITLE;
 		return math::Rect(math::Vec(box.size.x - SW_TITLE - w * (which + 1) - 4.f, 0.f),
@@ -282,6 +428,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 				}
 				if (toolBox(3).contains(e.pos)) {
 					turnTo(page + 1);
+					claim(e, this);
+					return;
+				}
+				if (toolBox(4).contains(e.pos)) {
+					offerParts();
 					claim(e, this);
 					return;
 				}
@@ -444,6 +595,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 		nvgFillColor(args.vg, SW_PAPER);
 		nvgFill(args.vg);
 
+		// THE BACKEND IS TOLD WHAT THE PAPER IS, so it can take ink away as well as put it down —
+		// a tablature line is broken behind its fret number by painting the number's box out in
+		// this colour. See ScoreDraw::paper.
+		if (px::ScoreDraw* back = const_cast<px::ScoreDraw*>(score.backend()))
+			back->paper = SW_PAPER;
 		const float unit = score.pageScale(area.size.x);
 		nvgTranslate(args.vg, area.pos.x, area.pos.y - scroll);
 		nvgScale(args.vg, unit, unit);
@@ -481,6 +637,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 		nvgFillColor(args.vg, SW_INK);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 		std::string label = name.empty() ? std::string("Score") : name;
+		// THE INSTRUMENT NEXT TO THE SONG, because a window showing one part of seventeen and
+		// not saying which is a window you cannot trust.
+		const std::string instrument = partName();
+		if (!instrument.empty())
+			label += "   " + instrument;
 		if (usable() && score.pageCount() > 1) {
 			char count[64];
 			std::snprintf(count, sizeof(count), "   page %d of %d", page, score.pageCount());
@@ -494,6 +655,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 		drawTool(args.vg, toolBox(1), "+", face);
 		drawTool(args.vg, toolBox(2), "\xe2\x80\xb9", face);   // single angle quotes
 		drawTool(args.vg, toolBox(3), "\xe2\x80\xba", face);
+		// THE INSTRUMENT, offered only when there is more than one. A control that opens a list
+		// of one thing is a control that does nothing.
+		if (partCount() > 1 || song)
+			drawTool(args.vg, toolBox(4), "\xe2\x96\xbe", face);   // a small downward triangle
 	}
 
 	static void drawCross(NVGcontext* vg, math::Rect r) {
@@ -563,6 +728,43 @@ struct ScoreWindow : widget::OpaqueWidget {
 void scoreWindowCloseFor(int64_t moduleId) {
 	if (gScoreWindow && gScoreWindow->moduleId == moduleId)
 		gScoreWindow->requestDelete();
+}
+
+
+/** The window, made or taken over, placed where it was last left or beside its module. */
+static ScoreWindow* makeWindow(int64_t moduleId) {
+	if (gScoreWindow) {
+		gScoreWindow->requestDelete();
+		gScoreWindow = NULL;
+	}
+	ScoreWindow* window = new ScoreWindow;
+	window->moduleId = moduleId;
+	if (gScoreWhere.x >= 0.f)
+		window->box.pos = gScoreWhere;
+	else if (app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId))
+		window->placeBeside(math::Rect(mw->getAbsoluteOffset(math::Vec()),
+			mw->box.size.mult(mw->getAbsoluteZoom())));
+	gScoreWindow = window;
+	APP->scene->addChild(window);
+	return window;
+}
+
+
+void scoreWindowShowSong(const std::shared_ptr<const GpSong>& song, int track,
+		const std::string& title, int64_t moduleId) {
+	if (!song)
+		return;
+	// THE SAME SONG AGAIN CLOSES IT, the way the chart button does.
+	if (gScoreWindow && gScoreWindow->moduleId == moduleId && gScoreWindow->song == song) {
+		gScoreWindow->requestDelete();
+		return;
+	}
+	ScoreWindow* window = makeWindow(moduleId);
+	window->song = song;
+	window->name = title;
+	window->wantPart = math::clamp(track, 0, (int) std::max<size_t>(1, song->tracks.size()) - 1);
+	window->partNow = -1;
+	window->beginWork(true);
 }
 
 

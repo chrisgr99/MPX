@@ -293,6 +293,21 @@ struct DreamerLatch : app::Switch {
 	void draw(const DrawArgs& args) override;
 };
 
+/** THE SAME, MOMENTARY AND GREEN.
+
+A BUTTON THAT IS GREEN WHETHER OR NOT IT IS PRESSED. The ordinary button is dark until it is
+lit, which is right for a control whose state matters — pressed or not, on or off. This one is
+for a control with no state at all: it opens a file chooser and that is the end of it, so there
+is nothing for a colour to say about it. The green is there to be FOUND, on a plate where the
+only other thing to click is the plate itself.
+
+The plugin's own green, the one the readouts are set in, so a module does not carry two greens. */
+struct DreamerGreenButton : app::Switch {
+	DreamerGreenButton();
+	void draw(const DrawArgs& args) override;
+};
+
+
 /** THE SAME, ROUND AND RED. For switching a thing on rather than choosing a setting: red is what
 a reader already takes to mean live, and round tells it apart from the square latches at a glance
 without having to be read. */

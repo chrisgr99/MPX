@@ -476,6 +476,15 @@ static ParamWidget* makeParam(engine::Module* module, Item& item) {
 		}
 		return w;
 	}
+	if (item.style == "button.green") {
+		ParamWidget* w = createParamCentered<DreamerGreenButton>(pos, module, item.id);
+		if (item.diameter > 0.f) {
+			const float px = mm2px(item.diameter);
+			w->box.pos = pos.minus(math::Vec(px, px).div(2.f));
+			w->box.size = math::Vec(px, px);
+		}
+		return w;
+	}
 	if (item.style == "latch.red")
 		return createParamCentered<DreamerRedLatch>(pos, module, item.id);
 	if (item.style == "transport.play")
@@ -678,6 +687,7 @@ static math::Rect itemVisual(const Item& item) {
 					math::Vec(w, h));
 			}
 			if (item.style == "button" || item.style == "latch" || item.style == "latch.red"
+				|| item.style == "button.green"
 				|| item.style == "transport.play" || item.style == "transport.rewind")
 				w = h = item.diameter > 0.f ? item.diameter : 6.6f;
 			else {
@@ -786,6 +796,7 @@ static math::Rect itemRect(const Item& item) {
 	switch (item.kind) {
 		case Item::PARAM:
 			if (item.style == "button" || item.style == "latch" || item.style == "latch.red"
+				|| item.style == "button.green"
 				|| item.style == "transport.play" || item.style == "transport.rewind") {
 				w = h = (item.diameter > 0.f ? item.diameter : 6.6f) + 1.2f;
 			}

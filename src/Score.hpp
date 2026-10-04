@@ -26,6 +26,13 @@ struct ScoreDraw;
 struct ScoreBox;
 
 
+/** ONE INSTRUMENT OF A SCORE, as the file names it. */
+struct ScorePart {
+	std::string id;     /**< What the file calls it, which is what the parts are matched by. */
+	std::string name;   /**< What a person calls it: "Bass (Tr. 6A/Tr. 11B)". */
+};
+
+
 struct Score {
 	Score();
 	~Score();
@@ -38,6 +45,21 @@ struct Score {
 	bool load(const std::string& musicxml, std::string* reason);
 	bool loadFile(const std::string& path, std::string* reason);
 	bool ready() const;
+
+	/** THE INSTRUMENTS IN THE FILE, and which one is being shown.
+
+	ONE AT A TIME, ALWAYS. Seventeen parts put three bars on a page: it is not untidy, it is
+	unreadable, and every other thing this window does is academic until the score is one part.
+
+	Verovio has no say in this. Its own selection takes bar ranges and element ids and nothing
+	else — there is no option anywhere for which staves to draw — so a single part means handing
+	it a score that HAS only one part, which is what setPart does. From phase five on there will
+	be nothing to cut out, because the converter will write the one part to begin with.
+
+	Choosing a part lays the score out again, so it belongs on the same thread as loading. */
+	const std::vector<ScorePart>& parts() const { return allParts; }
+	int part() const { return chosen; }
+	bool setPart(int index, std::string* reason);
 
 	/** HOW LARGE THE PAGE SAYS IT IS, in Verovio's own units, which is the only thing that decides
 	how large the notation comes out. The page is drawn whatever size the caller draws it at, so a
@@ -79,7 +101,16 @@ private:
 	vrv::Toolkit* toolkit = NULL;
 	ScoreDraw* device = NULL;
 	std::string name;
+	/** The file as it came, kept so that another part can be cut from it without reading it
+	again. A long score is a few megabytes, which is less than the laid-out document beside it. */
+	std::string source;
+	std::vector<ScorePart> allParts;
+	int chosen = 0;
 	int width = 1500, height = 2000;
+
+	/** The document with every part but `index` taken out of it, or the document unchanged when
+	it has one part, when it is not MusicXML this can read, or when `index` is out of range. */
+	std::string onePart(int index) const;
 	bool loaded = false;
 	void applyOptions();
 };

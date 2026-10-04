@@ -89,18 +89,23 @@ NVGcolor ScoreDraw::brushColour(bool glyph) const {
 		brush.HasOpacity() ? brush.GetOpacity() : 1.f), glyph);
 }
 
-/** The width to stroke at, never thinner than a pixel. See pixelsPerUnit. */
-float ScoreDraw::strokeWidth() const {
-	const float asked = m_penStack.empty() ? 1.f : (float) m_penStack.top().GetWidth();
+/** The width to stroke at, never thinner than a pixel. See pixelsPerUnit.
+
+`thinner` scales what the engraver asked for BEFORE the floor is applied, so a line asked to be
+half as thick becomes half as thick where there is room for it and stays a pixel where there is
+not. A line thinner than a pixel is not a thin line, it is a grey one. */
+float ScoreDraw::strokeWidth(float thinner) const {
+	const float asked =
+		(m_penStack.empty() ? 1.f : (float) m_penStack.top().GetWidth()) * thinner;
 	const float floorUnits = (pixelsPerUnit > 0.f) ? 1.1f / pixelsPerUnit : asked;
 	return std::fmax(asked, floorUnits);
 }
 
-void ScoreDraw::strokeHere() {
+void ScoreDraw::strokeHere(float thinner) {
 	if (!vg)
 		return;
 	nvgStrokeColor(vg, penColour());
-	nvgStrokeWidth(vg, strokeWidth());
+	nvgStrokeWidth(vg, strokeWidth(thinner));
 	nvgStroke(vg);
 }
 
@@ -233,6 +238,48 @@ void ScoreDraw::DrawMusicText(const std::u32string& text, int x, int y, bool set
 	if (!resources)
 		return;
 
+	// LETTERING COMES THROUGH HERE TOO, AND THAT IS NOT OBVIOUS.
+	//
+	// Verovio sets its own words — a fret number, a figure over a tuplet — in a text font it
+	// ships as glyph files, exactly like the music font. So they arrive here rather than at
+	// DrawText, and anything meant for "words" has to be done here or it is not done at all.
+	// A face name is what tells them apart: the music font has none.
+	const bool lettering = !m_fontStack.top()->GetFaceName().empty();
+
+	// THE GROUND UNDER A FRET NUMBER, CLEARED FIRST. A number in tablature sits ON a string
+	// line, and the line is broken behind it — six lines running through six digits is the one
+	// thing tablature must not look like. The run is measured before any of it is drawn, because
+	// the break has to be made before the first digit lands on it.
+	if (lettering) {
+		const double scale = (double) m_fontStack.top()->GetPointSize()
+			/ 1000.0 * DEFINITION_FACTOR;
+		float wide = 0.f, high = 0.f;
+		for (char32_t c : text) {
+			const vrv::Glyph* glyph = resources->GetGlyph(c);
+			if (!glyph)
+				continue;
+			int gx = 0, gy = 0, w = 0, h = 0;
+			glyph->GetBoundingBox(gx, gy, w, h);
+			const double advance = (double) m_fontStack.top()->GetPointSize()
+				/ glyph->GetUnitsPerEm();
+			wide += (float) ((glyph->GetHorizAdvX() > 0 ? glyph->GetHorizAdvX() : w) * advance);
+			high = std::fmax(high, (float) (h * advance));
+		}
+		if (wide > 0.f && high > 0.f) {
+			(void) scale;
+			// A LITTLE WIDER THAN THE DIGITS AND SHORTER THAN THEM: the width is where the line
+			// has to stop, so it is given air; the height is kept inside the digits so clearing
+			// one string never reaches the string above or below.
+			const float sideways = high * 0.16f;
+			const float shorter = high * 0.18f;
+			nvgBeginPath(vg);
+			nvgRect(vg, (float) x - sideways, (float) y - high + shorter,
+				wide + sideways * 2.f, high - shorter * 2.f);
+			nvgFillColor(vg, paper);
+			nvgFill(vg);
+		}
+	}
+
 	for (char32_t c : text) {
 		const vrv::Glyph* glyph = resources->GetGlyph(c);
 		if (!glyph) {
@@ -321,7 +368,14 @@ void ScoreDraw::DrawLine(int x1, int y1, int x2, int y2) {
 	nvgBeginPath(vg);
 	nvgMoveTo(vg, (float) x1, (float) y1);
 	nvgLineTo(vg, (float) x2, (float) y2);
-	strokeHere();
+	// THE LINES THAT RUN ALONG THE PAGE ARE DRAWN THINNER THAN THE REST.
+	//
+	// A staff line, a tablature string and a ledger line are the ruled paper the music is written
+	// on, not part of the music: they are there to be measured against and should not compete
+	// with what is written over them. Six strings at the weight of a stem is a page of lines with
+	// some numbers in it. Barlines and stems are upright and keep their full weight, since those
+	// ARE the music.
+	strokeHere((y1 == y2) ? 0.5f : 1.f);
 	sawBox((float) std::min(x1, x2), (float) std::min(y1, y2),
 		(float) std::max(x1, x2), (float) std::max(y1, y2));
 }
@@ -523,30 +577,52 @@ void ScoreDraw::DrawText(const std::string& text, const std::u32string& wtext, i
 	(void) height;
 	if (!vg || text.empty() || m_fontStack.empty())
 		return;
-	// LETTERING COMES FROM RACK'S OWN FONT, and off the rack there is no Rack to ask. The page
-	// still draws, without its words — which is what the renderer in test/scorerender.cpp needs.
-	if (!APP || !APP->window) {
+	// LETTERING COMES FROM RACK'S OWN FONT, and off the rack there is no Rack — see fallbackFont.
+	int face = fallbackFont;
+	if (APP && APP->window) {
+		std::shared_ptr<window::Font> font =
+			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
+		if (font && font->handle >= 0)
+			face = font->handle;
+	}
+	if (face < 0) {
 		tally.wordsSkipped++;
 		return;
 	}
-	std::shared_ptr<window::Font> font =
-		APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
-	if (!font || font->handle < 0)
-		return;
 
 	const float at = (x == VRV_UNSET) ? textX : (float) x;
 	const float on = (y == VRV_UNSET) ? textY : (float) y;
 
 	nvgSave(vg);
-	nvgFontFaceId(vg, font->handle);
+	nvgFontFaceId(vg, face);
 	nvgFontSize(vg, (float) m_fontStack.top()->GetPointSize());
-	nvgFillColor(vg, brushIsOn() ? brushColour() : penColour());
 	int align = NVG_ALIGN_LEFT;
 	if (textAlign == vrv::HORIZONTALALIGNMENT_center)
 		align = NVG_ALIGN_CENTER;
 	else if (textAlign == vrv::HORIZONTALALIGNMENT_right)
 		align = NVG_ALIGN_RIGHT;
 	nvgTextAlign(vg, align | NVG_ALIGN_BASELINE);
+
+	// THE GROUND UNDER THE WORDS, CLEARED FIRST. See `paper` in the header: this is what breaks
+	// a tablature string line behind a fret number.
+	//
+	// A LITTLE WIDER THAN THE LETTERS AND NOT AS TALL. The width is where the line has to stop,
+	// so it is given air on both sides; the height is kept inside the letters so that clearing
+	// one line never reaches the line above or below it.
+	float box[4] = {0.f, 0.f, 0.f, 0.f};
+	nvgTextBounds(vg, at, on, text.c_str(), NULL, box);
+	{
+		const float size = (float) m_fontStack.top()->GetPointSize();
+		const float sideways = size * 0.18f;
+		const float shorter = (box[3] - box[1]) * 0.17f;
+		nvgBeginPath(vg);
+		nvgRect(vg, box[0] - sideways, box[1] + shorter,
+			(box[2] - box[0]) + sideways * 2.f, (box[3] - box[1]) - shorter * 2.f);
+		nvgFillColor(vg, paper);
+		nvgFill(vg);
+	}
+
+	nvgFillColor(vg, brushIsOn() ? brushColour() : penColour());
 	nvgText(vg, at, on, text.c_str(), NULL);
 	nvgRestore(vg);
 

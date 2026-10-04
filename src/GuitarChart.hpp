@@ -139,11 +139,13 @@ struct SongModule : Module, NoteSource {
 		P_TEMPO,
 		P_MUTE,
 		P_GAIN = P_MUTE + ROWS,
+		// ADDED AT THE END, so every parameter a saved patch already names keeps its number.
 #if CHART_AUDIO
-		NUM_PARAMS = P_GAIN + ROWS
+		P_LOAD = P_GAIN + ROWS,
 #else
-		NUM_PARAMS = P_GAIN
+		P_LOAD = P_GAIN,
 #endif
+		NUM_PARAMS
 	};
 	enum InputId {
 		I_CLOCK,
@@ -216,6 +218,7 @@ struct SongModule : Module, NoteSource {
 
 	SongModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configButton(P_LOAD, "Load a Guitar Pro file");
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		//? Starts the song again from its first bar. It does not stop it.
 		configButton(P_REWIND, "Rewind");
@@ -984,14 +987,47 @@ struct SongRows : widget::OpaqueWidget {
 /** The song's name, and a press opens the file chooser. */
 struct SongTitle : widget::OpaqueWidget {
 	SongModule* module = NULL;
+	/** Where the LOAD button sits, in this widget's own pixels, so the word beside it follows it
+	if the button is moved in the layout. Negative before it has been told. */
+	float loadCx = -1.f;
 
+	/** THE WHOLE PLATE OPENS THE SCORE, and nothing else does.
+	
+	Loading used to be this: a click anywhere on the name opened a file chooser. That left nowhere
+	to click for the thing wanted far more often — looking at the music — and made a plate you
+	learn not to touch. Loading is the green button now.
+
+	WITH NO SONG, A CLICK DOES NOTHING. There is no score to show, and opening a file chooser
+	instead would be answering a question that was not asked; the LOAD button is sitting there in
+	plain sight for somebody who wanted that. */
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			choose();
+			if (module && module->haveSong.load())
+				showScore();
 			e.consume(this);
 			return;
 		}
 		widget::OpaqueWidget::onButton(e);
+	}
+
+	void showScore() {
+		if (!module)
+			return;
+		const Playing& L = module->loaded[module->live.load()];
+		if (L.song.tracks.empty())
+			return;
+		// COPIED FOR THE WINDOW: the module can load another file, or be deleted, while it is up.
+		std::shared_ptr<const GpSong> carried = std::make_shared<const GpSong>(L.song);
+		// THE INSTRUMENT THE FIRST ROW IS PLAYING, which is what the patch is already carrying.
+		int track = 0;
+		for (int r = 0; r < ROWS; r++) {
+			if (L.track[r] >= 0) {
+				track = L.track[r];
+				break;
+			}
+		}
+		px::scoreWindowShowSong(carried, track,
+			L.title.empty() ? std::string("Score") : L.title, module->id);
 	}
 
 	void choose() {
@@ -1012,6 +1048,11 @@ struct SongTitle : widget::OpaqueWidget {
 		}
 	}
 
+	/** WHERE THE SONG IS, all in one plate: its name, and how far through it the band has got.
+
+	The count used to be a bare strip of panel underneath, which read as a second readout about
+	something else. It belongs with the name — they are one fact — and the room it takes inside
+	the frame is room the name was not using. */
 	void draw(const DrawArgs& args) override {
 		NVGcontext* vg = args.vg;
 		nvgBeginPath(vg);
@@ -1027,57 +1068,66 @@ struct SongTitle : widget::OpaqueWidget {
 		if (!font || font->handle < 0)
 			return;
 		const bool have = module && module->haveSong.load();
-		std::string text = "LOAD A SONG";
-		if (have)
-			text = module->loaded[module->live.load()].title;
 
+		// THE BOTTOM OF THE PLATE IS THE COUNT'S, whether or not there is a count to put in it,
+		// so the name sits in the same place before and after a song is loaded.
+		const float footer = mm2px(7.f);
+		const float nameH = std::fmax(mm2px(6.f), box.size.y - footer);
+
+		std::string text = have
+			? module->loaded[module->live.load()].title : std::string("LOAD A SONG");
 		nvgFontFaceId(vg, font->handle);
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 		float size = 10.f;
-		float bounds[4];
+		float bounds[4] = {0.f, 0.f, 0.f, 0.f};
 		for (; size > 5.f; size -= 0.5f) {
 			nvgFontSize(vg, size);
 			nvgTextBoxBounds(vg, 0.f, 0.f, box.size.x - 6.f, text.c_str(), NULL, bounds);
-			if (bounds[3] - bounds[1] <= box.size.y - 4.f)
+			if (bounds[3] - bounds[1] <= nameH - 4.f)
 				break;
 		}
 		nvgFillColor(vg, nvgRGB(0xff, 0xff, 0xff));
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 		const float h = bounds[3] - bounds[1];
 		for (int pass = 0; pass < 2; pass++)
-			nvgTextBox(vg, 3.f, std::round((box.size.y - h) / 2.f), box.size.x - 6.f,
+			nvgTextBox(vg, 3.f, std::round((nameH - h) / 2.f), box.size.x - 6.f,
 				text.c_str(), NULL);
+
+		// THE BAR COUNT, bottom left. NO TEMPO HERE: the readout below the plate already says
+		// what the tempo is, and a number that appears twice on one panel is a number somebody
+		// has to check against itself.
+		const float footY = box.size.y - footer / 2.f - mm2px(0.4f);
+		if (have) {
+			const Playing& L = module->loaded[module->live.load()];
+			if (!L.line.bars.empty()) {
+				const int at = math::clamp(module->playedBar.load(), 0,
+					(int) L.line.bars.size() - 1);
+				const GpPlayedBar& bar = L.line.bars[(size_t) at];
+				std::string said = string::f("BAR %d OF %d", bar.written + 1,
+					(int) L.song.masterBars.size());
+				if (bar.pass > 1)
+					said += string::f("  (%d)", bar.pass);
+				nvgFontSize(vg, 8.f);
+				nvgFillColor(vg, nvgRGB(0xff, 0xff, 0xff));
+				nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+				for (int pass = 0; pass < 2; pass++)
+					nvgText(vg, mm2px(2.f), footY, said.c_str(), NULL);
+			}
+		}
+
+		// THE BUTTON'S CAPTION, just left of it. The button itself is a panel control sitting on
+		// top of this plate; only the word belongs to the plate.
+		if (loadCx > 0.f) {
+			nvgFontSize(vg, 7.f);
+			nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 0xcc));
+			nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+			for (int pass = 0; pass < 2; pass++)
+				nvgText(vg, loadCx - mm2px(3.6f), footY, "LOAD", NULL);
+		}
 	}
 };
 
 
-/** Which bar of the song is sounding, and at what tempo. */
-struct SongPosition : widget::Widget {
-	SongModule* module = NULL;
-
-	void draw(const DrawArgs& args) override {
-		std::shared_ptr<window::Font> font =
-			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
-		if (!font || font->handle < 0 || !module || !module->haveSong.load())
-			return;
-		const Playing& L = module->loaded[module->live.load()];
-		const int at = math::clamp(module->playedBar.load(), 0, (int) L.line.bars.size() - 1);
-		const GpPlayedBar& bar = L.line.bars[(size_t) at];
-		std::string text = string::f("BAR %d OF %d", bar.written + 1,
-			(int) L.song.masterBars.size());
-		if (bar.pass > 1)
-			text += string::f("  (%d)", bar.pass);
-		text += string::f("      %.0f BPM", module->soundingBpm.load());
-
-		NVGcontext* vg = args.vg;
-		nvgFontFaceId(vg, font->handle);
-		nvgFontSize(vg, 8.f);
-		nvgFillColor(vg, PANEL_INK);
-		nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-		for (int pass = 0; pass < 2; pass++)
-			nvgText(vg, 0.f, box.size.y / 2.f, text.c_str(), NULL);
-	}
-};
 
 
 /** A ROW: a mute, the gain, the MPX jack, the audio jack, then the name, a millimetre between
@@ -1145,15 +1195,32 @@ static Layout songLayout() {
 	// The song's name, which is also the way one is chosen. Clear of the band the module's own
 	// name is written in, which ends seven millimetres down: the band is seventeen PIXELS deep
 	// below a four-pixel margin. Read as millimetres, it left a sixth of the panel empty.
+	// ONE PLATE, HOLDING BOTH. The name and the bar count used to be two things — a framed plate
+	// and a bare strip of panel under it — which read as two unrelated readouts rather than as
+	// one place where the song is. Taller, with the count inside it, and the whole of it is the
+	// way to the score: see SongTitle.
+	//
+	// It stops short of the transport at 35.5 with four millimetres to spare.
 	Item title;
 	title.key = "d.title"; title.kind = Item::DISPLAY;
-	title.x = 3.f; title.y = 10.f; title.w = PANEL_W - 6.f; title.h = 13.f;
+	title.x = 3.f; title.y = 10.f; title.w = PANEL_W - 6.f; title.h = 21.f;
 	L.items.push_back(title);
 
-	Item where;
-	where.key = "d.where"; where.kind = Item::DISPLAY;
-	where.x = 4.f; where.y = 24.5f; where.w = PANEL_W - 8.f; where.h = 6.f;
-	L.items.push_back(where);
+	// LOADING IS ITS OWN BUTTON NOW, in the bottom right of the plate.
+	//
+	// It used to be the plate itself: clicking anywhere on the name opened the file chooser. That
+	// left nowhere to click for the thing wanted far more often — looking at the music — and a
+	// plate that opens a file dialogue when you touch it is a plate you learn not to touch.
+	//
+	// GREEN, because it is the one control on an otherwise dark plate and it has to be findable
+	// without being hunted for.
+	Item load;
+	load.key = "p.load"; load.kind = Item::PARAM; load.id = SongModule::P_LOAD;
+	load.style = "button.green"; load.diameter = 5.f;
+	load.x = PANEL_W - 9.5f; load.y = 27.f;
+	L.items.push_back(load);
+	// ITS CAPTION IS DRAWN INSIDE THE PLATE, beside the button, rather than under it on the
+	// panel: under it is where the reset jack already is on the narrow version. See SongTitle.
 
 	// The transport, the tempo, and the two jacks that can drive both from outside.
 	Item play;
@@ -1269,6 +1336,8 @@ struct SongWidget : ModuleWidget {
 	SongRows* columns[COLUMNS] = {};
 	/** Whether the panel was last arranged with the audio shown. */
 	int audioShown = -1;
+	/** The LOAD button's value last frame, so a press is seen once. See step. */
+	float lastLoad = 0.f;
 
 	SongWidget(SongModule* module) {
 		setModule(module);
@@ -1280,10 +1349,13 @@ struct SongWidget : ModuleWidget {
 		titleDisplay = new SongTitle;
 		titleDisplay->module = module;
 		layoutPlaceDisplay(this, layout, "d.title", titleDisplay);
+		// WHERE THE WORD "LOAD" GOES, taken from where the button actually is rather than
+		// written down twice: move the button in the layout and the word follows it.
+		if (const Item* plate = layout.find("d.title")) {
+			if (const Item* button = layout.find("p.load"))
+				titleDisplay->loadCx = mm2px(button->x - plate->x);
+		}
 
-		SongPosition* where = new SongPosition;
-		where->module = module;
-		layoutPlaceDisplay(this, layout, "d.where", where);
 
 		// The names line up with the jacks, in each display's own coordinates.
 		for (int c = 0; c < COLUMNS; c++) {
@@ -1321,13 +1393,18 @@ struct SongWidget : ModuleWidget {
 			if (titleDisplay)
 				titleDisplay->choose();
 		}));
+		if (m->haveSong.load()) {
+			menu->addChild(createMenuItem("Show the score", "", [=]() {
+				if (titleDisplay)
+					titleDisplay->showScore();
+			}));
+		}
 		if (!m->filePath.empty())
 			menu->addChild(createMenuLabel(m->filePath));
 
-		// THE ENGRAVED SCORE, FROM MUSICXML FOR NOW. Reading a Guitar Pro file straight into
-		// notation is phase five of docs/notation.md; until then the window is fed a MusicXML
-		// file, which is what proves the engraving and the window itself.
-		menu->addChild(createMenuItem("Show an engraved score…", "", [=]() {
+		// A MUSICXML FILE FROM SOMEWHERE ELSE, which is how the engraving was built and is still
+		// the way to read a score this plugin did not load.
+		menu->addChild(createMenuItem("Show a MusicXML file…", "", [=]() {
 			osdialog_filters* filters = osdialog_filters_parse(
 				"MusicXML:musicxml,xml,mxl");
 			char* chosen = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
@@ -1405,8 +1482,8 @@ struct SongWidget : ModuleWidget {
 			rows->box.size.x = mm2px(columnW - NAME_DX - 1.f);
 			rows->textX = shown ? mm2px(NAME_SHIFT) : 0.f;
 		}
-		static const char* TOP[] = {"d.title", "d.where", NULL};
-		static const float MARGIN[] = {6.f, 8.f};
+		static const char* TOP[] = {"d.title", NULL};
+		static const float MARGIN[] = {6.f};
 		for (int i = 0; TOP[i]; i++) {
 			Item* item = layout.find(TOP[i]);
 			if (!item)
@@ -1440,6 +1517,17 @@ struct SongWidget : ModuleWidget {
 #endif
 		if (!module)
 			return;
+
+		// THE LOAD BUTTON, WATCHED RATHER THAN WIRED. A panel button is a parameter, and a
+		// parameter cannot open a file chooser — that has to happen where the window is. So the
+		// press is noticed here, on its rise, which is the same way mpxChart opens its chart.
+		{
+			const float now = module->params[SongModule::P_LOAD].getValue();
+			if (now > 0.5f && lastLoad <= 0.5f && titleDisplay)
+				titleDisplay->choose();
+			lastLoad = now;
+		}
+
 		for (int r = 0; r < ROWS; r++) {
 			PortWidget* port = getOutput(SongModule::O_TRACK + r);
 			if (!port)

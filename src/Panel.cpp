@@ -480,6 +480,19 @@ void DreamerButton::draw(const DrawArgs& args) {
 	drawRaisedButton(args.vg, box.size, down, false);
 }
 
+DreamerGreenButton::DreamerGreenButton() {
+	momentary = true;
+	box.size = mm2px(math::Vec(6.2f, 6.2f));
+}
+
+void DreamerGreenButton::draw(const DrawArgs& args) {
+	const bool down = getParamQuantity() && getParamQuantity()->getValue() > 0.5f;
+	// LIT WHETHER OR NOT IT IS DOWN — see the header. Pressing it still turns the light over,
+	// which is what tells you the press landed.
+	const NVGcolor green = nvgRGB(0x3d, 0xe0, 0x7a);
+	drawRaisedButton(args.vg, box.size, down, true, &green);
+}
+
 DreamerLatch::DreamerLatch() {
 	box.size = mm2px(math::Vec(6.2f, 6.2f));
 }

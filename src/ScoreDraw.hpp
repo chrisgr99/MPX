@@ -96,6 +96,23 @@ struct ScoreDraw : vrv::DeviceContext {
 	So lines keep the ink and anything drawn from the music font gets this. */
 	NVGcolor glyphInk = nvgRGB(0x99, 0x99, 0x99);
 
+	/** THE COLOUR OF THE PAGE UNDER THE INK, which has to be known in order to take ink away.
+
+	A fret number in tablature sits ON a string line, and the line is broken behind it — that is
+	not decoration, it is what makes the number readable at all, and a six-line staff with digits
+	struck through by six lines is the one thing tablature must not look like. Verovio draws the
+	number and leaves the line alone, so the break is made here, by painting the number's own box
+	out before setting the number in it. Set by the window to whatever its paper is. */
+	NVGcolor paper = nvgRGB(0x1c, 0x1e, 0x22);
+
+	/** A FONT FOR THE LETTERING WHEN THERE IS NO RACK TO ASK FOR ONE.
+
+	Words on a page — a fret number above all — come from Rack's own font, and off the rack there
+	is no Rack. Without this the renderer in test/scorerender.cpp draws a page with every number
+	missing and cannot be used to check the one thing tablature is made of. Negative when unset,
+	which is the ordinary case inside Rack. */
+	int fallbackFont = -1;
+
 	/** The bars drawn on the page just rendered, in Verovio units. */
 	std::vector<ScoreBox> bars;
 
@@ -204,9 +221,9 @@ private:
 	void saw(float x, float y);
 	void sawBox(float x1, float y1, float x2, float y2);
 
-	void strokeHere();
+	void strokeHere(float thinner = 1.f);
 	void fillHere();
-	float strokeWidth() const;
+	float strokeWidth(float thinner = 1.f) const;
 	NVGcolor asInk(NVGcolor colour, bool glyph = false) const;
 	/** `glyph` picks the dimmer ink the music font is drawn in. See glyphInk. */
 	NVGcolor penColour(bool glyph = false) const;
