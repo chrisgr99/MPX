@@ -217,11 +217,17 @@ struct ScoreWindow : widget::OpaqueWidget {
 	void offerParts() {
 		if (!usable())
 			return;
-		if (partCount() < 2 && !song)
-			return;
 		ui::Menu* menu = createMenu();
 
-		if (song) {
+		// TABLATURE NEEDS STRINGS TO PUT THE FINGERS ON. A fugue or a quartet has none, so the
+		// choice is not offered rather than offered and refused — the converter would fall back
+		// to notation anyway, which is a menu that lies about what it does.
+		const bool fretted = song && wantPart >= 0
+			&& wantPart < (int) song->tracks.size()
+			&& !song->tracks[(size_t) wantPart].tuning.empty()
+			&& !song->tracks[(size_t) wantPart].percussion;
+
+		if (fretted) {
 			menu->addChild(createMenuLabel("Written as"));
 			static const struct { const char* name; GpStaves staves; } FORMS[] = {
 				{"Notation", GP_NOTATION},
@@ -237,7 +243,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		}
 
 		if (partCount() > 1) {
-			if (song)
+			if (fretted)
 				menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuLabel("Instrument"));
 			for (int i = 0; i < partCount(); i++) {

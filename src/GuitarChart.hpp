@@ -34,10 +34,12 @@ synthesiser leaves it alone.
 #include "NoteBus.hpp"
 #if CHART_AUDIO
 #include "SoundCore.hpp"
+#include "MusicXML.hpp"
 #include "ScoreWindow.hpp"
 #endif
 
 #include <osdialog.h>
+#include <sys/stat.h>
 
 #include <atomic>
 #include <cctype>
@@ -147,6 +149,7 @@ struct SongModule : Module, NoteSource {
 #endif
 		NUM_PARAMS
 	};
+
 	enum InputId {
 		I_CLOCK,
 		I_RESET,
@@ -218,7 +221,8 @@ struct SongModule : Module, NoteSource {
 
 	SongModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configButton(P_LOAD, "Load a Guitar Pro file");
+		configButton(P_LOAD, "Load a score");
+
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		//? Starts the song again from its first bar. It does not stop it.
 		configButton(P_REWIND, "Rewind");
@@ -444,7 +448,25 @@ struct SongModule : Module, NoteSource {
 			std::string* why) {
 		const int spare = 1 - live.load();
 		Playing next;
-		if (!gpReadBytes(bytes, next.song, why))
+		// WHICH KIND OF FILE IT IS, FROM WHAT IS IN IT rather than from its name. A file
+		// downloaded from the internet is as likely as not to carry the wrong extension — the
+		// Guitar Pro reader already chooses between its four formats this way — and MusicXML and
+		// Guitar Pro both end up as the same song, so there is no reason to make anybody say
+		// which they have.
+		const std::string head((const char*) bytes.data(),
+			std::min<size_t>(bytes.size(), 2048));
+		bool ok = false;
+		if (mxLooksLikeMusicXML(head)) {
+			ok = mxReadBytes(bytes, next.song, why);
+			// A ZIP THAT IS NOT MUSICXML IS A GUITAR PRO 7 FILE, which is also a zip. The sniff
+			// cannot tell them apart, so a failure falls back rather than giving up.
+			if (!ok)
+				ok = gpReadBytes(bytes, next.song, NULL);
+		}
+		else {
+			ok = gpReadBytes(bytes, next.song, why);
+		}
+		if (!ok)
 			return false;
 		if (!gpBuildTimeline(next.song, next.line, why))
 			return false;
@@ -1034,7 +1056,7 @@ struct SongTitle : widget::OpaqueWidget {
 		if (!module)
 			return;
 		osdialog_filters* filters = osdialog_filters_parse(
-			"Guitar Pro:gp,gpx,gp5,gp4,gp3,gpif,xml");
+			"Scores:gp,gpx,gp5,gp4,gp3,gpif,xml,musicxml,mxl");
 		char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
 		osdialog_filters_free(filters);
 		if (!path)
@@ -1246,6 +1268,7 @@ static Layout songLayout() {
 	jack("in.clock", Item::PORT_IN, 45.f, 35.5f, SongModule::I_CLOCK, "clock", SIG_GATE);
 	jack("in.reset", Item::PORT_IN, 54.f, 35.5f, SongModule::I_RESET, "reset", SIG_GATE);
 
+
 	Item lamp;
 	lamp.key = "lamp.beat"; lamp.kind = Item::LIGHT; lamp.id = SongModule::L_BEAT;
 	lamp.x = 3.5f; lamp.y = 36.f;
@@ -1338,6 +1361,23 @@ struct SongWidget : ModuleWidget {
 	int audioShown = -1;
 	/** The LOAD button's value last frame, so a press is seen once. See step. */
 	float lastLoad = 0.f;
+
+	/** WATCHING THE FILE, so that editing it is heard without touching the module.
+
+	A score is marked up by editing the file — dynamics, hairpins, slurs, articulation — and the
+	only way to tell whether a marking was right is to hear it. Going back to the module and
+	choosing the file again between every edit makes that loop long enough that nobody follows a
+	musical idea through it. So the module watches the file it loaded, and reads it again when it
+	changes: save the file and the next bar is already playing the new version.
+
+	WHEN IT WAS LAST WRITTEN, and when it was last looked at. Looking costs a stat, which is
+	nothing, but there is no reason to do it every frame. */
+	/** WHEN IT WAS LAST WRITTEN AND HOW BIG IT WAS. Both, because the time a file system reports
+	is only good to the second on some of them, and two saves inside one second would otherwise
+	look like none. */
+	long long fileWhen = 0;
+	long long fileSize = -1;
+	double lookedAt = 0.0;
 
 	SongWidget(SongModule* module) {
 		setModule(module);
@@ -1517,6 +1557,33 @@ struct SongWidget : ModuleWidget {
 #endif
 		if (!module)
 			return;
+
+		// THE FILE ITSELF, WATCHED. See fileWhen.
+		{
+			SongModule* sm = dynamic_cast<SongModule*>(module);
+			const double now = system::getTime();
+			if (sm && !sm->filePath.empty() && now - lookedAt > 0.5) {
+				lookedAt = now;
+				struct stat about;
+				if (::stat(sm->filePath.c_str(), &about) == 0) {
+					const long long written = (long long) about.st_mtime;
+					const long long big = (long long) about.st_size;
+					if (fileSize < 0) {
+						fileWhen = written;     // The first look is not a change.
+						fileSize = big;
+					}
+					else if (written != fileWhen || big != fileSize) {
+						fileWhen = written;
+						fileSize = big;
+						std::string why;
+						// A FAILURE IS SILENT HERE. A file being written is a file half there,
+						// and complaining about it would put a dialogue on the screen every time
+						// an editor saves. The next look finds it whole.
+						sm->setSongFile(sm->filePath, &why);
+					}
+				}
+			}
+		}
 
 		// THE LOAD BUTTON, WATCHED RATHER THAN WIRED. A panel button is a parameter, and a
 		// parameter cannot open a file chooser — that has to happen where the window is. So the

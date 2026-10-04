@@ -6,6 +6,7 @@
 // Verovio reads its own XML with this, so it is already here and already linked.
 #include <pugixml.hpp>
 
+#include "GuitarPro.hpp"
 #include "Score.hpp"
 #include "ScoreDraw.hpp"
 
@@ -54,9 +55,33 @@ void Score::applyOptions() {
 }
 
 
+/** Whether this is a zip, which a compressed MusicXML file is. */
+static bool isZip(const std::string& data) {
+	return data.size() > 4 && data[0] == 'P' && data[1] == 'K'
+		&& data[2] == '\x03' && data[3] == '\x04';
+}
+
+
 bool Score::load(const std::string& musicxml, std::string* reason) {
 	loaded = false;
 	applyOptions();
+
+	// COMPRESSED MUSICXML IS WHAT MUSESCORE WRITES BY DEFAULT, and it is a zip holding the
+	// document and a little file saying which member of the zip the document is. Verovio reads
+	// it, but only through a call of its own: handed the bytes it works the format out by looking
+	// at them, sees a zip, and ends up trying to read it as MEI.
+	if (isZip(musicxml)) {
+		const bool ok = toolkit->LoadZipDataBuffer(
+			(const unsigned char*) musicxml.data(), (int) musicxml.size());
+		if (!ok) {
+			if (reason)
+				*reason = "this compressed score could not be read";
+			return false;
+		}
+		loaded = true;
+		return true;
+	}
+
 	if (!toolkit->LoadData(musicxml)) {
 		if (reason)
 			*reason = "this score could not be read";
@@ -150,6 +175,39 @@ bool Score::loadFile(const std::string& path, std::string* reason) {
 	std::stringstream all;
 	all << file.rdbuf();
 	source = all.str();
+
+	// COMPRESSED MUSICXML, OPENED HERE RATHER THAN LEFT TO VEROVIO.
+	//
+	// A .mxl file is a zip holding the document and a little file in META-INF saying which member
+	// the document is. Verovio can read one, but only through a call of its own — and more to the
+	// point, everything else here works on the XML: the list of instruments is read from it and
+	// cutting the score down to one part rewrites it. A compressed file left compressed would
+	// open and then refuse to be cut, so every part would show at once.
+	//
+	// So it is opened once, here, and nothing downstream knows the difference.
+	if (source.size() > 4 && source[0] == 'P' && source[1] == 'K') {
+		const std::vector<uint8_t> zip(source.begin(), source.end());
+		std::vector<uint8_t> got;
+		std::string inside;
+		if (gpZipEntry(zip, "META-INF/container.xml", got)) {
+			const std::string container((const char*) got.data(), got.size());
+			const size_t at = container.find("full-path");
+			if (at != std::string::npos) {
+				const size_t a = container.find('"', at);
+				const size_t b = (a == std::string::npos)
+					? std::string::npos : container.find('"', a + 1);
+				if (b != std::string::npos)
+					inside = container.substr(a + 1, b - a - 1);
+			}
+		}
+		// A container that names nothing useful: the usual name, which is what every writer uses.
+		if (inside.empty())
+			inside = "score.xml";
+		if (gpZipEntry(zip, inside, got))
+			source.assign((const char*) got.data(), got.size());
+		if (reason)
+			reason->clear();
+	}
 
 	const size_t slash = path.find_last_of('/');
 	name = (slash == std::string::npos) ? path : path.substr(slash + 1);

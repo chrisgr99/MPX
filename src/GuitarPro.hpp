@@ -55,6 +55,13 @@ struct GpNote {
 	bool tapped = false;
 	bool staccato = false;
 	bool heavyAccent = false;
+	/** JOINED TO THE NOTE AFTER IT — a slur, or the middle of one. Played with no gap, and left
+	at its written length however detached the rest is: that is what a slur means. Guitar Pro has
+	no mark for this, so it comes only from a score that was written with one. */
+	bool slurred = false;
+	/** HELD FOR ITS FULL LENGTH AND LEANED ON a little. The opposite of staccato, and the one
+	articulation that asks for more rather than less. */
+	bool tenuto = false;
 	bool tremolo = false;    /**< Picked repeatedly for the note's length. */
 	/** A GRACE NOTE LEADING INTO THIS ONE: nought for none, 1 played before the beat, 2 taking
 	time from it. `graceFret` is where it is fingered, on this note's own string. */
@@ -196,6 +203,13 @@ bool gpReadBytes(const std::vector<uint8_t>& bytes, GpSong& out, std::string* wh
 here looks exactly like a fault in the XML that follows it. Returns false on a malformed stream
 rather than reading past the end of anything. */
 bool gpInflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out);
+
+/** ONE MEMBER OF A ZIP, BY NAME. Public because a Guitar Pro 7 file is not the only zip this
+plugin has to open: a compressed MusicXML file is one too, and writing a second zip reader beside
+this one would be two readers to be wrong in different ways. Returns false when the archive has no
+such member, or when it cannot be read. */
+bool gpZipEntry(const std::vector<uint8_t>& zip, const std::string& name,
+	std::vector<uint8_t>& out);
 
 
 } // namespace px

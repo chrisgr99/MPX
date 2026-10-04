@@ -144,6 +144,16 @@
       ]
     },
     {
+      "slug": "mpxScore",
+      "name": "mpxScore",
+      "description": "Plays a MusicXML or Guitar Pro score written for instruments with no fingerboard \u2014 a fugue, a string quartet: six parts, each on its own MPX cable with a mute, and a built-in General MIDI ensemble with an audio output and gain per part and a stereo mix, shown from the menu.",
+      "tags": [
+        "Sequencer",
+        "Sampler",
+        "Polyphonic"
+      ]
+    },
+    {
       "slug": "mpxGuitar",
       "name": "mpxGuitar",
       "description": "Plays one MPX part on a modelled guitar, nylon, steel-string or electric: waveguide strings picked, hammered, slid, palm-muted, bent and touched for harmonics as the part says, through an acoustic body or a pickup and amplifier, in stereo.",

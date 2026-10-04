@@ -376,6 +376,12 @@ bool zipEntry(const std::vector<uint8_t>& zip, const std::string& want,
 } // namespace
 
 
+bool gpZipEntry(const std::vector<uint8_t>& zip, const std::string& name,
+		std::vector<uint8_t>& out) {
+	return zipEntry(zip, name, out);
+}
+
+
 // ---- the Guitar Pro 6 container ----------------------------------------------------------------
 //
 // A .gpx file is two layers around the same gpif XML that a .gp file holds in a zip.

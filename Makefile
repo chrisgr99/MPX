@@ -225,6 +225,46 @@ gpxmltest:
 		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
 	@./build/gpxmltest $(ARGS)
 
+# WHAT COMES IN WHEN A SCORE IS LOADED, by whichever reader the file calls for. The module's own
+# path, without the module. See test/scoreread.cpp.
+#   make scoreread ARGS="a-score.mxl"
+scoreread:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/scoreread.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scoreread
+	@./build/scoreread $(ARGS)
+
+# THE SHAPE OF A SCORE: bars, metre, repeats, what each voice is doing and where each one enters.
+# The map two people need in order to say where a marking goes. See test/structure.cpp.
+#   make structure ARGS="a-score.musicxml"
+structure:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/structure.cpp src/MusicXML.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/structure
+	@./build/structure $(ARGS)
+
+# A SCORE SAVED AS MUSICXML, every part of it, so it can be marked up with dynamics, hairpins,
+# slurs and articulation that the reader then honours. See test/tomusicxml.cpp.
+#   make tomusicxml ARGS="a-song.gp5 marked.musicxml"
+tomusicxml:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/tomusicxml.cpp src/MusicXML.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/tomusicxml
+	@./build/tomusicxml $(ARGS)
+
+# THE MUSICXML READER AGAINST THE WRITER: a track written out and read back should come home as
+# the notes that went. Needs no file from outside. See test/mxtest.cpp.
+#   make mxtest ARGS="a-file.gp4"
+mxtest:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/mxtest.cpp src/MusicXML.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/mxtest
+	@./build/mxtest $(ARGS)
+
 # WHAT A FILE SAYS ABOUT TECHNIQUE: palm mutes, let ring, strums and dead notes, per track and
 # per string. For answering "is it not playing this, or is it not in the file".
 #   make pmcheck ARGS="a-file.gp4"
@@ -240,6 +280,16 @@ brushscan:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall test/brushscan.cpp src/GuitarPro.cpp -o build/brushscan
 	@./build/brushscan $(ARGS)
+
+# WHETHER ANYTHING IS LEFT RINGING: how much sounds at once, and whether one string is ever
+# asked to sound two notes together. A guitar has six strings, so more than six at a moment means
+# something is ringing that a hand would have stopped. See test/ringcheck.cpp.
+#   make ringcheck ARGS="a-file.gp4 0"
+ringcheck:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall test/ringcheck.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		-o build/ringcheck
+	@./build/ringcheck $(ARGS)
 
 # WHICH WAY THE HAND GOES, bar by bar: how many notes fall in down-strokes and how many in ups.
 #   make strumcheck ARGS="a-file.gp5 0"
