@@ -55,7 +55,13 @@ endif
 DEPS += $(DEP_PATH)/lib/libfluidsynth.a
 DEPS += $(DEP_PATH)/lib/libverovio.a
 
+# VEROVIO'S HEADERS INCLUDE EACH OTHER WITHOUT A PREFIX, because its own build puts every one of
+# these directories on the include path. Ours has to as well, or the first header pulls in a
+# second that cannot be found.
 FLAGS += -I dep/include
+FLAGS += -I dep/include/verovio -I dep/include/verovio/vrv -I dep/include/verovio/crc
+FLAGS += -I dep/include/verovio/json -I dep/include/verovio/midi -I dep/include/verovio/pugi
+FLAGS += -I dep/include/verovio/zip -I dep/include/verovio/tuning-library
 LDFLAGS += $(DEP_PATH)/lib/libverovio.a $(DEP_PATH)/lib/libfluidsynth.a
 
 # A framework each library wants, named explicitly on the Mac. Tested with TARGET_MACHINE and not
@@ -68,6 +74,13 @@ ifneq (,$(findstring -mingw,$(TARGET_MACHINE)))
 endif
 
 include $(RACK_DIR)/plugin.mk
+
+# C++20 FOR THE WHOLE PLUGIN, not for the one file that needs it. Verovio is written in C++20 and
+# Rack's SDK compiles plugins at C++11; mixing two standards in one binary works until the day a
+# type crosses the boundary and does not. The SDK's own flag comes first and this one wins, and
+# everything here compiled at C++20 without a single change.
+CXXFLAGS += -std=c++20
+
 
 # DEVELOPMENT INSTALL, and why it is not `make install`.
 #
@@ -186,6 +199,37 @@ navtest:
 	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp \
 		-o build/navtest
 	@./build/navtest
+
+# HOW LONG VEROVIO TAKES AND HOW MANY PAGES IT MAKES, without Rack's window. Drawing needs an
+# OpenGL context and this has none, so it exercises everything up to the drawing — see
+# test/scoretest.cpp.
+#   make scoretest ARGS="a-file.musicxml"
+scoretest:
+	@mkdir -p build
+	@c++ -std=c++20 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		-I dep/include -I dep/include/verovio -I dep/include/verovio/vrv \
+		-I dep/include/verovio/json -I dep/include/verovio/pugi \
+		-I dep/include/verovio/crc -I dep/include/verovio/midi \
+		-I dep/include/verovio/zip -I dep/include/verovio/tuning-library \
+		test/scoretest.cpp src/Score.cpp src/ScoreDraw.cpp -o build/scoretest \
+		dep/lib/libverovio.a -L$(RACK_DIR) -lRack
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/scoretest $(ARGS)
+
+# A PAGE OF A SCORE AS AN IMAGE, drawn by the real renderer into a hidden window. The only way to
+# see what the score window will look like without the score window. See test/scorerender.cpp.
+#   make scorerender ARGS="a-file.musicxml"
+scorerender:
+	@mkdir -p build
+	@c++ -std=c++20 -O1 -Wall -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		-I dep/include -I dep/include/verovio -I dep/include/verovio/vrv \
+		-I dep/include/verovio/json -I dep/include/verovio/pugi \
+		-I dep/include/verovio/crc -I dep/include/verovio/midi \
+		-I dep/include/verovio/zip -I dep/include/verovio/tuning-library \
+		test/scorerender.cpp src/Score.cpp src/ScoreDraw.cpp -o build/scorerender \
+		dep/lib/libverovio.a -L$(RACK_DIR) -lRack -framework OpenGL
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/scorerender $(ARGS)
+	@sips -s format png build/score.ppm --out build/score.png >/dev/null 2>&1 \
+		&& echo "wrote build/score.png"
 
 # What each articulation does, one at a time, with the humanising turned off.
 performtest:
@@ -328,6 +372,9 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp -R $(DEP_PATH)/verovio-src/data/text res/verovio/
 	cp $(DEP_PATH)/verovio-src/data/Bravura.xml res/verovio/
 	cp $(DEP_PATH)/verovio-src/data/Leipzig.xml res/verovio/
+#	THE TUNING TABLE, which names the microtonal accidentals. Without it Verovio complains on
+#	every score that carries one and draws nothing in its place. Four kilobytes.
+	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
 .PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender

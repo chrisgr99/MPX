@@ -64,11 +64,11 @@ Each ends with something to look at or hear, and the work stops there to be judg
 
 **1. The dependencies build themselves.** DONE. `make dep` fetches and builds FluidSynth and Verovio into `dep`, in Rack's own idiom, so a clean checkout works — the library's build machine runs `make cleandep`, `make dep` and `make dist`, and hands us its cross compilers. Two things came out of it: debug information had to be turned off for both, since Verovio's archive was 492 megabytes with it and 17 without; and Verovio reads its glyphs with std::filesystem, which Apple marks unavailable before macOS 10.15, so the Mac floor for the whole plugin rises from 10.9 to 10.15.
 
-**2. A page on the screen.** Verovio linked in, enough of a NanoVG backend to draw what a page actually holds, and a window showing page one of a real score. Two or three days. This answers the question behind the whole project — whether the notation reads at the size it has to be read at — and answers it before anything else is built on top.
+**2. A page on the screen.** DONE. Verovio linked in, a NanoVG backend under it, and a window on a real score: dark page, paging, a notation-size control, the wheel running through the whole score and turning the page at each end. The one thing that nearly sank it was a factor of ten — a page is laid out in tenths of a unit, so a glyph is scaled by the point size over the em AND by that tenth, while an advance is not. Without it every glyph is a speck, and a page of specks looks enough like a page of music to be argued about rather than measured.
 
-**3. The backend finished.** The rest of the drawing calls: beams, slurs, ties, hairpins, rotated text, at several scales. Two or three days. Properly engraved rather than mostly.
+**3. The backend finished.** DONE, and it turned out to be a measuring job rather than a writing one. Every drawing call Verovio can make is answered except embedded artwork, which no real score asked for. Rotation is the one that mattered: Verovio draws an arpeggio sign and a wavy glissando by turning a horizontal glyph on its side, and in guitar music that is often — six of sixteen scores. Also found by measuring: the glyph files are fragments with no `svg` element, so nanosvg normalises each to its own bounding box unless it is wrapped first; `tuning-glyphnames.json` has to ship or every microtonal accidental is dropped with a complaint; and a bar box is measured in the ADVANCE scale, turned over, and from the glyph's own origin rather than hung off the baseline.
 
-**4. The window as something to use.** Paging, a scale control, and the box each bar occupies recorded as it is drawn. Two days. Still fed MusicXML, so nothing follows yet, but a score can be moved around and sized.
+**4. The window as something to use.** Paging, the notation-size control and the bar boxes are all done, so what is left is the part chooser — a score of seventeen staves puts three bars on a page and is unreadable until it is one part at a time. One or two days.
 
 **5. Guitar Pro on the page.** The converter from the song model into MusicXML: durations, tuplets, ties, voices, metre and key changes, repeats, endings, jumps, and the articulations in their notation forms. Four or five days, and the place where things will be missing rather than wrong.
 
@@ -76,7 +76,17 @@ Each ends with something to look at or hear, and the work stops there to be judg
 
 **7. Shipping it.** Windows and Linux, the glyph resources packaged, size checked, help written. Two days.
 
-The two likeliest to run over are five and three: articulations are a long tail, and engraving has a great many small drawing cases.
+The likeliest to run over is five: articulations are a long tail.
+
+## How the drawing is checked
+
+The window cannot be looked at from inside the work, and a drawing fault that only shows on the screen is a fault nobody can work on. So `make scorerender` draws a page with the real renderer — real NanoVG, real OpenGL — into a hidden window and writes it out as an image. `ARGS="file.musicxml 0"` draws a single glyph the size of the picture, filled beside outlined, for when a glyph itself is in question.
+
+`make scorerender ARGS="sweep *.musicxml"` is the one that finds things. A glyph the font does not have, a glyph whose file will not parse, and a drawing call that is not written all produce the same thing on a page — NOTHING — so the backend counts what it was asked for and what it could not do, and the sweep draws every page of every score at five notation sizes and totals it. Sixteen songs converted from Guitar Pro currently give 4,729 pages and 700,683 glyphs in under a minute, with nothing undrawn.
+
+It checks the bar boxes in the same pass, which is what matters for phase 6: a box that is empty, inside out, or nowhere near the page is one a cursor would be drawn in the wrong place from, and none of that shows on the page itself. Two things that look like faults and are not, both confirmed against rendered pages rather than assumed. A box reaching left of the page belongs to the first measure of a system, which carries the brace and the clefs in front of it. And a box below the bottom of the page is a score with more parts than that page size can hold — Verovio draws it anyway, so the window scrolls to where the ink stopped rather than to the page's own height, and none of that music is unreachable.
+
+The strongest single check is that the bar count does not move: the same score laid out at five sizes records exactly the same number of boxes, and that number is the measure count of one part.
 
 ## What submitting it would still need
 

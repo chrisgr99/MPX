@@ -1,0 +1,267 @@
+/** A PAGE OF A SCORE, DRAWN WITH THE REAL RENDERER, INTO A FILE — AND A SWEEP OVER MANY SCORES.
+
+The window cannot be looked at from here, and a drawing fault that only shows on the screen is a
+fault nobody can work on. So this does what the window does — the same Score, the same ScoreDraw,
+the same NanoVG — into a hidden window, and reads the pixels back out as an image.
+
+The window it opens never appears: GLFW is told not to show it, and it is destroyed before this
+returns. Nothing is brought to the front and nothing is rearranged.
+
+	make scorerender ARGS="a-file.musicxml"                   page one as build/score.png
+	make scorerender ARGS="a-file.musicxml 2 1600 2000"       page, width, height in pixels
+	make scorerender ARGS="a-file.musicxml 0"                 one glyph, large, filled and outlined
+	make scorerender ARGS="sweep one.musicxml two.musicxml"   every page of each, counted
+*/
+// SCOREDRAW FIRST, BEFORE ANYTHING OF RACK'S. It brings in Verovio's headers, and Rack defines
+// APP as a macro while Verovio has an enumerator of that name — whichever is included second
+// loses, and the error names neither.
+#include "../src/ScoreDraw.hpp"
+#include "../src/Score.hpp"
+
+#include <rack.hpp>
+
+// GLEW BEFORE GLFW AND BEFORE NANOVG. Rack's NanoVG is built against GLEW, so the GL entry points
+// have to be loaded — without glewInit the first call through one of them is a null pointer, which
+// is a crash inside nvgCreateGL2 with nothing to show where it came from.
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <nanovg.h>
+
+extern "C" NVGcontext* nvgCreateGL2(int flags);
+extern "C" void nvgDeleteGL2(NVGcontext* ctx);
+
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+rack::plugin::Plugin* pluginInstance = NULL;
+
+
+/** One page, drawn. The pixels are the caller's business; this is the transform the window uses. */
+static void drawPage(NVGcontext* vg, px::Score& score, int page, int width, int height) {
+	nvgBeginFrame(vg, (float) width, (float) height, 1.f);
+	const float unit = score.pageScale((float) width);
+	nvgSave(vg);
+	nvgScale(vg, unit, unit);
+	score.draw(vg, page, unit);
+	nvgRestore(vg);
+	nvgEndFrame(vg);
+}
+
+
+/** EVERY PAGE OF EVERY SCORE, AT EACH SIZE THE WINDOW OFFERS, DRAWN AND COUNTED.
+
+No picture comes out: what is wanted is what the backend was asked for and what it could not do.
+A glyph the font does not have, a glyph whose file will not parse and a drawing call that is not
+written all produce the same thing on a page — nothing — so the only way to find them is to count
+them. Drawing still has to happen for the count to mean anything, so it draws into the hidden
+window and throws the pixels away. */
+static int sweep(NVGcontext* vg, int from, int argc, char** argv, int width, int height) {
+	static const int SIZES[] = {700, 1100, 1500, 2200, 3000};
+	static const int NSIZES = (int) (sizeof(SIZES) / sizeof(SIZES[0]));
+	int failures = 0;
+
+	// `turned` counts arpeggio signs and wavy glissandi, which are drawn on their side — a count
+	// rather than a complaint, so that a page carrying one can be found and looked at.
+	std::printf("%-34s %5s %6s %8s %8s %7s %7s %7s %7s %6s %7s\n",
+		"score", "size", "pages", "glyphs", "unknown", "unread", "artwork", "turned",
+		"bars", "wrong", "overrun");
+
+	for (int a = from; a < argc; a++) {
+		px::Score score;
+		std::string why;
+		if (!score.loadFile(argv[a], &why)) {
+			std::printf("%-34s  COULD NOT BE READ: %s\n", argv[a], why.c_str());
+			failures++;
+			continue;
+		}
+		for (int i = 0; i < NSIZES; i++) {
+			score.setPage(SIZES[i], SIZES[i] * 4 / 3);
+			const int pages = score.pageCount();
+			long glyphs = 0, unknown = 0, unread = 0, art = 0, turned = 0, words = 0;
+			long boxes = 0, boxesOdd = 0, boxesOver = 0, pagesNoBoxes = 0;
+			int firstTurned = 0;
+			std::vector<char32_t> missing;
+			for (int p = 1; p <= pages; p++) {
+				glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+				drawPage(vg, score, p, width, height);
+				const px::ScoreDraw* back = score.backend();
+				if (!back)
+					continue;
+				glyphs += back->tally.glyphs;
+				unknown += back->tally.glyphsUnknown;
+				unread += back->tally.glyphsUnread;
+				art += back->tally.svgShapes;
+				if (back->tally.rotations && !firstTurned)
+					firstTurned = p;
+				turned += back->tally.rotations;
+				words += back->tally.wordsSkipped;
+
+				// THE BOX EACH BAR OCCUPIES, which is what a cursor and a loop are drawn from.
+				// A box that is empty, inside out, or off the page is one the cursor would be
+				// drawn in the wrong place from — and none of that shows on the page itself.
+				const float pageW = (float) SIZES[i] * 10.f;
+				const float pageH = (float) (SIZES[i] * 4 / 3) * 10.f;
+				const std::vector<px::ScoreBox>& bars = score.bars();
+				if (bars.empty())
+					pagesNoBoxes++;
+				for (size_t b = 0; b < bars.size(); b++) {
+					boxes++;
+					const px::ScoreBox& box = bars[b];
+					// EMPTY, INSIDE OUT, OR NOWHERE NEAR THE PAGE is a box that is wrong, and a
+					// cursor drawn from it would land anywhere.
+					//
+					// A LITTLE TO THE LEFT OF THE PAGE IS NOT WRONG. The first measure of a system
+					// carries the brace that joins the staves and the clefs in front of it, and
+					// Verovio draws those left of the page's own origin — so that measure's box
+					// legitimately starts outside the page. Checked against a page of Fortunate
+					// Son, where the bracket is plainly inside the first bar's extent.
+					if (!box.valid() || box.x1 < -pageW || box.y1 < -pageH) {
+						boxesOdd++;
+						if (boxesOdd <= 3)
+							std::printf("    WRONG box on page %d: x %.0f..%.0f  y %.0f..%.0f"
+								"  (page is %.0f x %.0f)\n",
+								p, box.x1, box.x2, box.y1, box.y2, pageW, pageH);
+					}
+					// PAST THE BOTTOM OF THE PAGE is not wrong. A score of many parts at a small
+					// notation size genuinely has systems taller than the page, and Verovio draws
+					// them; the window scrolls to where the ink stopped rather than to the page's
+					// own height, so they can still be read. Counted, so it stays visible.
+					else if (box.y2 > pageH || box.x2 > pageW)
+						boxesOver++;
+				}
+				for (size_t k = 0; k < back->tally.missing.size() && missing.size() < 16; k++)
+					missing.push_back(back->tally.missing[k]);
+			}
+			std::string shown = score.title();
+			if (shown.size() > 33)
+				shown = shown.substr(0, 33);
+			std::printf("%-34s %5d %6d %8ld %8ld %7ld %7ld %7ld %7ld %6ld %7ld",
+				(i == 0) ? shown.c_str() : "", SIZES[i], pages,
+				glyphs, unknown, unread, art, turned, boxes, boxesOdd, boxesOver);
+			if (pagesNoBoxes)
+				std::printf("  (%ld pages recorded no bars)", pagesNoBoxes);
+			std::printf("\n");
+			if (boxesOdd)
+				failures++;
+			// A ROTATION IS NOT A FAILURE: it is counted so that a score which needs one can be
+			// found and looked at. What cannot be drawn at all is a failure.
+			if (unknown || unread || art)
+				failures++;
+			if (!missing.empty()) {
+				std::printf("    the font has no glyph for:");
+				for (size_t k = 0; k < missing.size(); k++)
+					std::printf(" %04X", (unsigned) missing[k]);
+				std::printf("\n");
+			}
+		}
+	}
+	return failures;
+}
+
+
+int main(int argc, char** argv) {
+	if (argc < 2) {
+		std::printf("usage: scorerender <file.musicxml> [page] [width] [height] [units]\n");
+		std::printf("       scorerender sweep <file.musicxml>...\n");
+		return 1;
+	}
+	const bool sweeping = (std::string(argv[1]) == "sweep");
+	const char* file = argv[1];
+	const int page = (!sweeping && argc > 2) ? std::atoi(argv[2]) : 1;
+	const int width = (!sweeping && argc > 3) ? std::atoi(argv[3]) : 1200;
+	const int height = (!sweeping && argc > 4) ? std::atoi(argv[4]) : 1600;
+	// How wide the page says it is, which is how large the notation comes out. See Score::setPage.
+	const int units = (!sweeping && argc > 5) ? std::atoi(argv[5]) : 0;
+
+	rack::plugin::Plugin plugin;
+	plugin.path = ".";
+	pluginInstance = &plugin;
+
+	if (!glfwInit()) {
+		std::printf("glfw would not start\n");
+		return 1;
+	}
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_STENCIL_BITS, 8);
+	glfwWindowHint(GLFW_SAMPLES, 4);
+	GLFWwindow* win = glfwCreateWindow(width, height, "score", NULL, NULL);
+	if (!win) {
+		std::printf("no window, so no renderer\n");
+		return 1;
+	}
+	glfwMakeContextCurrent(win);
+	glewExperimental = GL_TRUE;
+	const GLenum glew = glewInit();
+	if (glew != GLEW_OK) {
+		std::printf("glew would not start: %s\n", (const char*) glewGetErrorString(glew));
+		return 1;
+	}
+
+	NVGcontext* vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+	if (!vg) {
+		std::printf("no NanoVG context\n");
+		return 1;
+	}
+	glViewport(0, 0, width, height);
+	glClearColor(0x1c / 255.f, 0x1e / 255.f, 0x22 / 255.f, 1.f);
+
+	if (sweeping) {
+		const int bad = sweep(vg, 2, argc, argv, width, height);
+		std::printf("\n%s\n", bad ? "SOMETHING WAS NOT DRAWN — see the counts above"
+			: "every glyph of every page was drawn");
+		glfwDestroyWindow(win);
+		glfwTerminate();
+		return bad ? 1 : 0;
+	}
+
+	int stencilBits = 0, samples = 0;
+	glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
+	glGetIntegerv(GL_SAMPLES, &samples);
+	std::printf("context: %d stencil bits, %d samples\n", stencilBits, samples);
+
+	px::Score score;
+	std::string why;
+	if (!score.loadFile(file, &why)) {
+		std::printf("could not read it: %s\n", why.c_str());
+		return 1;
+	}
+	if (units > 0)
+		score.setPage(units, units * 4 / 3);
+	std::printf("%s: %d pages, drawing page %d at %dx%d\n",
+		score.title().c_str(), score.pageCount(), page, width, height);
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	if (page == 0) {
+		// PAGE NOUGHT IS NOT A PAGE: it draws one glyph the size of the picture, filled on the
+		// left and outlined on the right, so that a glyph that comes out wrong can be looked at
+		// on its own instead of eight to a bar.
+		nvgBeginFrame(vg, (float) width, (float) height, 1.f);
+		score.drawOneGlyph(vg, (char32_t) 0xE0A4, width, height);
+		nvgEndFrame(vg);
+	}
+	else {
+		drawPage(vg, score, page, width, height);
+	}
+
+	std::vector<unsigned char> pixels((size_t) width * height * 3);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+	// Written as a plain PPM, which needs no library; the Makefile turns it into a PNG.
+	FILE* f = std::fopen("build/score.ppm", "wb");
+	if (!f) {
+		std::printf("could not write build/score.ppm\n");
+		return 1;
+	}
+	std::fprintf(f, "P6\n%d %d\n255\n", width, height);
+	for (int y = height - 1; y >= 0; y--)
+		std::fwrite(&pixels[(size_t) y * width * 3], 1, (size_t) width * 3, f);
+	std::fclose(f);
+	std::printf("wrote build/score.ppm\n");
+
+	glfwDestroyWindow(win);
+	glfwTerminate();
+	return 0;
+}

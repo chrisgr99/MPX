@@ -34,6 +34,7 @@ synthesiser leaves it alone.
 #include "NoteBus.hpp"
 #if CHART_AUDIO
 #include "SoundCore.hpp"
+#include "ScoreWindow.hpp"
 #endif
 
 #include <osdialog.h>
@@ -1303,6 +1304,13 @@ struct SongWidget : ModuleWidget {
 		layoutBuild(this, panel, layout);
 	}
 
+	/** A score window belongs to the module that opened it and goes when that module goes. */
+	void onRemove(const RemoveEvent& e) override {
+		if (module)
+			px::scoreWindowCloseFor(module->id);
+		ModuleWidget::onRemove(e);
+	}
+
 	void appendContextMenu(ui::Menu* menu) override {
 		layoutAppendMenu(menu, this, panel, &layout, CHART_SLUG);
 		SongModule* m = dynamic_cast<SongModule*>(module);
@@ -1315,6 +1323,25 @@ struct SongWidget : ModuleWidget {
 		}));
 		if (!m->filePath.empty())
 			menu->addChild(createMenuLabel(m->filePath));
+
+		// THE ENGRAVED SCORE, FROM MUSICXML FOR NOW. Reading a Guitar Pro file straight into
+		// notation is phase five of docs/notation.md; until then the window is fed a MusicXML
+		// file, which is what proves the engraving and the window itself.
+		menu->addChild(createMenuItem("Show an engraved score…", "", [=]() {
+			osdialog_filters* filters = osdialog_filters_parse(
+				"MusicXML:musicxml,xml,mxl");
+			char* chosen = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+			osdialog_filters_free(filters);
+			if (!chosen)
+				return;
+			const std::string path = chosen;
+			std::free(chosen);
+			std::string title = path;
+			const size_t slash = title.find_last_of('/');
+			if (slash != std::string::npos)
+				title = title.substr(slash + 1);
+			px::scoreWindowShow(path, title, m->id);
+		}));
 #if CHART_AUDIO
 		menu->addChild(new ui::MenuSeparator);
 		// NOT HIDDEN UNDER A CABLE. Rack draws a cable to wherever its jack is, and a hidden jack
