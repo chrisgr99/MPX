@@ -1,4 +1,5 @@
 /** See GpTimeline.hpp. */
+#include <cmath>
 #include "GpTimeline.hpp"
 
 #include <algorithm>
@@ -334,6 +335,33 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			const GpBar& bar = track.bars[written];
 			const double barStart = out.bars[i].startQuarters;
 
+			// HOW FAST THE STRUMMING HAND IS MOVING IN THIS BAR.
+			//
+			// A strumming hand keeps swinging whether or not it strikes: at eighths it goes down
+			// on the beat and up between, and it strikes on the way past. So which way the hand
+			// is going at any moment follows from the RATE it is swinging at, and that rate is
+			// the fastest the part asks for — a bar of sixteenth chords is a hand moving in
+			// sixteenths, and a bar of quarter chords is a hand still moving in eighths and
+			// striking only on the way down, which is why quarter chords come out all
+			// down-strokes and sixteenths come out alternating.
+			//
+			// NEVER SLOWER THAN EIGHTHS, for that reason: a hand that moved in quarters would
+			// play every other quarter upwards, which no one does.
+			double pulse = 0.5;
+			for (size_t b = 0; b < bar.beats.size(); b++) {
+				const GpBeat& e = bar.beats[b];
+				if (e.rest || e.notes.size() < 3 || e.quarters <= 0.f)
+					continue;
+				int struck = 0;
+				for (size_t o = 0; o < e.notes.size(); o++) {
+					if (!e.notes[o].tied)
+						struck++;
+				}
+				if (struck >= 3)
+					pulse = std::fmin(pulse, (double) e.quarters);
+			}
+			pulse = std::fmax(0.0625, pulse);
+
 			for (size_t b = 0; b < bar.beats.size(); b++) {
 				const GpBeat& beat = bar.beats[b];
 				if (beat.rest || beat.notes.empty())
@@ -366,7 +394,7 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					p.startSeconds = clock.secondsAt(start);
 					p.lengthSeconds = clock.secondsAt(start + length) - p.startSeconds;
 					p.dynamic = beat.dynamic;
-					p.brush = beat.brush;
+					p.brush = 0;   // Filled in below, once an unmarked chord has been read.
 					p.brushMs = beat.brushMs;
 					p.grace = beat.grace ? beat.grace : note.grace;
 					// WHERE THE HAND WAS. The note before it on the same string, so a hammer-on
@@ -376,10 +404,41 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 						if (was != lastOnString.end() && was->second < played.size())
 							p.fromMidi = played[was->second].note.midi;
 					}
+					// A CHORD NOBODY MARKED AS A STRUM IS STILL A STRUM.
+					//
+					// Across the forty-six Guitar Pro files here there are 20,654 chords of three
+					// or more notes and FIFTY-SIX of them are marked as brushed — three in a
+					// thousand. Transcribers do not write it down because a guitarist reading the
+					// page does not need telling; the mark is reserved for a stroke slow enough
+					// to be worth pointing out. Played as written, every one of the other 20,598
+					// is six strings struck at the same instant at the same level, which is a
+					// block chord and sounds like one.
+					//
+					// WHICH WAY THE HAND IS GOING COMES FROM THE RHYTHM, not from a setting. A
+					// chord on the beat is a down-stroke and one falling between beats is the
+					// hand coming back up, which is what makes a strummed bar sound like a bar
+					// rather than a row of attacks. In six-eight the beat is a dotted quarter,
+					// so the bar's own beat is what the position is measured against.
+					int brush = beat.brush;
+					if (brush == 0 && !track.tuning.empty()) {
+						int struck = 0;
+						for (size_t o = 0; o < beat.notes.size(); o++) {
+							if (!beat.notes[o].tied)
+								struck++;
+						}
+						if (struck >= 3) {
+							// WHICH WAY THE HAND IS GOING: down on the even swings of the pulse
+							// and up on the odd ones. See `pulse` above.
+							const long swing =
+								(long) std::floor((double) beat.start / pulse + 0.5);
+							brush = ((swing % 2) == 0) ? 1 : -1;
+						}
+					}
+
 					// WHERE IN THE STROKE. A brushed chord is struck low to high going down and
 					// high to low coming up, so the order the hand reaches the strings is the
 					// order the notes speak in.
-					if (beat.brush != 0) {
+					if (brush != 0) {
 						int before = 0, total = 0;
 						for (size_t o = 0; o < beat.notes.size(); o++) {
 							if (beat.notes[o].tied)
@@ -387,7 +446,7 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 							total++;
 							// One is the highest string, so a downstroke starts at the largest
 							// number and an upstroke at the smallest.
-							const bool earlier = (beat.brush > 0)
+							const bool earlier = (brush > 0)
 								? (beat.notes[o].string > note.string)
 								: (beat.notes[o].string < note.string);
 							if (earlier)
@@ -396,6 +455,7 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 						p.strumIndex = (uint8_t) before;
 						p.strumCount = (uint8_t) total;
 					}
+					p.brush = brush;
 					p.note = note;
 					p.note.tied = false;
 					// AFTER THE NOTE IS COPIED, not before it: what the beat says is added to

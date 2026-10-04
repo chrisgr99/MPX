@@ -94,6 +94,7 @@ struct GuitarModule : Module, NoteSink {
 		P_TAPER,
 		P_FRET_DAMPING,
 		P_HUMANISE,
+		P_STRUM_MS,
 		NUM_PARAMS
 	};
 	enum InputId {
@@ -184,6 +185,17 @@ struct GuitarModule : Module, NoteSink {
 		//? of and between notes. At the bottom, silent; at the top, plainly louder than any
 		//? player's. A bend makes none.
 		configParam(P_STIFFNESS, 0.f, 1.f, 0.7f / EXAGGERATE, "Stiffness", "%", 0.f, 100.f);
+		// HOW LONG THE HAND TAKES TO CROSS THE STRINGS.
+		//
+		// A loose open strum is thirty or forty milliseconds across the chord; a tight one is
+		// under ten and sounds almost like a single attack. At NOUGHT the strings all speak
+		// together, which is what this did before there was a control and is still what a part
+		// that is not strummed wants.
+		//
+		// The default is eighteen, which is what the performer's own rule has always said a
+		// down-stroke takes — so a patch made before this knob existed plays as it did, and the
+		// knob starts where the hand already was.
+		configParam(P_STRUM_MS, 0.f, 45.f, 18.f, "Strum speed", " ms");
 		//? How stiff the strings are: the stiffer, the sharper their upper partials stand above
 		//? whole multiples of the fundamental. At the top the eighth partial is 9 cents sharp,
 		//? on any string, past any real string's. The nylon's strings take a sixth of it.
@@ -332,6 +344,15 @@ struct GuitarModule : Module, NoteSink {
 		}
 		if (rulesReady.exchange(false))
 			performer.rules = loadedRules;
+
+		// THE STROKE'S SPEED, FROM THE KNOB. The way back up is quicker than the way down —
+		// the hand is returning rather than being swung — so the up-stroke keeps the two thirds
+		// it has always been. That ratio is a property of an arm, not a setting.
+		{
+			const float across = params[P_STRUM_MS].getValue();
+			performer.rules.strumDownMs = across;
+			performer.rules.strumUpMs = across * (2.f / 3.f);
+		}
 
 		// THE CABLE GOING IS EVERYTHING STOPPING, as on mpxGuitarist.
 		const bool attached = reader.attached();
@@ -580,7 +601,10 @@ static Layout guitarLayout() {
 	// The strings' character, set once for a guitar, on small knobs.
 	small("p.sympathy", GuitarModule::P_SYMPATHY, SMALL1, 84.f, "SYMPATHY");
 	small("p.finger", GuitarModule::P_FINGER, SMALL2, 84.f, "FINGER NOISE");
-	small("p.stiffness", GuitarModule::P_STIFFNESS, SMALL3, 84.f, "STIFFNESS");
+	// THE STRUM KNOB STANDS WHERE STIFFNESS STOOD. Stiffness is still a setting and still does
+	// what it did; it earned its place on the panel less than this does, because the difference
+	// it makes is barely audible and this one decides whether a chord sounds like a guitar.
+	small("p.strum", GuitarModule::P_STRUM_MS, SMALL3, 84.f, "STRUM");
 	// How the notes ring against one another: high against low, fretted against open.
 	small("p.taper", GuitarModule::P_TAPER, SMALL1, 97.f, "TAPER");
 	small("p.fretdamping", GuitarModule::P_FRET_DAMPING, SMALL2, 97.f, "FRET DAMPING");

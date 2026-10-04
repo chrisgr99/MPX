@@ -95,6 +95,14 @@ struct PerformRules {
 	float strumUpMs = 12.f;
 	float strumLevelFall = 0.04f;    /**< Per string, in order of being struck. */
 	float strumUpExtraFall = 0.1f;
+	/** HOW FAST THE BASS GOES AWAY ON THE WAY BACK UP, per string into the stroke.
+	
+	Coming back up, the pick reaches the treble strings first and is losing the hand's weight all
+	the way across; by the bass it is barely catching them. That is what keeps a strummed bar from
+	thickening — the low strings speak on the beat and are only brushed between beats — and it is
+	the difference between a strum and the same six notes played twice. Steeper than the fall on a
+	down-stroke for the same reason. */
+	float strumUpFall = 0.16f;
 
 	// Tremolo picking, where the file says a note is picked repeatedly rather than held.
 	float tremoloHz = 16.f;
@@ -204,6 +212,11 @@ struct Performer {
 	/** A note arriving now. Nothing is queued: what it does to the voices happens here, and
 	what happens over the note's length is decided here too. */
 	void note(const PerformNote& note);
+
+	/** How long the hand takes to cross the strings for this note, and whether it is a stroke at
+	all — a stroke of no length is a block chord. */
+	float strokeMs(const PerformNote& note) const;
+	bool strumming(const PerformNote& note) const;
 
 	/** Moves everything on by `dt` seconds and fills the message queue. */
 	void advance(float dt);

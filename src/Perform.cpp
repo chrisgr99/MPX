@@ -98,6 +98,7 @@ const RuleName RULES[] = {
 	RULE(vibratoSlightCents), RULE(vibratoWideCents), RULE(vibratoHz),
 	RULE(vibratoDelayMs), RULE(vibratoFadeMs),
 	RULE(strumDownMs), RULE(strumUpMs), RULE(strumLevelFall), RULE(strumUpExtraFall),
+	RULE(strumUpFall),
 	RULE(tremoloHz), RULE(tremoloLevelVary),
 	RULE(timingMs), RULE(levelVary), RULE(lengthVary),
 	RULE(bendRangeSemitones),
@@ -288,6 +289,28 @@ int Performer::voiceFor(const PerformNote& n) {
 }
 
 
+/** HOW LONG THE HAND TAKES TO CROSS THE STRINGS FOR THIS NOTE'S CHORD.
+
+What the file says if it said anything — a transcriber who writes a brush time means a stroke slow
+enough to be worth writing down — and otherwise the rule, which the module's knob sets. */
+float Performer::strokeMs(const PerformNote& n) const {
+	if (n.strumMs > 0)
+		return (float) n.strumMs;
+	return (n.strum > 0) ? rules.strumDownMs : rules.strumUpMs;
+}
+
+/** WHETHER THIS NOTE IS PART OF A STROKE AT ALL.
+
+A STROKE OF NO LENGTH IS NOT A STROKE. With the speed at nought the hand crosses the strings
+instantly, which is the block chord this played before there was a control — so the levels across
+the chord are left alone as well as the timing. Otherwise turning the knob to nought would still
+leave an up-stroke with its bass strings pulled down, which is a strum in everything but the one
+thing the control claims to switch off. */
+bool Performer::strumming(const PerformNote& n) const {
+	return n.strum != 0 && strokeMs(n) > 0.f;
+}
+
+
 void Performer::note(const PerformNote& n) {
 	const int i = voiceFor(n);
 	Plan& p = plans[i];
@@ -325,8 +348,12 @@ void Performer::note(const PerformNote& n) {
 		level *= rules.shiftSlideLevel;
 	// THE HAND LEANS ON THE FIRST STRING IT REACHES, and less on each one after it; an upstroke
 	// is lighter than a downstroke throughout.
-	if (n.strum != 0) {
-		level *= 1.f - rules.strumLevelFall * (float) n.strumIndex;
+	if (strumming(n)) {
+		// DOWN THE CHORD AND BACK UP IT ARE NOT THE SAME STROKE. Going down, the hand leans on
+		// the bass and the fall across the strings is slight. Coming up it is already lifting,
+		// so each string after the first loses markedly more — see strumUpFall.
+		const float fall = (n.strum > 0) ? rules.strumLevelFall : rules.strumUpFall;
+		level *= std::fmax(0.15f, 1.f - fall * (float) n.strumIndex);
 		if (n.strum < 0)
 			level *= 1.f - rules.strumUpExtraFall;
 	}
@@ -371,11 +398,8 @@ void Performer::note(const PerformNote& n) {
 	// A BRUSHED CHORD IS ONE MOVEMENT OF THE HAND, so each string speaks a little after the one
 	// before it. The first is on the beat, which is where the chord is felt to be.
 	float delay = 0.f;
-	if (n.strum != 0) {
-		float stroke = (n.strumMs > 0) ? (float) n.strumMs
-			: ((n.strum > 0) ? rules.strumDownMs : rules.strumUpMs);
-		delay = stroke / 1000.f * (float) n.strumIndex;
-	}
+	if (strumming(n))
+		delay = strokeMs(n) / 1000.f * (float) n.strumIndex;
 	// EARLY AS WELL AS LATE, AROUND A SMALL CONSTANT DELAY. A note cannot sound before it
 	// arrives, so every note is held back by half the timing range and placed anywhere either
 	// side of that: from on time to the whole range late, evenly. Heard against the guitar's own
