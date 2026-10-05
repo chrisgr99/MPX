@@ -78,6 +78,30 @@ The two modules are unlikely to be used at once, so each chooses its own picture
 
 It matters more here than anywhere else, because this module depends on looping a short section many times, so a loop that lands badly is heard over and over. It is in scope for this work.
 
+## A simpler module first: paths as control voltages
+
+The whole of the framework below — choosing a picture, drawing a line or a circle, moving a sprite along it, reading what is underneath — is worth having before a single note is played. So it is built first in a module that makes no notes at all.
+
+**Each sprite puts out a control voltage**: whatever it is reading now, from the same seventeen sources, as a voltage. One per sprite to begin with. No beats, no harmony, no pitch — a sprite is a reading head and the picture is the data.
+
+**It is a modulation source and, at speed, an oscillator.** Run a circle round once a bar and it is an LFO whose shape is drawn rather than chosen from a list. Run it at two hundred a second and the picture's values become a waveform — a wavetable oscillator whose table is a circular slice of an image, and whose timbre is changed by dragging the circle somewhere else.
+
+**That changes where the motion comes from.** The note module moves in musical time, worked out from the chart's position, which is exactly what makes its recurrence exact. A voltage source cannot: at audio rate there is no chart fast enough to count it. So the CV module carries its own **rate** control, free-running in cycles per second, with locking to the chart's beat as one setting among them rather than the only behaviour.
+
+**Known problem, not solved here.** A picture squared off to 1024 points read at two hundred revolutions a second gives about two hundred and forty samples a revolution, which undersamples the table and aliases. The fix is to average along the path over the distance covered in one sample rather than point-sampling it, which is a filter whose width follows the rate. It is noted so that it is not discovered as a surprise.
+
+## The order of work
+
+**One. The shared framework**, as a library rather than a module: path geometry — a line as two ends, a circle as a centre and a diameter — position along a path as a fraction, and the drawing and hit-testing that go with dragging one on a picture. `Picture.hpp` is reused unchanged; the seventeen sources are currently inside mpxSprites and are lifted out into a header both modules use.
+
+**Two. The CV module.** The picture and its chooser, eight tabs, a path each, the kind and diameter on the panel and the position under the pointer, a source per sprite, a rate per sprite, and the voltages out. Useful on its own, and it proves the framework before any of the musical machinery is written.
+
+**Three. mpxPattern publishes its tab speeds** on the cable, a block of eight beside the harmony, which the note module needs for direction and which nothing needs before then.
+
+**Four. mpxChart's automatic turnaround**, so a looped section lands properly — worth having before the note module rather than after, because that module loops a short section many times and a bad landing is heard over and over.
+
+**Five. The notes.** Beats from mpxPattern by tab number, the pitch from the chord sounding now, drop, repeats, and position in musical time. Whether this is a separate module or a mode of the CV module is open, and is better decided once the CV module exists and its panel is known.
+
 ## Where the original is
 
 The application this comes from has the paths in `src/curveGeometry.js`, the cycle speeds in `src/simulation.js` as `cycleSpeeds` and `computeCyclePhaseFromGlobalTime`, the step positions in `src/beatPoints.js`, and the drop and strength handling in `simulation.js`.
