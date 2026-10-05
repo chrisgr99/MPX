@@ -57,14 +57,8 @@ few parts in a hundred even at an edge, so the reading is multiplied up to sit i
 the colour reading and the one force knob then means the same thing in either mode. */
 static const float SLOPE_GAIN = 14.f;
 
-/** WHICH OF A PIXEL'S NUMBERS IS BEING READ. Hue, saturation and value are the defaults, because
-they are what the eye reads: a region's hue is what a person would call its colour, and its
-saturation is how much colour it has. The plain three are there for pictures where one of them
-happens to carry the shape. */
-enum Channel { CH_HUE, CH_SAT, CH_VAL, CH_RED, CH_GREEN, CH_BLUE, NUM_CHANNELS };
-static const char* CHANNEL_NAMES[NUM_CHANNELS] = {
-	"Hue", "Saturation", "Value", "Red", "Green", "Blue"
-};
+// Channel, CHANNEL_NAMES, toHsv and channelAt are in Picture.hpp: more than one module
+// reads a picture this way now.
 
 /** HOW THE FIELD IS READ FROM THE PICTURE. */
 enum FieldMode { FIELD_COLOUR, FIELD_SLOPE, NUM_FIELDS };
@@ -123,49 +117,6 @@ static const char* SOURCE_NAMES[NUM_SOURCES] = {
 	"speed", "east", "north", "corner", "push",
 	"near", "which", "chance"
 };
-
-
-static void toHsv(float r, float g, float b, float* h, float* s, float* v) {
-	const float hi = std::max(r, std::max(g, b));
-	const float lo = std::min(r, std::min(g, b));
-	const float d = hi - lo;
-	*v = hi;
-	*s = (hi > 0.f) ? d / hi : 0.f;
-	if (d <= 0.f) {
-		*h = 0.f;
-		return;
-	}
-	float hue;
-	if (hi == r)
-		hue = (g - b) / d;
-	else if (hi == g)
-		hue = 2.f + (b - r) / d;
-	else
-		hue = 4.f + (r - g) / d;
-	hue /= 6.f;
-	if (hue < 0.f)
-		hue += 1.f;
-	*h = hue;
-}
-
-
-/** One of a pixel's numbers, nought to one, at a place on the square. */
-static float channelAt(const Picture& picture, float x, float y, int which) {
-	uint8_t px[4];
-	picture.at(x, y, px);
-	const float r = px[0] / 255.f, g = px[1] / 255.f, b = px[2] / 255.f;
-	switch (which) {
-		case CH_RED: return r;
-		case CH_GREEN: return g;
-		case CH_BLUE: return b;
-		default: break;
-	}
-	float h = 0.f, s = 0.f, v = 0.f;
-	toHsv(r, g, b, &h, &s, &v);
-	if (which == CH_HUE) return h;
-	if (which == CH_SAT) return s;
-	return v;
-}
 
 
 /** THE COLOURS THE SPRITES ARE DRAWN IN. Four that hold their own over a photograph of anything,

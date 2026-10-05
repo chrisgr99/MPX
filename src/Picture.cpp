@@ -1,5 +1,9 @@
 /** See Picture.hpp. */
 #include "Picture.hpp"
+// THE HEADER IS FREE OF RACK so that reading along a path can be tested on its own; the file
+// handling here is not — remembering a picture means asset folders and a user directory.
+#include "plugin.hpp"
+#include "Layout.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -264,22 +268,6 @@ void Picture::clear() {
 }
 
 
-void Picture::at(float x, float y, uint8_t* out) const {
-	if (rgba.empty()) {
-		out[0] = out[1] = out[2] = 0;
-		out[3] = 255;
-		return;
-	}
-	int px = (int) std::floor(x * PICTURE_SIDE);
-	int py = (int) std::floor(y * PICTURE_SIDE);
-	px = ((px % PICTURE_SIDE) + PICTURE_SIDE) % PICTURE_SIDE;
-	py = ((py % PICTURE_SIDE) + PICTURE_SIDE) % PICTURE_SIDE;
-	const uint8_t* at = &rgba[((size_t) py * PICTURE_SIDE + px) * 4];
-	out[0] = at[0];
-	out[1] = at[1];
-	out[2] = at[2];
-	out[3] = at[3];
-}
 
 
 

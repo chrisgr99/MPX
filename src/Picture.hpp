@@ -10,9 +10,9 @@ patch that is sent somewhere else looks and sounds as it did; and it saves the F
 the square it was turned into, because a photograph is a few hundred kilobytes as a file and three
 megabytes as pixels.
 */
-#include "plugin.hpp"
-#include "Layout.hpp"
-
+// NO RACK HEADERS. Nothing here is a Rack type — a picture is bytes, a size and a name — and
+// keeping it that way lets the reading along a path be tested on its own, which is the part whose
+// faults are inaudible until they are not.
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -49,6 +49,34 @@ struct Picture {
 	clamping, so a reading at the very edge is defined. */
 	void at(float x, float y, uint8_t* out) const;
 };
+
+
+/** WHICH OF A PIXEL'S NUMBERS IS BEING READ. Hue, saturation and value first, because they are
+what the eye reads: a region's hue is what a person would call its colour, and its saturation is
+how much colour it has. The plain three are there for pictures where one of them happens to carry
+the shape. */
+enum Channel { CH_HUE, CH_SAT, CH_VAL, CH_RED, CH_GREEN, CH_BLUE, NUM_CHANNELS };
+extern const char* CHANNEL_NAMES[NUM_CHANNELS];
+
+/** Red, green and blue as hue, saturation and value, each nought to one. */
+void pictureToHsv(float r, float g, float b, float* h, float* s, float* v);
+
+/** One of a pixel's numbers, nought to one, at a place on the square.
+
+HERE RATHER THAN IN A MODULE because more than one module reads a picture this way, and two
+copies of a colour conversion are two chances for the same picture to read differently in two
+places. */
+float channelAt(const Picture& picture, float x, float y, int which);
+
+/** THE MEAN OF A CHANNEL OVER A SMALL DISC, rather than at one pixel.
+
+A path has no thickness and a picture is a grid, so a reading taken at a single pixel depends on
+exactly which row of pixels the path happens to graze — move the path by half a pixel and the
+reading jumps. Averaging across the path removes that, and it is the same averaging the squaring
+and the thumbnails already do.
+
+`radius` is in picture units, nought to one across the whole square; nought reads a single point. */
+float channelAround(const Picture& picture, float x, float y, int which, float radius);
 
 
 /** GLARE REDUCTION, the same as the accessibility setting in GXW.

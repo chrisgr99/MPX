@@ -473,3 +473,12 @@ $(DEP_PATH)/lib/libverovio.a:
 
 
 .PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+
+# DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
+# read at rates from far below the table's resolution to far above it; averaging the arc is
+# compared against sampling a point on the same signal.
+pathread:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pathread.cpp src/Paths.cpp src/PictureRead.cpp \
+		-o build/pathread
+	@./build/pathread $(ARGS)
