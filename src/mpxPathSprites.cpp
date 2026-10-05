@@ -102,6 +102,8 @@ struct PathSpritesModule : Module, NoteSink {
 	enum ParamId {
 		P_KIND, P_DIAMETER, P_SOURCE, P_RATE, P_RATE_FROM, P_LEVEL, P_OFFSET,
 		P_RUN,
+		// APPENDED, NEVER INSERTED: a patch stores a parameter by its position in this list.
+		P_SMOOTH,
 		NUM_PARAMS,
 	};
 	enum InputId { I_CHART, NUM_INPUTS };
@@ -111,7 +113,7 @@ struct PathSpritesModule : Module, NoteSink {
 	/** THE SETTINGS A TAB OWNS. The params above show whichever tab is in front; these are where
 	the other seven live while they are not. The same arrangement as mpxSprites and mpxPattern. */
 	enum TabValue { TV_ON, TV_KIND, TV_DIAMETER, TV_SOURCE, TV_RATE, TV_RATE_FROM,
-		TV_LEVEL, TV_OFFSET, NUM_TV };
+		TV_LEVEL, TV_OFFSET, TV_SMOOTH, NUM_TV };
 
 	PathSpritesModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -136,6 +138,12 @@ struct PathSpritesModule : Module, NoteSink {
 		configParam(P_LEVEL, -10.f, 10.f, 5.f, "Level", " V");
 		configParam(P_OFFSET, -10.f, 10.f, 0.f, "Offset", " V");
 		configSwitch(P_RUN, 0.f, 1.f, 1.f, "Run", {"Stopped", "Running"});
+		// SMOOTHING, WHICH IS NOT THE SAME AS THE ANTI-ALIASING. The arc average removes what the
+		// rate cannot carry; this removes what the PICTURE has and the ear does not want — the
+		// grain of a photograph, a speck of dust, the hard edge of a window frame. One is set by
+		// the rate and is not a choice; this is a choice, because how much of a picture's detail
+		// belongs in the sound is a musical question and not a technical one.
+		configParam(P_SMOOTH, 0.f, 1.f, 0.f, "Smoothing", "%", 0.f, 100.f);
 		configInput(I_CHART, "MPX chart");
 		for (int i = 0; i < MAX_PATHS; i++)
 			configOutput(O_CV + i, string::f("Sprite %d", i + 1));
@@ -154,6 +162,7 @@ struct PathSpritesModule : Module, NoteSink {
 			val[i][TV_RATE_FROM].store(0.f);
 			val[i][TV_LEVEL].store(5.f);
 			val[i][TV_OFFSET].store(0.f);
+			val[i][TV_SMOOTH].store(0.f);
 			path[i].cx = path[i].cy = 0.5f;
 			path[i].diameter = 0.3f + 0.07f * (float) i;
 			path[i].moved();
@@ -224,6 +233,7 @@ struct PathSpritesModule : Module, NoteSink {
 			case TV_RATE_FROM: return P_RATE_FROM;
 			case TV_LEVEL: return P_LEVEL;
 			case TV_OFFSET: return P_OFFSET;
+			case TV_SMOOTH: return P_SMOOTH;
 			default: break;
 		}
 		return -1;
@@ -287,6 +297,9 @@ struct PathSpritesModule : Module, NoteSink {
 	/** Where each head is, as a fraction along its path. A circle wraps; a line runs nought to one
 	and begins again, always in the same direction, so the material recurs in the same order. */
 	double at[MAX_PATHS] = {};
+	/** The smoothed reading, one a sprite: a single pole, which is the gentlest thing that is
+	still a filter and leaves no ringing on a step. */
+	float held[MAX_PATHS] = {};
 	float secondsPerBeat = 0.5f;
 	double lastBeat = -1.0;
 	double lastBeatTime = 0.0;
@@ -366,7 +379,12 @@ struct PathSpritesModule : Module, NoteSink {
 				// THE MEAN OVER THE ARC COVERED, which is what keeps a fast sprite clean. `was`
 				// and the unwrapped end, so an arc that crosses the start of a circle is still
 				// one arc.
-				read = table[i].ready() ? table[i].read(was, was + step) : 0.f;
+				//
+				// HALF, NOT NOUGHT, WHERE THERE IS NO TABLE — no picture yet, or one still being
+				// read. Half is the middle of the range and leaves the output sitting on its
+				// offset, which is plainly nothing happening; nought would be a definite voltage
+				// a long way from centre and would look like a reading.
+				read = table[i].ready() ? table[i].read(was, was + step) : 0.5f;
 			}
 			else {
 				float x = 0.f, y = 0.f;
@@ -376,11 +394,27 @@ struct PathSpritesModule : Module, NoteSink {
 					: math::clamp(1.f - y, 0.f, 1.f);
 			}
 
+			// SMOOTHED, IF IT IS ASKED FOR. The knob is a time, not a fraction: squared, up to a
+			// third of a second, so the bottom half of its travel takes the grain off and the top
+			// of it turns a picture into a slow drift.
+			const float smooth = val[i][TV_SMOOTH].load();
+			if (smooth > 0.001f) {
+				const float tau = smooth * smooth * 0.33f;
+				const float k = 1.f - std::exp(-args.sampleTime / std::fmax(1e-5f, tau));
+				held[i] += (read - held[i]) * k;
+				read = held[i];
+			}
+			else {
+				held[i] = read;
+			}
+
 			// A READING IS NOUGHT TO ONE; what leaves is whatever the thing downstream wants.
 			// Centred on the offset so that a level turned down leaves it where it was rather
 			// than dragging it to nothing.
+			// LEVEL IS THE PEAK, so five gives a swing of five volts either side of the offset
+			// and a reading of a half sits exactly on it.
 			const float v = math::clamp(
-				val[i][TV_OFFSET].load() + (read - 0.5f) * 2.f * val[i][TV_LEVEL].load() * 0.5f,
+				val[i][TV_OFFSET].load() + (read - 0.5f) * 2.f * val[i][TV_LEVEL].load(),
 				-10.f, 10.f);
 			outputs[O_CV + i].setVoltage(v);
 			poly[i] = v;
@@ -405,7 +439,7 @@ struct PathSpritesModule : Module, NoteSink {
 		for (int i = 0; i < MAX_PATHS; i++) {
 			json_t* oneJ = json_object();
 			static const char* KEYS[NUM_TV] = {"on", "kind", "diameter", "source", "rate",
-				"rateFrom", "level", "offset"};
+				"rateFrom", "level", "offset", "smooth"};
 			for (int v = 0; v < NUM_TV; v++)
 				json_object_set_new(oneJ, KEYS[v], json_real(val[i][v].load()));
 			json_object_set_new(oneJ, "ax", json_real(path[i].ax));
@@ -437,7 +471,7 @@ struct PathSpritesModule : Module, NoteSink {
 		json_t* tabsJ = json_object_get(rootJ, "tabs");
 		if (json_is_array(tabsJ)) {
 			static const char* KEYS[NUM_TV] = {"on", "kind", "diameter", "source", "rate",
-				"rateFrom", "level", "offset"};
+				"rateFrom", "level", "offset", "smooth"};
 			for (int i = 0; i < MAX_PATHS && i < (int) json_array_size(tabsJ); i++) {
 				json_t* oneJ = json_array_get(tabsJ, (size_t) i);
 				if (!json_is_object(oneJ))

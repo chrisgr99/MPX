@@ -36,12 +36,18 @@ struct PictureField : widget::OpaqueWidget {
 	int handle = -1;
 	uint32_t shownGeneration = 0;
 
-	/** What a drag has hold of. */
+	/** What a drag has hold of, and where the pointer was when it took hold. */
 	enum Grab { GRAB_NONE, GRAB_CENTRE, GRAB_END_A, GRAB_END_B, GRAB_WHOLE };
 	int grab = GRAB_NONE;
 	int grabbed = -1;
-	math::Vec grabFrom;
-	float grabAx = 0.f, grabAy = 0.f, grabBx = 0.f, grabBy = 0.f;
+	/** IN THE WIDGET'S OWN PIXELS, accumulated from the drag's movement.
+
+	NOT FROM THE MOUSE'S POSITION. Rack gives the pointer in the RACK's coordinates, which are not
+	this widget's — they carry the rack's own scroll and zoom — so subtracting the widget's
+	absolute position from them mixes two frames of reference and the answer is wherever those two
+	happen to differ. It sent every path to a corner. Every draggable thing in this plugin
+	accumulates the movement instead, divided by the zoom. */
+	math::Vec dragAt;
 
 	/** Whether the chooser is up over the picture, and what the pointer is over in it. */
 	bool choosing = false;
@@ -101,20 +107,60 @@ struct PictureField : widget::OpaqueWidget {
 		}
 		const std::string kept = pictureKeepCopy(module->picture.name, module->picture.file);
 		pictureRemember(kept.empty() ? path : kept, module->picture.name, module->picture.file);
-		module->wantTables.store(true);
 		choosing = false;
 	}
 
 	// ---- taking hold of a path -------------------------------------------------------------------
 
-	/** How near the pointer has to be to an end to take it rather than the whole line, in picture
-	units. A tenth of the picture, which under magnification is a large target and is still small
-	enough that the middle of any line worth drawing is reachable. */
-	static constexpr float NEAR = 0.06f;
+	/** HOW NEAR COUNTS, in screen pixels. Large enough to hit under magnification without having
+	to be accurate, small enough that two paths near each other are still two things. */
+	static float grabRadius() { return 8.f; }
 
-	static float distance(float ax, float ay, float bx, float by) {
-		const float dx = ax - bx, dy = ay - by;
+	static float distance(math::Vec a, math::Vec b) {
+		const float dx = a.x - b.x, dy = a.y - b.y;
 		return std::sqrt(dx * dx + dy * dy);
+	}
+
+	/** How far a point is from a line segment. */
+	static float toSegment(math::Vec p, math::Vec a, math::Vec b) {
+		const float vx = b.x - a.x, vy = b.y - a.y;
+		const float len = vx * vx + vy * vy;
+		if (len < 1e-6f)
+			return distance(p, a);
+		float t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / len;
+		t = math::clamp(t, 0.f, 1.f);
+		return distance(p, math::Vec(a.x + t * vx, a.y + t * vy));
+	}
+
+	/** WHAT IS UNDER THE POINTER on path `i`, or nothing.
+
+	A PATH IS TAKEN HOLD OF BY ITS OWN OUTLINE, never by empty picture: clicking somewhere a path
+	is not should do nothing at all, because the alternative is that every misjudged click moves
+	something. A circle is grabbed by its perimeter or by the centre mark; a line by either end
+	or by anywhere along it. */
+	int hitTest(math::Vec pos, int i) const {
+		if (!module)
+			return GRAB_NONE;
+		const Path& p = module->path[i];
+		const float near = grabRadius();
+		if (p.kind == Path::CIRCLE) {
+			const math::Vec c = toScreen(p.cx, p.cy);
+			if (distance(pos, c) < near)
+				return GRAB_CENTRE;
+			const float r = p.diameter * 0.5f * box.size.x;
+			if (std::fabs(distance(pos, c) - r) < near)
+				return GRAB_WHOLE;
+			return GRAB_NONE;
+		}
+		const math::Vec a = toScreen(p.ax, p.ay);
+		const math::Vec b = toScreen(p.bx, p.by);
+		if (distance(pos, a) < near)
+			return GRAB_END_A;
+		if (distance(pos, b) < near)
+			return GRAB_END_B;
+		if (toSegment(pos, a, b) < near)
+			return GRAB_WHOLE;
+		return GRAB_NONE;
 	}
 
 	void onButton(const ButtonEvent& e) override {
@@ -149,7 +195,6 @@ struct PictureField : widget::OpaqueWidget {
 				if (module->picture.load(cells[(size_t) at].path)) {
 					pictureRemember(cells[(size_t) at].path, module->picture.name,
 						module->picture.file);
-					module->wantTables.store(true);
 				}
 				choosing = false;
 			}
@@ -157,68 +202,92 @@ struct PictureField : widget::OpaqueWidget {
 			return;
 		}
 
-		const int i = tabNow();
-		Path& p = module->path[i];
-		const math::Vec at = toPicture(e.pos);
-		grabbed = i;
-		grabFrom = at;
-		grabAx = p.ax; grabAy = p.ay; grabBx = p.bx; grabBy = p.by;
+		// WITH NO PICTURE THERE IS NOTHING TO DRAG, so a click asks for one. Right-click opens
+		// the chooser at any time; this is so that the first click anybody makes on an empty
+		// module does the only useful thing there is to do.
+		if (!module->picture.has()) {
+			openChooser();
+			e.consume(this);
+			return;
+		}
 
-		if (p.kind == Path::CIRCLE) {
-			grab = GRAB_CENTRE;
-		}
-		else if (distance(at.x, at.y, p.ax, p.ay) < NEAR) {
-			grab = GRAB_END_A;
-		}
-		else if (distance(at.x, at.y, p.bx, p.by) < NEAR) {
-			grab = GRAB_END_B;
+		// THE TAB IN FRONT FIRST, so that two paths lying over each other are not a lottery; then
+		// any other that is switched on, and taking hold of one brings its tab to the front.
+		int found = GRAB_NONE, on = -1;
+		const int front = tabNow();
+		if (module->enabled(front))
+			found = hitTest(e.pos, front);
+		if (found != GRAB_NONE) {
+			on = front;
 		}
 		else {
-			grab = GRAB_WHOLE;
+			for (int i = 0; i < MAX_PATHS && on < 0; i++) {
+				if (i == front || !module->enabled(i))
+					continue;
+				const int g = hitTest(e.pos, i);
+				if (g != GRAB_NONE) {
+					found = g;
+					on = i;
+				}
+			}
 		}
-		dragTo(at);
+		if (on < 0) {
+			// NOTHING UNDER THE POINTER, so nothing moves.
+			e.consume(this);
+			return;
+		}
+		if (on != front) {
+			module->tab.store(on);
+			module->selection.store(1 << on);
+		}
+
+		grab = found;
+		grabbed = on;
+		dragAt = e.pos;
 		e.consume(this);
 	}
 
-	void dragTo(math::Vec at) {
-		if (!module || grabbed < 0)
-			return;
-		Path& p = module->path[grabbed];
-		switch (grab) {
-			case GRAB_CENTRE:
-				p.cx = at.x;
-				p.cy = at.y;
-				break;
-			case GRAB_END_A:
-				p.ax = at.x;
-				p.ay = at.y;
-				break;
-			case GRAB_END_B:
-				p.bx = at.x;
-				p.by = at.y;
-				break;
-			case GRAB_WHOLE: {
-				// THE WHOLE LINE, KEEPING ITS BEARING: both ends move by the same amount, so a
-				// line pointed the way you want can be carried somewhere else and still point
-				// that way.
-				const float dx = at.x - grabFrom.x, dy = at.y - grabFrom.y;
-				p.ax = math::clamp(grabAx + dx, 0.f, 1.f);
-				p.ay = math::clamp(grabAy + dy, 0.f, 1.f);
-				p.bx = math::clamp(grabBx + dx, 0.f, 1.f);
-				p.by = math::clamp(grabBy + dy, 0.f, 1.f);
-				break;
-			}
-			default:
-				return;
-		}
-		p.moved();
-	}
-
 	void onDragMove(const DragMoveEvent& e) override {
-		if (grab != GRAB_NONE) {
-			const math::Vec local = APP->scene->rack->getMousePos()
-				.minus(getAbsoluteOffset(math::Vec()));
-			dragTo(toPicture(local));
+		if (grab != GRAB_NONE && grabbed >= 0 && module) {
+			const float zoom = getAbsoluteZoom();
+			const math::Vec was = toPicture(dragAt);
+			dragAt = dragAt.plus(e.mouseDelta.div(zoom > 0.f ? zoom : 1.f));
+			const math::Vec now = toPicture(dragAt);
+			const float mx = now.x - was.x, my = now.y - was.y;
+
+			// EVERYTHING MOVES BY HOW FAR THE POINTER MOVED, never to where it is. Nothing jumps
+			// when it is taken hold of: a circle grabbed by its rim keeps that part of its rim
+			// under your hand, and an end grabbed slightly off centre stays slightly off centre.
+			Path& p = module->path[grabbed];
+			switch (grab) {
+				case GRAB_CENTRE:
+				case GRAB_WHOLE:
+					if (p.kind == Path::CIRCLE) {
+						p.cx = math::clamp(p.cx + mx, 0.f, 1.f);
+						p.cy = math::clamp(p.cy + my, 0.f, 1.f);
+					}
+					else {
+						// THE WHOLE LINE, KEEPING ITS BEARING: both ends by the same amount, so a
+						// line pointed the way you want can be carried somewhere else and still
+						// point that way.
+						p.ax = math::clamp(p.ax + mx, 0.f, 1.f);
+						p.ay = math::clamp(p.ay + my, 0.f, 1.f);
+						p.bx = math::clamp(p.bx + mx, 0.f, 1.f);
+						p.by = math::clamp(p.by + my, 0.f, 1.f);
+					}
+					break;
+				case GRAB_END_A:
+					p.ax = math::clamp(p.ax + mx, 0.f, 1.f);
+					p.ay = math::clamp(p.ay + my, 0.f, 1.f);
+					break;
+				case GRAB_END_B:
+					p.bx = math::clamp(p.bx + mx, 0.f, 1.f);
+					p.by = math::clamp(p.by + my, 0.f, 1.f);
+					break;
+				default:
+					break;
+			}
+			p.moved();
 		}
 		widget::OpaqueWidget::onDragMove(e);
 	}
@@ -271,10 +340,13 @@ struct PictureField : widget::OpaqueWidget {
 			std::shared_ptr<window::Font> font = gridFont();
 			if (font && font->handle >= 0) {
 				nvgFontFaceId(args.vg, font->handle);
-				nvgFontSize(args.vg, 12.f);
-				nvgFillColor(args.vg, nvgRGB(0x6a, 0x74, 0x82));
+				nvgFontSize(args.vg, 20.f);
+				nvgFillColor(args.vg, nvgRGB(0xd2, 0xdb, 0xe4));
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-				nvgText(args.vg, w / 2.f, h / 2.f, "right-click for a picture", NULL);
+				nvgText(args.vg, w / 2.f, h / 2.f - 14.f, "click for a picture", NULL);
+				nvgFontSize(args.vg, 13.f);
+				nvgFillColor(args.vg, nvgRGB(0x8a, 0x94, 0xa2));
+				nvgText(args.vg, w / 2.f, h / 2.f + 12.f, "right-click changes it later", NULL);
 			}
 		}
 
@@ -317,8 +389,29 @@ struct PictureField : widget::OpaqueWidget {
 				nvgStroke(args.vg);
 			}
 
-			// THE ENDS OF A LINE, so it is clear what can be taken hold of, and only on the one
-			// the controls belong to — eight sets of handles would be a picture of handles.
+			// WHAT CAN BE TAKEN HOLD OF, and only on the path the controls belong to — eight
+			// sets of handles would be a picture of handles. A circle shows its centre, which is
+			// what moves it; a line shows its two ends, which is what changes it.
+			if (p.kind == Path::CIRCLE && primary) {
+				const math::Vec c = toScreen(p.cx, p.cy);
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, c.x, c.y, 5.f);
+				nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 0xaa));
+				nvgFill(args.vg);
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, c.x, c.y, 3.5f);
+				nvgFillColor(args.vg, ink);
+				nvgFill(args.vg);
+				// A CROSS THROUGH IT, so it is a centre mark and not another sprite.
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, c.x - 8.f, c.y);
+				nvgLineTo(args.vg, c.x + 8.f, c.y);
+				nvgMoveTo(args.vg, c.x, c.y - 8.f);
+				nvgLineTo(args.vg, c.x, c.y + 8.f);
+				nvgStrokeColor(args.vg, nvgRGBA(ink.r * 255, ink.g * 255, ink.b * 255, 0x99));
+				nvgStrokeWidth(args.vg, 1.f);
+				nvgStroke(args.vg);
+			}
 			if (p.kind == Path::LINE && primary) {
 				for (int end = 0; end < 2; end++) {
 					const math::Vec at = toScreen(end ? p.bx : p.ax, end ? p.by : p.ay);
@@ -610,7 +703,8 @@ static Layout pathSpritesLayout() {
 	plate("p.source", colMid, 56.f, PathSpritesModule::P_SOURCE, 10, "READS",
 		std::vector<std::string>(CV_SOURCE_NOTES, CV_SOURCE_NOTES + NUM_CV_SOURCES));
 
-	knob("p.rate", colMid, 72.f, PathSpritesModule::P_RATE, "RATE");
+	knob("p.rate", colMid - 11.f, 72.f, PathSpritesModule::P_RATE, "RATE");
+	knob("p.smooth", colMid + 11.f, 72.f, PathSpritesModule::P_SMOOTH, "SMOOTH");
 	lamps("p.rateFrom", left + 3.f, 84.f, PathSpritesModule::P_RATE_FROM,
 		{"FREE", "THE BEAT"}, "RATE FROM");
 
