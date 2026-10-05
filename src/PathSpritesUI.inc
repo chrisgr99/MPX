@@ -26,6 +26,18 @@ struct PictureField : widget::OpaqueWidget {
 	int handle = -1;
 	uint32_t shownGeneration = 0;
 
+	~PictureField() {
+		// NANOVG IMAGES ARE NOT FREED BY DELETING THE WIDGET. A module added and removed a few
+		// times would otherwise leave a megabyte of picture behind on each one.
+		if (APP && APP->window && APP->window->vg) {
+			if (handle >= 0)
+				nvgDeleteImage(APP->window->vg, handle);
+			for (size_t i = 0; i < thumbs.size(); i++)
+				if (thumbs[i] > 0)
+					nvgDeleteImage(APP->window->vg, thumbs[i]);
+		}
+	}
+
 	/** What a drag has hold of, and where the pointer was when it took hold. */
 	enum Grab { GRAB_NONE, GRAB_CENTRE, GRAB_END_A, GRAB_END_B, GRAB_WHOLE };
 	int grab = GRAB_NONE;
@@ -71,7 +83,18 @@ struct PictureField : widget::OpaqueWidget {
 			math::Vec(w, h));
 	}
 
+	/** Gives the gallery's images back. Opening it again reads them afresh, which is what makes a
+	picture added since appear. */
+	void releaseCells() {
+		if (APP && APP->window && APP->window->vg)
+			for (size_t i = 0; i < thumbs.size(); i++)
+				if (thumbs[i] > 0)
+					nvgDeleteImage(APP->window->vg, thumbs[i]);
+		thumbs.clear();
+	}
+
 	void openChooser() {
+		releaseCells();
 		cells = pictureHistory();
 		thumbs.assign(cells.size(), -1);
 		choosing = true;
@@ -307,9 +330,10 @@ struct PictureField : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
 		const float w = box.size.x, h = box.size.y;
 
+		// The ground, so an empty frame is a dark square rather than a hole in the panel.
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, w, h);
-		nvgFillColor(args.vg, nvgRGB(0x12, 0x15, 0x1a));
+		nvgFillColor(args.vg, nvgRGB(0x0d, 0x10, 0x14));
 		nvgFill(args.vg);
 
 		if (module && module->picture.has()) {
@@ -331,13 +355,13 @@ struct PictureField : widget::OpaqueWidget {
 			std::shared_ptr<window::Font> font = gridFont();
 			if (font && font->handle >= 0) {
 				nvgFontFaceId(args.vg, font->handle);
-				nvgFontSize(args.vg, 20.f);
-				nvgFillColor(args.vg, nvgRGB(0xd2, 0xdb, 0xe4));
-				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-				nvgText(args.vg, w / 2.f, h / 2.f - 14.f, "click for a picture", NULL);
+				// SAYS WHAT TO DO, rather than sitting there blank: an empty module that
+				// explains itself is worth the two lines it costs.
 				nvgFontSize(args.vg, 13.f);
-				nvgFillColor(args.vg, nvgRGB(0x8a, 0x94, 0xa2));
-				nvgText(args.vg, w / 2.f, h / 2.f + 12.f, "right-click changes it later", NULL);
+				nvgFillColor(args.vg, nvgRGB(0x5a, 0x66, 0x74));
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+				nvgText(args.vg, w / 2.f, h / 2.f - 8.f, "No picture", NULL);
+				nvgText(args.vg, w / 2.f, h / 2.f + 8.f, "Click to load one", NULL);
 			}
 		}
 
@@ -345,6 +369,16 @@ struct PictureField : widget::OpaqueWidget {
 			drawPaths(args);
 		else
 			drawChooser(args);
+
+		// THE FRAME LAST, so nothing is drawn over it, and in the panel's own quiet line rather
+		// than anything brighter — the module already has a green border and two green lines that
+		// close together read as a mistake. The same frame mpxSprites draws, because these are the
+		// same thing and should not look like three different things.
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.5f, 0.5f, w - 1.f, h - 1.f);
+		nvgStrokeColor(args.vg, PANEL_RULE);
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
 
 		widget::OpaqueWidget::draw(args);
 	}
