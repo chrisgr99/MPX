@@ -153,20 +153,20 @@ bool busReadInstrument(int slot, Instrument& out) {
 }
 
 
-void busPublishSpeeds(int slot, const PartSpeeds& v) {
+void busPublishMotion(int slot, const PartMotion& v) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return;
 	Bus& bus = gBuses[slot];
 	const uint32_t s = bus.sseq.load(std::memory_order_relaxed);
 	bus.sseq.store(s + 1, std::memory_order_release);
 	std::atomic_thread_fence(std::memory_order_release);
-	bus.speeds = v;
+	bus.motion = v;
 	std::atomic_thread_fence(std::memory_order_release);
 	bus.sseq.store(s + 2, std::memory_order_release);
 }
 
 
-bool busReadSpeeds(int slot, PartSpeeds& out) {
+bool busReadMotion(int slot, PartMotion& out) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return false;
 	Bus& bus = gBuses[slot];
@@ -177,7 +177,7 @@ bool busReadSpeeds(int slot, PartSpeeds& out) {
 		if (a & 1u)
 			continue;
 		std::atomic_thread_fence(std::memory_order_acquire);
-		PartSpeeds v = bus.speeds;
+		PartMotion v = bus.motion;
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (bus.sseq.load(std::memory_order_acquire) == a) {
 			out = v;
@@ -282,9 +282,9 @@ bool BusReader::voicing(ChordVoicing& out) const {
 }
 
 
-bool BusReader::speeds(PartSpeeds& out) const {
+bool BusReader::motion(PartMotion& out) const {
 	for (int i = 0; i < count; i++) {
-		if (busReadSpeeds(links[i].slot, out))
+		if (busReadMotion(links[i].slot, out))
 			return true;
 	}
 	return false;

@@ -87,10 +87,11 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 				names.push_back(PLAYER_READING_NAMES[i]);
 			configSwitch(P_SOURCE, 0.f, (float) (NUM_PLAYER_READINGS - 1), 0.f, "Reads", names);
 		}
-		// HOW MANY PASSES OF THE LOOP ONE TRIP ROUND THE PATH TAKES. Four to six is the useful
-		// range: fewer and the path is walked too fast for the picture to vary across a pass,
-		// more and the return is too far apart to be recognised as a return.
-		configParam(P_REPEATS, 1.f, 16.f, 4.f, "Repeats", " passes");
+		// HOW MANY TRAVERSALS OF THE PATTERN ONE TRIP ROUND THE PATH TAKES. One is the plain
+		// case and the one to start from: the rhythm comes round and the path comes round with
+		// it. Above one, each traversal reads a different stretch of the picture, so the same
+		// typed rhythm returns with different notes until the trip closes.
+		configParam(P_REPEATS, 1.f, 16.f, 1.f, "Repeats", " traversals a trip");
 		getParamQuantity(P_REPEATS)->snapEnabled = true;
 		configParam(P_DROP, 0.f, 1.f, 0.f, "Drop", "%", 0.f, 100.f);
 		configParam<NoteQuantity>(P_REGISTER, 24.f, 96.f, 60.f, "Register");
@@ -111,7 +112,7 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 			val[i][TV_KIND].store(1.f);
 			val[i][TV_DIAMETER].store(0.3f + 0.07f * (float) i);
 			val[i][TV_SOURCE].store(0.f);
-			val[i][TV_REPEATS].store(4.f);
+			val[i][TV_REPEATS].store(1.f);
 			val[i][TV_DROP].store(0.f);
 			val[i][TV_REGISTER].store(60.f - 7.f * (float) i);
 			val[i][TV_RANGE].store(19.f);
@@ -252,8 +253,6 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 	double lastBeat = -1.0;
 	double lastBeatTime = 0.0;
 	double clock = 0.0;
-	uint32_t epochWas = 0;
-	bool epochSeen = false;
 
 	bool swallowedHandle(int64_t handle) {
 		for (int i = 0; i < 32; i++) {
@@ -418,8 +417,8 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 		ChordVoicing v;
 		if (reader.voicing(v))
 			busPublishVoicing(slot, v);
-		PartSpeeds sp;
-		const bool haveSpeeds = reader.speeds(sp);
+		PartMotion sp;
+		const bool haveMotion = reader.motion(sp);
 		{
 			float sustain = 0.f, soft = 0.f;
 			reader.pedals(sustain, soft);
@@ -443,17 +442,19 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 
 		// WHERE EACH SPRITE IS, IN MUSICAL TIME.
 		//
-		// A trip round the path is `Repeats` passes of whatever the chart is looping, so the
-		// position advances by the beat divided by that whole length. The pass counter on the
-		// cable — which moves on a rewind and when the chart loops — snaps each sprite to the
-		// start of its pass, so however the speeds have been changed in between, the sprite is in
-		// exactly the same place on the same pass every time. That is the recurrence.
-		const float loopBeats = (haveHarmony && h.cycleBeats > 0.f) ? h.cycleBeats : 16.f;
-		const bool rolled = haveHarmony && epochSeen && h.epoch != epochWas;
-		if (haveHarmony) {
-			epochWas = h.epoch;
-			epochSeen = true;
-		}
+		// ONE TRAVERSAL OF THE PART'S PATTERN IS ONE TRIP ROUND THE PATH. That is what ties the
+		// two together: the rhythm comes round and the path comes round with it, so the same beat
+		// of the pattern reads the same part of the picture every time it is played.
+		//
+		// THE PATTERN'S LENGTH AND NOT THE CHART'S. This was the chart's loop length, from the
+		// design note's "Repeats passes of the looped section", and it is wrong: a pattern's
+		// length is its own — its measures times its phrases — and need not divide the chart's at
+		// all. Tied to the chart, a pattern of three bars against a loop of four walked the path
+		// at a rate that had nothing to do with the rhythm anybody typed.
+		//
+		// REPEATS IS THEN HOW MANY TRAVERSALS MAKE ONE TRIP, which at one is the plain case and
+		// above it spreads the material over a longer journey so that each traversal reads a
+		// different stretch of the picture.
 
 		for (int i = 0; i < MAX_PATHS; i++) {
 			if (!enabled(i)) {
@@ -468,18 +469,15 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 			}
 
 			const float repeats = std::fmax(1.f, val[i][TV_REPEATS].load());
-			const double trip = (double) repeats * (double) loopBeats;
-			const float speed = (haveSpeeds && sp.speed[i] != 0.f) ? sp.speed[i] : 1.f;
+			// HOW LONG THE PART IS, from the cable. With nothing saying — no pattern patched, or
+			// one whose tab is off — a bar of four is assumed, so a sprite still moves and what
+			// is wrong is obvious rather than silent.
+			const float partBeats = (haveMotion && sp.beats[i] > 0.f) ? sp.beats[i] : 4.f;
+			const double trip = (double) repeats * (double) partBeats;
+			const float speed = (haveMotion && sp.speed[i] != 0.f) ? sp.speed[i] : 1.f;
 
-			if (rolled) {
-				// THE TOP OF A PASS: exactly where this pass begins, whatever has happened since
-				// the last one.
-				const double pass = (double) (epochWas % (uint32_t) repeats) / (double) repeats;
-				at[i] = pass;
-			}
-			else if (trip > 0.0) {
+			if (trip > 0.0)
 				at[i] += beatStep * (double) speed / trip;
-			}
 			at[i] -= std::floor(at[i]);
 
 			if (beat[i].waiting) {

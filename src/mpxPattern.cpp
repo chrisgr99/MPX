@@ -692,15 +692,18 @@ struct PatternModule : Module, NoteSource, NoteSink {
 		// because its beats are the chart's bars.
 		{
 			const Compiled& c = compiled[live.load()];
-			PartSpeeds sp;
+			PartMotion sp;
 			sp.valid = true;
 			for (int t = 0; t < MAX_TABS; t++) {
 				const CompiledTab& ct = c.tab[t];
 				sp.speed[t] = (!ct.on || ct.speeds <= 0) ? 0.f
 					: (ct.mode == MODE_HARMONY) ? 1.f
 					: ct.speed[speedAt[t] % ct.speeds];
+				// A CELL IS A BEAT, so the whole pattern's length in beats is simply how many
+				// cells it has: its rows times the cells in a row.
+				sp.beats[t] = ct.on ? (float) ct.total() : 0.f;
 			}
-			busPublishSpeeds(slot, sp);
+			busPublishMotion(slot, sp);
 		}
 
 		const int flip = flipEnable.exchange(-1);

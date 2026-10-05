@@ -42,17 +42,17 @@ The readings under the sprite give a note's pitch, its level and its length, as 
 
 The rhythm comes from mpxPattern. A sprite does not decide when to play; it decides what a note sounds like when the pattern calls for one.
 
-**The unit is a looped section, not a bar count.** A chart is too long to hear repetition across: played whole, a path's return is minutes apart and nothing is recognised. So a section of eight to twelve bars is looped — by its section letter on mpxChart, or by dragging across its bars — and the chart narrows its own timeline to what it is playing, so the cycle length on the cable is the loop's length. Nothing new is needed for this.
+**One traversal of the part's pattern is one trip round the path.** That is what ties the two together: the rhythm comes round and the path comes round with it, so the same beat of the pattern reads the same part of the picture every time it is played.
 
-**One trip around a path is `Repeats` passes of that looped section**, typically four to six, each pass taking an equal share of the path. The same rhythm therefore falls on different colours each time the section comes round, and the variation is supplied by the picture rather than invented. Nothing random is needed and nothing random is wanted: the same patch plays the same music.
+**The pattern's length, not the chart's.** A pattern's length is its own — its measures times its phrases — and need not divide the chart's loop at all. Tied to the chart, a pattern of three bars against a loop of four would walk the path at a rate having nothing to do with the rhythm anybody typed. So mpxPattern says how long each of its parts is, in beats, on the cable beside the speeds.
+
+**`Repeats` is how many traversals make one trip**, which at one is the plain case. Above one, each traversal reads a different stretch of the picture, so the same typed rhythm returns with different notes until the trip closes — variation supplied by the picture rather than invented. Nothing random is needed and nothing random is wanted: the same patch plays the same music.
 
 ## Moving in musical time
 
-**The sprite moves smoothly and continuously, and its position is worked out from where the music has reached** — the pass number, the beat within the section, and the section's length. All three are on the cable: the pass number is `Harmony::epoch`, which counts how many times the music has gone back to the top and changes on a rewind and on the chart looping.
+**The sprite moves smoothly and continuously, and its position advances with the beat** — by the beat divided by the whole trip, which is `Repeats` traversals of the part's pattern.
 
-So after `Repeats` passes the sprite has gone exactly once round, whatever rhythm was played over it. Rests and dense bars make no difference to where it is. A note reads wherever the sprite happens to be at that instant.
-
-This is what makes the recurrence exact: the sprite is at the same point of the path on the same beat of the same pass, every time.
+So rests and dense bars make no difference to where it is: a note reads wherever the sprite happens to be at that instant, and the sprite's place depends only on how much music has gone by. That is what makes the recurrence exact.
 
 **It follows that a cycle speed of two sends two notes in the time of one and both read nearly the same place**, so they are nearly the same pitch. The speeds double the rhythm rather than the melody. That is accepted: recurrence is the module's reason for being, and it is bought at that price.
 
@@ -60,7 +60,7 @@ This is what makes the recurrence exact: the sprite is at the same point of the 
 
 **A tab's direction of travel comes from mpxPattern's cycle speeds**, a negative speed running the sprite backwards along its path.
 
-**So mpxPattern publishes its tabs' current speeds on the cable**, a block of eight numbers beside the harmony — the same shape as the chord voicing — updated as each tab advances through its list. The path module integrates its own tab's speed, which it needs continuously rather than only when a note arrives, because it is moving between notes.
+**So mpxPattern publishes how each of its tabs is moving**, a block of eight beside the harmony — the same shape as the chord voicing — carrying each part's current speed and how long its pattern is in beats. The path module integrates its own tab's speed, which it needs continuously rather than only when a note arrives, because it is moving between notes.
 
 **With no pattern connected**, a line sweeps to its far end, returns to its start and sweeps the same way again. It never reverses: every sweep is in the same order, so the material recurs identically. A circle simply comes round.
 
@@ -112,7 +112,7 @@ A picture squared off to 1024 points, read round a circle at two hundred revolut
 
 **Two. The CV module.** The picture and its chooser, eight tabs, a path each, the kind and diameter on the panel and the position under the pointer, a source per sprite, a rate per sprite, and the voltages out. The path table, its running total and the averaged read are part of this step rather than a later improvement: an oscillator that aliases is not worth hearing, and the same code is what keeps a slow sweep smooth. Useful on its own, and it proves the framework before any of the musical machinery is written.
 
-**Three. mpxPattern publishes its tab speeds** on the cable, a block of eight beside the harmony, which the note module needs for direction and which nothing needs before then.
+**Three. mpxPattern publishes how its tabs are moving** on the cable, a block of eight beside the harmony: each part's speed, for direction, and how long its pattern is, which is what the path's period is built from.
 
 **Four. mpxChart's automatic turnaround**, so a looped section lands properly — worth having before the note module rather than after, because that module loops a short section many times and a bad landing is heard over and over.
 

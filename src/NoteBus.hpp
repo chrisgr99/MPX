@@ -197,7 +197,8 @@ can read whenever they like, and forwarding it costs a copy.
 AND IT DESCRIBES THE FUTURE. Notes arrive as they happen; this says what is coming. That is why
 a harmony processor can insert a chord before a dominant it can already see, where every note
 processor has to work around having no lookahead. */
-/** HOW FAST EACH OF A RHYTHM SOURCE'S PARTS IS RUNNING, and which way.
+/** HOW EACH OF A RHYTHM SOURCE'S PARTS IS MOVING: how long it is, how fast it is running, and
+which way.
 
 WHY IT IS STATE AND NOT A NUMBER ON A NOTE. A module that places something along a path moves it
 BETWEEN notes, continuously, so it needs the speed at every sample and not only at the moments a
@@ -207,11 +208,19 @@ EIGHT, matching Event::part and the chord voicing: part three is speed three. On
 is running forward at the rate the chart is keeping; two is double; a negative runs backwards, so
 a list of speeds reading "1 -1" sends whatever follows it out and back.
 
-Published by mpxPattern, which is where the speeds are typed. A source that has no notion of
-speed publishes nothing and a reader takes one. */
-struct PartSpeeds {
+THE LENGTH IS WHAT ANYTHING CYCLING WITH THE PART HAS TO KNOW. A module running a sprite round a
+path wants one traversal of the part's pattern to be one trip round that path — that is what makes
+the two recur together — and it cannot work that out from the harmony, because a pattern's length
+is its own business and need not divide the chart's. So the part says how long it is, in beats.
+Nought means the part is not playing.
+
+Published by mpxPattern, which is where the patterns are typed. A source with no notion of either
+publishes nothing and a reader takes one. */
+struct PartMotion {
 	bool valid = false;
 	float speed[8] = {1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
+	/** How long one traversal of this part's pattern is, in beats. */
+	float beats[8] = {};
 };
 
 
@@ -466,10 +475,10 @@ struct Bus {
 	std::atomic<uint32_t> vseq{0};
 	ChordVoicing voicing;
 
-	/** THE PART SPEEDS, by the same seqlock and for the same reason: several words that have to
-	agree with each other, read between the moments anything happens. */
+	/** HOW THE PARTS ARE MOVING, by the same seqlock and for the same reason: several words that
+	have to agree with each other, read between the moments anything happens. */
 	std::atomic<uint32_t> sseq{0};
-	PartSpeeds speeds;
+	PartMotion motion;
 };
 
 extern Bus gBuses[MAX_BUSES];
@@ -492,9 +501,9 @@ upstream and publishes its own bus forwards them, exactly as it forwards the har
 that dropped them would leave everything after it unpedalled. */
 void busPublishPedals(int slot, float sustain, float soft);
 
-/** Publishes the part speeds on this bus. Audio thread, one writer per bus. */
-void busPublishSpeeds(int slot, const PartSpeeds& s);
-bool busReadSpeeds(int slot, PartSpeeds& out);
+/** Publishes how the parts are moving. Audio thread, one writer per bus. */
+void busPublishMotion(int slot, const PartMotion& m);
+bool busReadMotion(int slot, PartMotion& out);
 
 /** Publishes the voicing on this bus. Audio thread, one writer per bus. */
 void busPublishVoicing(int slot, const ChordVoicing& v);
@@ -545,8 +554,8 @@ struct BusReader {
 	/** The voicing from the first upstream that has one. */
 	bool voicing(ChordVoicing& out) const;
 
-	/** The part speeds from the first upstream that publishes any. */
-	bool speeds(PartSpeeds& out) const;
+	/** How the parts are moving, from the first upstream that says. */
+	bool motion(PartMotion& out) const;
 	/** The instrument from the first upstream that has one. */
 	bool instrument(Instrument& out) const;
 	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
