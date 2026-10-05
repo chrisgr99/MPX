@@ -147,6 +147,17 @@
       ]
     },
     {
+      "slug": "mpxPathSpritePlayer",
+      "name": "mpxPathSpritePlayer",
+      "description": "Eight sprites running drawn paths over a picture, playing the notes a rhythm asks for: the pitch from the chord sounding then, placed by what the sprite is passing over",
+      "tags": [
+        "Sequencer",
+        "Polyphonic",
+        "Visual",
+        "Random"
+      ]
+    },
+    {
       "slug": "mpxPiano",
       "name": "mpxPiano",
       "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable, with sustain and soft pedals and levels for its mechanical sounds. The samples are downloaded once, from the module.",

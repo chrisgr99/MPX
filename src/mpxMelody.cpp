@@ -111,25 +111,7 @@ static const Preset& rolePreset(int role) {
 	return presets[role];
 }
 
-/** A PARAMETER THAT READS AS A NOTE. The value is a MIDI note number, which is what the engine
-wants; what it shows is C4, F#2, A#5 — which is what a musician wants, and the two have no
-business being the same thing.
-
-C4 IS MIDDLE C, which is Rack's own convention: nought volts is C4 and every module in the rack
-agrees with it. The other convention in the world calls that note C3, and choosing it here would
-put this module a whole octave out of step with everything it is patched to.
-
-SHARPS AND NOT FLATS, because a pitch class has no key to be spelt in until it is in one. B flat
-and A sharp are the same key and this control is choosing a key. */
-struct NoteQuantity : ParamQuantity {
-	std::string getDisplayValueString() override {
-		static const char* NAMES[12] = {"C", "C#", "D", "D#", "E", "F",
-			"F#", "G", "G#", "A", "A#", "B"};
-		const int note = (int) std::round(getValue());
-		const int pc = ((note % 12) + 12) % 12;
-		return std::string(NAMES[pc]) + std::to_string(note / 12 - 1);
-	}
-};
+// NoteQuantity is in plugin.hpp: more than one module has a register control now.
 
 /** Names and describes one voice's worth of parameters, wherever they sit in a module's list. */
 static void configPart(Module* m, int base, int role) {

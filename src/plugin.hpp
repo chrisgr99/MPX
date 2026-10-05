@@ -14,6 +14,7 @@ extern Model* modelMpxMelody;
 extern Model* modelMpxMelodyVoice;
 extern Model* modelMpxSprites;
 extern Model* modelMpxPathSprites;
+extern Model* modelMpxPathSpritePlayer;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
 extern Model* modelMpxRand;
@@ -196,6 +197,27 @@ struct MPXPort : PJ301MPort {
 /** Whether these two ends could carry notes to each other: one an MPX output, the other an MPX
 input, or neither of them MPX at all. Anything mixed is refused. */
 bool mpxCompatible(engine::Module* outModule, int outId, engine::Module* inModule, int inId);
+
+/** A PARAMETER THAT READS AS A NOTE. The value is a MIDI note number, which is what the engine
+wants; what it shows is C4, F#2, A#5 — which is what a musician wants, and the two have no
+business being the same thing.
+
+C4 IS MIDDLE C, which is Rack's own convention: nought volts is C4 and every module in the rack
+agrees with it. The other convention in the world calls that note C3, and choosing it here would
+put this module a whole octave out of step with everything it is patched to.
+
+SHARPS AND NOT FLATS, because a pitch class has no key to be spelt in until it is in one. B flat
+and A sharp are the same key and this control is choosing a key. */
+struct NoteQuantity : ParamQuantity {
+	std::string getDisplayValueString() override {
+		static const char* NAMES[12] = {"C", "C#", "D", "D#", "E", "F",
+			"F#", "G", "G#", "A", "A#", "B"};
+		const int note = (int) std::round(getValue());
+		const int pc = ((note % 12) + 12) % 12;
+		return std::string(NAMES[pc]) + std::to_string(note / 12 - 1);
+	}
+};
+
 
 /** THE GRID FACE: Hack, which the plugin ships.
 

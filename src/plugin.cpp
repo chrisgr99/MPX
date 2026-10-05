@@ -15,6 +15,7 @@ void init(Plugin* p) {
 	p->addModel(modelMpxMelodyVoice);
 	p->addModel(modelMpxSprites);
 	p->addModel(modelMpxPathSprites);
+	p->addModel(modelMpxPathSpritePlayer);
 	p->addModel(modelPolyToStereo);
 	p->addModel(modelMpxArp);
 	p->addModel(modelMpxRand);
