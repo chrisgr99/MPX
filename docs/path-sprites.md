@@ -88,13 +88,29 @@ The whole of the framework below — choosing a picture, drawing a line or a cir
 
 **That changes where the motion comes from.** The note module moves in musical time, worked out from the chart's position, which is exactly what makes its recurrence exact. A voltage source cannot: at audio rate there is no chart fast enough to count it. So the CV module carries its own **rate** control, free-running in cycles per second, with locking to the chart's beat as one setting among them rather than the only behaviour.
 
-**Known problem, not solved here.** A picture squared off to 1024 points read at two hundred revolutions a second gives about two hundred and forty samples a revolution, which undersamples the table and aliases. The fix is to average along the path over the distance covered in one sample rather than point-sampling it, which is a filter whose width follows the rate. It is noted so that it is not discovered as a surprise.
+## Reading a path without aliasing
+
+A picture squared off to 1024 points, read round a circle at two hundred revolutions a second, gives about two hundred and forty readings a revolution. Point-sampling a table of a thousand points at two hundred and forty places a revolution folds everything above half the sample rate back down as inharmonic noise. It is the oldest problem in wavetable synthesis and it has a settled answer.
+
+**Average over the arc covered, rather than sampling a point.** In one sample the sprite moves some distance along the path; the right output is the mean of the picture over that distance, not the value at its far end. That is an exact box filter whose width follows the rate, so it costs nothing when the sprite is crawling and does all the work when it is running.
+
+**Done with a prefix sum, so the cost does not depend on the width.**
+
+1. **Resample the path into a table once**, when the path is drawn or moved — not per sample. The table holds one reading per point along the path, at about one point per picture pixel, so a circle of 300 pixels' diameter gives a table of about 940.
+2. **Each reading is itself an average of a small disc**, not one pixel. A path is a line without thickness and a picture is a grid; sampling single pixels makes the output depend on exactly which pixel row the path grazes. Averaging across the path as well as along it removes that, and `Picture.hpp` already averages this way when it squares a picture off and when it makes thumbnails.
+3. **Build the running total of that table.** Then the mean between any two places along the path is the difference of two totals divided by the distance between them, which is the same small amount of work however wide the span.
+4. **Read the total at fractional places** by interpolating between its entries. This matters at the slow end: as the width shrinks toward nothing the box average becomes ordinary linear interpolation, so the same code gives a smooth LFO with no stair-stepping at pixel edges and a clean oscillator at audio rate, with nothing to switch between them.
+5. **Wrap for a circle, and for a line** reset at the end of each sweep, which is where its discontinuity lives.
+
+**What this leaves.** A box average is not a perfect anti-aliasing filter — it rolls off gently and has nulls in the wrong places — so some aliasing survives at the very top. It removes the great majority of it for a few additions per sample, which is the right trade here; the picture is not a precision waveform and the module is not a virtual-analogue oscillator. If it is still audible, a one-pole lowpass after it, cut at a fixed fraction of the sample rate, is the cheap next step.
+
+**The note module needs none of this.** Notes fire at beat rate, which is far too slow to alias. The smoothing is for the voltage module, where it serves twice: anti-aliasing at speed, and at LFO rates removing the stair-steps that single-pixel reading would otherwise put into a slow sweep.
 
 ## The order of work
 
 **One. The shared framework**, as a library rather than a module: path geometry — a line as two ends, a circle as a centre and a diameter — position along a path as a fraction, and the drawing and hit-testing that go with dragging one on a picture. `Picture.hpp` is reused unchanged; the seventeen sources are currently inside mpxSprites and are lifted out into a header both modules use.
 
-**Two. The CV module.** The picture and its chooser, eight tabs, a path each, the kind and diameter on the panel and the position under the pointer, a source per sprite, a rate per sprite, and the voltages out. Useful on its own, and it proves the framework before any of the musical machinery is written.
+**Two. The CV module.** The picture and its chooser, eight tabs, a path each, the kind and diameter on the panel and the position under the pointer, a source per sprite, a rate per sprite, and the voltages out. The path table, its running total and the averaged read are part of this step rather than a later improvement: an oscillator that aliases is not worth hearing, and the same code is what keeps a slow sweep smooth. Useful on its own, and it proves the framework before any of the musical machinery is written.
 
 **Three. mpxPattern publishes its tab speeds** on the cable, a block of eight beside the harmony, which the note module needs for direction and which nothing needs before then.
 
