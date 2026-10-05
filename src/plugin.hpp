@@ -13,6 +13,7 @@ extern Model* modelMpxPattern;
 extern Model* modelMpxMelody;
 extern Model* modelMpxMelodyVoice;
 extern Model* modelMpxSprites;
+extern Model* modelMpxPathSprites;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
 extern Model* modelMpxRand;

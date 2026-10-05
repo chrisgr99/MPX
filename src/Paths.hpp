@@ -27,6 +27,25 @@ else does.
 namespace px {
 
 
+/** WHAT A PATH TABLE HOLDS: one of a picture's numbers, read along the path.
+
+HUE IS TWO READINGS AND NEVER ONE. A hue is an angle — just past red and just short of it are a
+hair apart as colours and a whole turn apart as numbers — so averaging it as a number would make
+a head crossing red leap the entire range. Its cosine and its sine are each smooth the whole way
+round and average correctly, and between them the colour is still fully described.
+
+This is why a table is built from a READING rather than straight from a channel: the averaging has
+to happen after the conversion, not before. */
+enum PathReading {
+	READ_VALUE, READ_SAT, READ_HUE_RC, READ_HUE_YB, READ_RED, READ_GREEN, READ_BLUE,
+	NUM_READINGS
+};
+extern const char* READING_NAMES[NUM_READINGS];
+
+/** One reading at a place on the picture, nought to one. */
+float pathReadingAt(const Picture& picture, float x, float y, int reading, float radius);
+
+
 /** A path on the picture, in picture units. */
 struct Path {
 	enum Kind { LINE, CIRCLE };
@@ -76,17 +95,17 @@ struct PathTable {
 	/** Which picture and which path shape this was built from, so staleness is one comparison. */
 	uint32_t pictureGeneration = 0;
 	uint32_t pathGeneration = 0;
-	int channel = -1;
+	int reading = -1;
 	bool circular = false;
 
 	int points() const { return (int) total.size() - 1; }
 	bool ready() const { return points() > 1; }
 
-	/** Builds it. `channel` is which of the picture's numbers is read; see Picture.hpp. */
-	void build(const Picture& picture, const Path& path, int channel);
+	/** Builds it. `reading` is one of PathReading. */
+	void build(const Picture& picture, const Path& path, int reading);
 
-	/** Rebuilds only if the picture, the path or the channel has changed. */
-	void refresh(const Picture& picture, const Path& path, int channel);
+	/** Rebuilds only if the picture, the path or the reading has changed. */
+	void refresh(const Picture& picture, const Path& path, int reading);
 
 	/** THE MEAN BETWEEN TWO PLACES ALONG THE PATH, each a fraction of the way along.
 

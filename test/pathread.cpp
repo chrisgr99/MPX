@@ -97,7 +97,7 @@ int main() {
 	paintPinwheel(picture, CYCLES);
 
 	PathTable table;
-	table.build(picture, path, CH_VAL);
+	table.build(picture, path, READ_VALUE);
 	std::printf("a circle 0.6 across is %d points long, carrying %d cycles\n\n",
 		table.points(), CYCLES);
 	if (!table.ready()) {
@@ -205,7 +205,7 @@ int main() {
 		line.ax = 0.2f; line.ay = 0.5f; line.bx = 0.8f; line.by = 0.5f;
 		line.moved();
 		PathTable lt;
-		lt.build(picture, line, CH_VAL);
+		lt.build(picture, line, READ_VALUE);
 		check(lt.points() > 100, "its table was built", (double) lt.points(), 600.0, 1e9);
 		const double past = lt.read(1.2, 1.3);
 		const double end = lt.read(0.999, 1.0);

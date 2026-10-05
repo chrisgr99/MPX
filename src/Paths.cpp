@@ -31,10 +31,38 @@ float Path::length() const {
 }
 
 
+const char* READING_NAMES[NUM_READINGS] = {
+	"Brightness", "Saturation", "Hue red-cyan", "Hue yellow-blue", "Red", "Green", "Blue"
+};
+
+
+float pathReadingAt(const Picture& picture, float x, float y, int reading, float radius) {
+	switch (reading) {
+		case READ_SAT:   return channelAround(picture, x, y, CH_SAT, radius);
+		case READ_RED:   return channelAround(picture, x, y, CH_RED, radius);
+		case READ_GREEN: return channelAround(picture, x, y, CH_GREEN, radius);
+		case READ_BLUE:  return channelAround(picture, x, y, CH_BLUE, radius);
+		case READ_HUE_RC: {
+			// THE COSINE OF THE HUE, taken at the point. The disc averaging is skipped because
+			// averaging hues as numbers is the very thing these two axes exist to avoid; the
+			// averaging that matters happens along the path, where the axes add correctly.
+			const float a = channelAt(picture, x, y, CH_HUE) * 2.f * (float) M_PI;
+			return 0.5f + 0.5f * std::cos(a);
+		}
+		case READ_HUE_YB: {
+			const float a = channelAt(picture, x, y, CH_HUE) * 2.f * (float) M_PI;
+			return 0.5f + 0.5f * std::sin(a);
+		}
+		default: break;
+	}
+	return channelAround(picture, x, y, CH_VAL, radius);
+}
+
+
 void PathTable::build(const Picture& picture, const Path& path, int which) {
 	pictureGeneration = picture.generation;
 	pathGeneration = path.generation;
-	channel = which;
+	reading = which;
 	circular = (path.kind == Path::CIRCLE);
 
 	total.clear();
@@ -61,18 +89,7 @@ void PathTable::build(const Picture& picture, const Path& path, int which) {
 		const double t = ((double) i + 0.5) / (double) n;
 		float x = 0.f, y = 0.f;
 		path.at(t, &x, &y);
-		float v;
-		if (which == CH_HUE) {
-			// A HUE IS AN ANGLE AND CANNOT BE AVERAGED AS A NUMBER: just past red and just short
-			// of it are a hair apart as colours and a whole turn apart as numbers. Read at the
-			// point and left to whoever asked for it to take a cosine or a sine of; the disc
-			// averaging is skipped rather than done wrongly.
-			v = channelAt(picture, x, y, which);
-		}
-		else {
-			v = channelAround(picture, x, y, which, radius);
-		}
-		value[(size_t) i] = v;
+		value[(size_t) i] = pathReadingAt(picture, x, y, which, radius);
 	}
 
 	// A LIGHT SMOOTHING ACROSS THREE ENTRIES, wrapped for a circle and held at the ends of a line.
@@ -104,7 +121,7 @@ void PathTable::build(const Picture& picture, const Path& path, int which) {
 
 void PathTable::refresh(const Picture& picture, const Path& path, int which) {
 	if (ready() && pictureGeneration == picture.generation
-			&& pathGeneration == path.generation && channel == which)
+			&& pathGeneration == path.generation && reading == which)
 		return;
 	build(picture, path, which);
 }

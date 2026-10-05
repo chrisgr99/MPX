@@ -136,6 +136,17 @@
       ]
     },
     {
+      "slug": "mpxPathSprites",
+      "name": "mpxPathSprites",
+      "description": "Eight reading heads running drawn lines and circles over a picture; what each passes over becomes a voltage — a drawn LFO, or at speed a wavetable oscillator",
+      "tags": [
+        "LFO",
+        "Oscillator",
+        "Polyphonic",
+        "Visual"
+      ]
+    },
+    {
       "slug": "mpxPiano",
       "name": "mpxPiano",
       "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable, with sustain and soft pedals and levels for its mechanical sounds. The samples are downloaded once, from the module.",
