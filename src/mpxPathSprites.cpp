@@ -24,8 +24,7 @@ either. What the two would share — the path geometry and its reading, the pict
 #include "plugin.hpp"
 #include "Layout.hpp"
 #include "NoteBus.hpp"
-#include "Paths.hpp"
-#include "Picture.hpp"
+#include "PathSprites.hpp"
 
 #include <osdialog.h>
 
@@ -37,19 +36,6 @@ either. What the two would share — the path geometry and its reading, the pict
 
 namespace px {
 
-
-/** EIGHT, matching mpxPattern's eight tabs and the chord voicing's eight voices, so that when the
-notes arrive every tab has somewhere to go. */
-static const int MAX_PATHS = 8;
-
-/** THE COLOURS THE PATHS ARE DRAWN IN. Eight that hold their own over a photograph of anything,
-and that are told apart by someone who does not see red and green as different: they differ in
-lightness as well as in hue, so they are still eight things and not four. */
-static const NVGcolor PATH_INK[MAX_PATHS] = {
-	nvgRGB(0xff, 0xd8, 0x3a), nvgRGB(0x3a, 0xc8, 0xff), nvgRGB(0xff, 0x7a, 0x3a),
-	nvgRGB(0xa8, 0xff, 0x6a), nvgRGB(0xff, 0x6a, 0xc8), nvgRGB(0x6a, 0xe8, 0xd0),
-	nvgRGB(0xd8, 0xb0, 0xff), nvgRGB(0xff, 0xff, 0xff),
-};
 
 /** WHERE THE SPEED COMES FROM. Free is a number of revolutions a second and is what makes this an
 oscillator; the chart's beat is what makes it an LFO that stays with the music. */
@@ -98,7 +84,7 @@ static int readingFor(int source) {
 }
 
 
-struct PathSpritesModule : Module, NoteSink {
+struct PathSpritesModule : Module, NoteSink, PathHost {
 	enum ParamId {
 		P_KIND, P_DIAMETER, P_SOURCE, P_RATE, P_RATE_FROM, P_LEVEL, P_OFFSET,
 		P_RUN,
@@ -199,27 +185,15 @@ struct PathSpritesModule : Module, NoteSink {
 
 	// ---- the picture and the paths -------------------------------------------------------------
 
-	/** THE PICTURE LIVES IN THE MODULE: it is what is saved with the patch, it is read on the
-	audio thread, and a module outlives the widget that shows it. */
-	Picture picture;
-	Path path[MAX_PATHS];
 	/** The tables are built on the main thread, from the panel's step, and read on the audio
 	thread. One per sprite, since each may be reading a different thing. */
 	PathTable table[MAX_PATHS];
-	std::atomic<bool> wantTables{true};
-
-	std::atomic<int> tab{0};
-	std::atomic<int> selection{1};
-	std::atomic<int> flipEnable{-1};
 	std::atomic<float> val[MAX_PATHS][NUM_TV];
 
 	bool enabled(int i) const {
 		return (i >= 0 && i < MAX_PATHS) && val[i][TV_ON].load() > 0.5f;
 	}
-
-	int chosenMask() const {
-		return selection.load() | (1 << math::clamp(tab.load(), 0, MAX_PATHS - 1));
-	}
+	bool pathOn(int i) const override { return enabled(i); }
 
 	int showing = 0;
 	bool loaded = false;
@@ -294,9 +268,6 @@ struct PathSpritesModule : Module, NoteSink {
 
 	// ---- running -------------------------------------------------------------------------------
 
-	/** Where each head is, as a fraction along its path. A circle wraps; a line runs nought to one
-	and begins again, always in the same direction, so the material recurs in the same order. */
-	double at[MAX_PATHS] = {};
 	/** The smoothed reading, one a sprite: a single pole, which is the gentlest thing that is
 	still a filter and leaves no ringing on a step. */
 	float held[MAX_PATHS] = {};
@@ -503,6 +474,7 @@ struct PathSpritesModule : Module, NoteSink {
 
 } // namespace px
 
+#include "PathSpritesUI.inc"
 #include "mpxPathSpritesPanel.inc"
 
 Model* modelMpxPathSprites =

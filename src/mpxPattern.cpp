@@ -686,6 +686,23 @@ struct PatternModule : Module, NoteSource, NoteSink {
 			busPublishPedals(slot, sustain, soft);
 		}
 
+		// THE TABS' SPEEDS, FOR WHOEVER IS PLACING SOMETHING ALONG A PATH. A module that moves
+		// between notes needs the speed at every sample, not only when a beat falls, so this is
+		// state on the cable rather than a number on a note. Harmony mode is locked to one,
+		// because its beats are the chart's bars.
+		{
+			const Compiled& c = compiled[live.load()];
+			PartSpeeds sp;
+			sp.valid = true;
+			for (int t = 0; t < MAX_TABS; t++) {
+				const CompiledTab& ct = c.tab[t];
+				sp.speed[t] = (!ct.on || ct.speeds <= 0) ? 0.f
+					: (ct.mode == MODE_HARMONY) ? 1.f
+					: ct.speed[speedAt[t] % ct.speeds];
+			}
+			busPublishSpeeds(slot, sp);
+		}
+
 		const int flip = flipEnable.exchange(-1);
 		if (flip >= 0 && flip < MAX_TABS) {
 			val[flip][TV_ON].store(enabled(flip) ? 0.f : 1.f);
