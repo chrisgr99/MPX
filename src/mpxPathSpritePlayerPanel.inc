@@ -76,9 +76,9 @@ static Layout playerLayout() {
 
 	plate("p.source", mid, 53.f, PlayerModule::P_SOURCE, 10, "READS");
 
-	// THE TWO THAT DECIDE HOW THE PATH IS WALKED AND WHAT IS WORTH PLAYING.
-	knob("p.repeats", mid - 16.f, 68.f, PlayerModule::P_REPEATS, "REPEATS");
-	knob("p.drop", mid + 16.f, 68.f, PlayerModule::P_DROP, "DROP");
+	// HOW MUCH OF THE PICTURE IS WORTH PLAYING. How fast the path is walked is not here: it is
+	// the pattern's own length, which the cable carries.
+	knob("p.drop", mid, 68.f, PlayerModule::P_DROP, "DROP");
 
 	// AND THE THREE THAT DECIDE WHAT THE NOTE IS.
 	knob("p.register", mid - 20.f, 90.f, PlayerModule::P_REGISTER, "REGISTER");

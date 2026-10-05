@@ -66,7 +66,7 @@ static int playerReadingFor(int which) {
 
 struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 	enum ParamId {
-		P_KIND, P_DIAMETER, P_SOURCE, P_REPEATS, P_DROP,
+		P_KIND, P_DIAMETER, P_SOURCE, P_DROP,
 		P_REGISTER, P_RANGE, P_LENGTH,
 		NUM_PARAMS,
 	};
@@ -74,7 +74,7 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 	enum OutputId { O_NOTES, NUM_OUTPUTS };
 	enum LightId { NUM_LIGHTS };
 
-	enum TabValue { TV_ON, TV_KIND, TV_DIAMETER, TV_SOURCE, TV_REPEATS, TV_DROP,
+	enum TabValue { TV_ON, TV_KIND, TV_DIAMETER, TV_SOURCE, TV_DROP,
 		TV_REGISTER, TV_RANGE, TV_LENGTH, NUM_TV };
 
 	PlayerModule() {
@@ -87,12 +87,6 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 				names.push_back(PLAYER_READING_NAMES[i]);
 			configSwitch(P_SOURCE, 0.f, (float) (NUM_PLAYER_READINGS - 1), 0.f, "Reads", names);
 		}
-		// HOW MANY TRAVERSALS OF THE PATTERN ONE TRIP ROUND THE PATH TAKES. One is the plain
-		// case and the one to start from: the rhythm comes round and the path comes round with
-		// it. Above one, each traversal reads a different stretch of the picture, so the same
-		// typed rhythm returns with different notes until the trip closes.
-		configParam(P_REPEATS, 1.f, 16.f, 1.f, "Repeats", " traversals a trip");
-		getParamQuantity(P_REPEATS)->snapEnabled = true;
 		configParam(P_DROP, 0.f, 1.f, 0.f, "Drop", "%", 0.f, 100.f);
 		configParam<NoteQuantity>(P_REGISTER, 24.f, 96.f, 60.f, "Register");
 		configParam(P_RANGE, 2.f, 48.f, 19.f, "Range", " semitones");
@@ -112,7 +106,6 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 			val[i][TV_KIND].store(1.f);
 			val[i][TV_DIAMETER].store(0.3f + 0.07f * (float) i);
 			val[i][TV_SOURCE].store(0.f);
-			val[i][TV_REPEATS].store(1.f);
 			val[i][TV_DROP].store(0.f);
 			val[i][TV_REGISTER].store(60.f - 7.f * (float) i);
 			val[i][TV_RANGE].store(19.f);
@@ -178,7 +171,6 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 			case TV_KIND: return P_KIND;
 			case TV_DIAMETER: return P_DIAMETER;
 			case TV_SOURCE: return P_SOURCE;
-			case TV_REPEATS: return P_REPEATS;
 			case TV_DROP: return P_DROP;
 			case TV_REGISTER: return P_REGISTER;
 			case TV_RANGE: return P_RANGE;
@@ -452,9 +444,10 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 		// all. Tied to the chart, a pattern of three bars against a loop of four walked the path
 		// at a rate that had nothing to do with the rhythm anybody typed.
 		//
-		// REPEATS IS THEN HOW MANY TRAVERSALS MAKE ONE TRIP, which at one is the plain case and
-		// above it spreads the material over a longer journey so that each traversal reads a
-		// different stretch of the picture.
+		// THERE IS NO REPEATS CONTROL, and there was one. The phrases are already inside the
+		// pattern's length — its measures times its phrases is what a traversal IS — so a control
+		// multiplying that was asking the same question twice, in two modules, with the one in
+		// this module silently overriding the one anybody had typed.
 
 		for (int i = 0; i < MAX_PATHS; i++) {
 			if (!enabled(i)) {
@@ -468,12 +461,10 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 					endNote(i);
 			}
 
-			const float repeats = std::fmax(1.f, val[i][TV_REPEATS].load());
-			// HOW LONG THE PART IS, from the cable. With nothing saying — no pattern patched, or
-			// one whose tab is off — a bar of four is assumed, so a sprite still moves and what
-			// is wrong is obvious rather than silent.
-			const float partBeats = (haveMotion && sp.beats[i] > 0.f) ? sp.beats[i] : 4.f;
-			const double trip = (double) repeats * (double) partBeats;
+			// HOW LONG THE PART IS, from the cable, and that is the whole trip. With nothing
+			// saying — no pattern patched, or one whose tab is off — a bar of four is assumed, so
+			// a sprite still moves and what is wrong is obvious rather than silent.
+			const double trip = (haveMotion && sp.beats[i] > 0.f) ? (double) sp.beats[i] : 4.0;
 			const float speed = (haveMotion && sp.speed[i] != 0.f) ? sp.speed[i] : 1.f;
 
 			if (trip > 0.0)
@@ -490,7 +481,7 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 	// ---- saving ------------------------------------------------------------------------------
 
 	static const char* keyName(int v) {
-		static const char* KEYS[NUM_TV] = {"on", "kind", "diameter", "source", "repeats",
+		static const char* KEYS[NUM_TV] = {"on", "kind", "diameter", "source",
 			"drop", "register", "range", "length"};
 		return KEYS[v];
 	}

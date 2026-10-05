@@ -46,11 +46,13 @@ The rhythm comes from mpxPattern. A sprite does not decide when to play; it deci
 
 **The pattern's length, not the chart's.** A pattern's length is its own — its measures times its phrases — and need not divide the chart's loop at all. Tied to the chart, a pattern of three bars against a loop of four would walk the path at a rate having nothing to do with the rhythm anybody typed. So mpxPattern says how long each of its parts is, in beats, on the cable beside the speeds.
 
-**`Repeats` is how many traversals make one trip**, which at one is the plain case. Above one, each traversal reads a different stretch of the picture, so the same typed rhythm returns with different notes until the trip closes — variation supplied by the picture rather than invented. Nothing random is needed and nothing random is wanted: the same patch plays the same music.
+**There is no repeats control, and there was one.** The phrases are already inside the pattern's length — its measures times its phrases is what a traversal is — so a control multiplying that asked the same question twice, in two modules, with the one on this module silently overriding the one anybody had typed. How far the path is walked per beat is the pattern's business entirely.
+
+Nothing random is needed and nothing random is wanted: the same patch plays the same music.
 
 ## Moving in musical time
 
-**The sprite moves smoothly and continuously, and its position advances with the beat** — by the beat divided by the whole trip, which is `Repeats` traversals of the part's pattern.
+**The sprite moves smoothly and continuously, and its position advances with the beat** — by the beat divided by the part's whole length.
 
 So rests and dense bars make no difference to where it is: a note reads wherever the sprite happens to be at that instant, and the sprite's place depends only on how much music has gone by. That is what makes the recurrence exact.
 
