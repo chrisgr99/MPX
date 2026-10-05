@@ -199,6 +199,17 @@ struct SongModule : Module, NoteSource {
 	uint32_t epoch = 0;
 	uint32_t partChange = 0;
 
+	/** HOW MUCH EACH PITCH CLASS IS WORTH AT THIS MOMENT, and what the bass is.
+
+	See Harmony::pitchWeight. A note adds to its pitch class by being long, by falling on a beat
+	and by being loud, and the whole set fades over about a beat — so a passing sixteenth is a
+	flicker and a held bass note is a wall. Nothing here names a chord, because this is for music
+	that has none. */
+	float pitchWeight[12] = {};
+	int bassMidi = -1;
+	double bassWhen = -1e9;
+
+
 	/** A row given another track, whose place in that track's notes has to be found again. */
 	std::atomic<bool> reseek[ROWS];
 
@@ -744,8 +755,37 @@ struct SongModule : Module, NoteSource {
 		const GpMasterBar& written = L.song.masterBars[(size_t) std::min(bar.written,
 			(int) L.song.masterBars.size() - 1)];
 		Harmony h;
+		// NO CHORDS, BUT A BEAT. A transcription is notes and bar lines: what it does not know is
+		// the harmony by name, and what it knows perfectly well is where the beat is.
 		h.valid = false;
+		h.timingValid = true;
 		h.beat = quarters;
+		// THE KEY, WHICH THE SCORE SAYS ON EVERY BAR. The chords are not known — a transcription
+		// is notes, not symbols — but the key is written down, and a module choosing pitches
+		// would far rather have it than nothing. Fifths round the circle: nought is C major and
+		// its relative minor, and each step of seven semitones is one more sharp.
+		{
+			const int fifths = written.keyAccidentals;
+			const int tonic = written.minor ? ((fifths * 7 + 9) % 12 + 12) % 12
+				: ((fifths * 7) % 12 + 12) % 12;
+			h.key.tonic = (int8_t) tonic;
+			h.key.minor = written.minor;
+			h.keyValid = true;
+		}
+		// WHAT IS SOUNDING AND HOW MUCH IT MATTERS. See pitchWeight.
+		{
+			float most = 0.f;
+			for (int pc = 0; pc < 12; pc++)
+				most = std::fmax(most, pitchWeight[pc]);
+			if (most > 0.01f) {
+				for (int pc = 0; pc < 12; pc++) {
+					h.pitchWeight[pc] = (uint8_t) math::clamp(
+						(int) std::lround(pitchWeight[pc] / most * 255.f), 0, 255);
+				}
+				h.pitchesValid = true;
+				h.bassPitch = (bassMidi >= 0) ? (int8_t) (((bassMidi % 12) + 12) % 12) : (int8_t) -1;
+			}
+		}
 		h.cycleBeats = (float) L.line.quarters;
 		h.barBeats = (uint8_t) math::clamp(written.beatsPerBar, 1, 255);
 		h.barUnit = (uint8_t) math::clamp(written.beatUnit, 1, 255);
@@ -800,6 +840,17 @@ struct SongModule : Module, NoteSource {
 			}
 		}
 
+		// THE SET FADES over about a beat, so it follows the music instead of accumulating it.
+		// A beat rather than a fixed time, so it keeps its meaning when the tempo changes.
+		{
+			const float tau = std::fmax(0.05f, quarterSeconds);
+			const float keep = std::exp(-args.sampleTime / tau);
+			for (int pc = 0; pc < 12; pc++)
+				pitchWeight[pc] *= keep;
+			if (bassMidi >= 0 && quarters - bassWhen > 2.0)
+				bassMidi = -1;      // Two beats with nothing lower: the bass has moved on.
+		}
+
 		bool struck = false;
 		for (int r = 0; r < ROWS; r++) {
 			const int t = L.track[r];
@@ -822,6 +873,25 @@ struct SongModule : Module, NoteSource {
 				// THE ROW'S LIGHT FLASHES MUTED OR NOT, so a muted row shows what would be heard
 				// were it turned back on.
 				rowLamp[r] = 1.f;
+
+				// WHAT THIS NOTE IS WORTH TO THE HARMONY, counted BEFORE the mute and whether or
+				// not the row is muted.
+				//
+				// A muted row is a row that drives something without being heard, and that is
+				// exactly how a score is used as a source of harmony for a generative module:
+				// patch it to one, mute it, and the module improvises over music that is not
+				// itself sounding. The notes stop at the mute; what they imply does not.
+				{
+					const int pc = ((n.note.midi % 12) + 12) % 12;
+					pitchWeight[pc] += gpHarmonyWeight(L.line, L.song, n);
+					// THE LOWEST SOUNDING, which says what the harmony is standing on. Taken
+					// when a lower note arrives, or when the one we had has gone stale.
+					if (bassMidi < 0 || n.note.midi <= bassMidi || quarters - bassWhen > 1.0) {
+						bassMidi = n.note.midi;
+						bassWhen = quarters;
+					}
+				}
+
 				if (muted)
 					continue;
 				Event e;

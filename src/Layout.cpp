@@ -102,10 +102,19 @@ void layoutApplyUser(const std::string& slug, Layout& layout) {
 		return;
 
 	// THE WIDTH FIRST, because everything else is placed inside it.
+	//
+	// NEVER NARROWER THAN THE MODULE ASKS FOR. A saved file may widen a panel — room round the
+	// controls is a matter of taste — but it may not make one narrower than the code's own width,
+	// because the code's width is a statement about what has to fit. A module whose panel grows
+	// in a later version would otherwise be held to the old width by any file saved before it,
+	// and every control added since would hang off the edge.
+	//
+	// This is the one property that is not merged by key. Each item is matched by name and so
+	// survives the module changing round it; `hp` has no name to match, so it needs a rule.
 	json_t* hpJ = json_object_get(rootJ, "hp");
 	if (json_is_number(hpJ)) {
 		const float hp = (float) std::round(json_number_value(hpJ));
-		if (hp >= 2.f && hp <= 200.f)
+		if (hp >= 2.f && hp <= 200.f && hp >= layout.hp)
 			layout.hp = hp;
 	}
 

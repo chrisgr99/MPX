@@ -106,6 +106,26 @@
       ]
     },
     {
+      "slug": "mpxMelody",
+      "name": "mpxMelody",
+      "description": "Master for a melody chain: how far the voices keep apart, the random seed they share, and the chart they are played against. Voice expanders make the sound",
+      "tags": [
+        "Sequencer",
+        "Polyphonic",
+        "Random"
+      ]
+    },
+    {
+      "slug": "mpxMelodyVoice",
+      "name": "mpxVoice",
+      "description": "One melodic line drawn against the harmony on the cable — bass, melody or inner voice. Sits beside mpxMelody",
+      "tags": [
+        "Sequencer",
+        "Expander",
+        "Polyphonic"
+      ]
+    },
+    {
       "slug": "mpxSprites",
       "name": "mpxSprites",
       "description": "Sprites move over a picture, pushed about by a force field read from its colours, each sending notes as it goes; the picture is on the panel and the motion is watched as well as heard",
@@ -146,7 +166,7 @@
     {
       "slug": "mpxScore",
       "name": "mpxScore",
-      "description": "Plays a MusicXML or Guitar Pro score written for instruments with no fingerboard \u2014 a fugue, a string quartet: six parts, each on its own MPX cable with a mute, and a built-in General MIDI ensemble with an audio output and gain per part and a stereo mix, shown from the menu.",
+      "description": "Plays a MusicXML or Guitar Pro score written for instruments with no fingerboard — a fugue, a string quartet: six parts, each on its own MPX cable with a mute, and a built-in General MIDI ensemble with an audio output and gain per part and a stereo mix, shown from the menu.",
       "tags": [
         "Sequencer",
         "Sampler",

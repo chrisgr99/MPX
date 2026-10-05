@@ -85,7 +85,13 @@ struct DevMute {
 		lastFrame = frame;
 
 		const bool focused = glfwGetWindowAttrib(APP->window->win, GLFW_FOCUSED) == GLFW_TRUE;
-		const bool typing = dynamic_cast<ui::TextField*>(APP->event->getSelectedWidget()) != NULL;
+		// ANYTHING WITH THE KEYBOARD, not only a text field.
+		//
+		// Rack selects a widget exactly when that widget has taken keyboard focus, which is
+		// precisely when the space bar belongs to it rather than to this. Testing for
+		// ui::TextField instead missed every widget that takes keys without being one — such as
+		// mpxPattern's grid, where space is the rest character, so typing a rest muted Rack.
+		const bool typing = APP->event->getSelectedWidget() != NULL;
 		const bool key = focused && !typing
 			&& glfwGetKey(APP->window->win, GLFW_KEY_SPACE) == GLFW_PRESS;
 		if (key && !keyWas) {

@@ -1089,7 +1089,7 @@ struct ChartDisplay : widget::OpaqueWidget {
 		std::shared_ptr<window::Font> body =
 			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 		std::shared_ptr<window::Font> face =
-			APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+			APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
 		if (!body || body->handle < 0)
 			return;
 
@@ -1271,7 +1271,7 @@ struct ChartTempoDisplay : widget::Widget {
 
 	void draw(const DrawArgs& args) override {
 		std::shared_ptr<window::Font> face =
-			APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+			APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
 
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 2.5f);
@@ -1376,7 +1376,7 @@ static std::shared_ptr<window::Font> chartTextFont() {
 	if (font && font->handle >= 0)
 		return font;
 	// A missing font is not a reason to draw nothing.
-	return APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+	return APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
 }
 
 static std::shared_ptr<window::Font> chartMusicFont() {
@@ -1950,7 +1950,7 @@ struct ChartWindow : widget::OpaqueWidget {
 
 	void draw(const DrawArgs& args) override {
 		std::shared_ptr<window::Font> face =
-			APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+			APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
 		std::shared_ptr<window::Font> body_ =
 			APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 		if (!face || face->handle < 0 || !body_ || body_->handle < 0)

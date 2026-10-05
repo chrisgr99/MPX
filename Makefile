@@ -235,6 +235,17 @@ scoreread:
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scoreread
 	@./build/scoreread $(ARGS)
 
+# WHAT THE DERIVED HARMONY SAYS, bar by bar: the pitches a score implies and how much each one
+# matters, which is what a generative module is given when there are no chord symbols to give it.
+# See test/harmony.cpp.
+#   make harmony ARGS="a-score.musicxml"
+harmony:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/harmony.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/harmony
+	@./build/harmony $(ARGS)
+
 # THE SHAPE OF A SCORE: bars, metre, repeats, what each voice is doing and where each one enters.
 # The map two people need in order to say where a marking goes. See test/structure.cpp.
 #   make structure ARGS="a-score.musicxml"

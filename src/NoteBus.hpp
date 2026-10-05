@@ -96,6 +96,18 @@ struct Event {
 	of a figure coming back; nought when it restates nothing. A melody can then bring back that
 	note's pitch as well, and the figure returns whole. See applyMotif in Phrasing.cpp. */
 	uint8_t echo = 0;
+
+	/** WHICH OF THE SOURCE'S PARTS THIS NOTE BELONGS TO, from one, or nought for a source that
+	has only one.
+
+	A MODULE MAY HOLD SEVERAL PATTERNS AT ONCE and send them down one cable — mpxPattern holds
+	eight — and then a receiver that is itself one of several has to know which notes are its own.
+	It is the tab number on the panel the note came from, and it lines up with the voices of the
+	chord voicing: part three is voice three, which is why both are eight.
+
+	A RECEIVER THAT DOES NOT CARE IGNORES IT, which is every module that existed before this, so
+	nothing has to be taught anything to keep working. */
+	uint8_t part = 0;
 	/** HOW FAR THROUGH ITS BREATH GROUP THE NOTE FALLS, nought at the group's first note and one
 	at its last; below nought from a source that does not know. A melody shapes its line by it:
 	see CONTOUR on mpxVoice. */
@@ -198,6 +210,40 @@ struct ChordVoicing {
 struct Harmony {
 	bool valid = false;
 	Key key;
+	/** WHETHER THE BEAT IS WORTH BELIEVING, on its own.
+
+	`valid` above means the CHORDS are known, and for a long time it was the only flag there was,
+	so everything downstream used it to mean "there is a chart here" — including things that only
+	wanted the beat. A score has no chords and a perfectly good beat: bar lines, a time signature,
+	a position in the bar. Read as "no chart", it switched off every grid in the sprite module and
+	left the notes free-running, which is gridded music that never once lands on the grid. */
+	bool timingValid = false;
+
+	/** WHETHER THE KEY IS WORTH BELIEVING, on its own. A source can know what key the music is
+	in without knowing its chords — a score says so on every bar — and a module choosing notes
+	would far rather have the key than nothing. `valid` above means the CHORDS are known. */
+	bool keyValid = false;
+
+	/** WHAT IS SOUNDING, AND HOW MUCH EACH PITCH MATTERS.
+	
+	FOR MUSIC THAT HAS NO CHORD SYMBOLS, which is most music. A fugue carries none, and more to
+	the point there is often no single chord that is correct — the harmony is implied by lines
+	moving against each other, and naming it is an interpretation. But the NOTES are not an
+	interpretation: at any moment they are exactly what is sounding, and a module choosing a
+	pitch wants a set to choose from rather than a name.
+	
+	WEIGHTED RATHER THAN A BARE LIST, because not every sounding note is the harmony. A pitch
+	earns its weight by being long, by falling on a beat, and by being loud — which is what
+	separates a chord tone from a passing note without having to work out which is which. The
+	whole set fades over about a beat, so it follows the music rather than accumulating it.
+	
+	Nought means not sounding; 255 means as structural as anything here gets. Take the strongest
+	few and you have the harmony; take more and you have the colour as well. */
+	uint8_t pitchWeight[12] = {};
+	/** The pitch class of the lowest note sounding, or -1. The bass says something the rest of
+	the set does not — what the harmony is standing on. */
+	int8_t bassPitch = -1;
+	bool pitchesValid = false;
 	Chord current, next, after;
 	/** Beats until the current chord gives way. */
 	float beatsToNext = 0.f;

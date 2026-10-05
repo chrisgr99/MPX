@@ -10,6 +10,8 @@ extern Model* modelMonitor;
 extern Model* modelChart;
 extern Model* modelMpxVoicing;
 extern Model* modelMpxPattern;
+extern Model* modelMpxMelody;
+extern Model* modelMpxMelodyVoice;
 extern Model* modelMpxSprites;
 extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
@@ -194,11 +196,31 @@ struct MPXPort : PJ301MPort {
 input, or neither of them MPX at all. Anything mixed is refused. */
 bool mpxCompatible(engine::Module* outModule, int outId, engine::Module* inModule, int inId);
 
-/** MEASURED FROM Nunito-Bold ITSELF rather than estimated: a capital stands 0.7041 of the font
-size and a digit advances 0.6011 of it. Everything a readout's size depends on comes from these
-two, so a plate is exactly as big as what is written on it. */
-static const float FIGURE_CAP = 0.7041f;
-static const float FIGURE_ADVANCE = 0.6011f;
+/** THE GRID FACE: Hack, which the plugin ships.
+
+WHY NOT RACK'S OWN. Rack's monospaced face is Share Tech Mono, which is a display face with thin
+strokes and little between a full stop and a comma — and a rhythm grid is nothing but full stops,
+crosses and digits read at a glance, often under magnification. Hack was drawn for small text on
+a screen: heavier stems, a large dot, and a nought that cannot be read as a letter.
+
+MONOSPACED IS THE POINT, not a preference. Every row of the grid has to line up character for
+character with the rows above and below it, because a character IS a beat and the column it sits
+in is where in the bar it falls. See res/HACK-LICENCE.txt.
+
+ONE CHARACTER ADVANCES 0.602 OF THE SIZE, measured from the font rather than rounded to 0.6, which
+is what every width in a grid is worked out from. Rounded, the marker drawn over a character drifts
+from the character it is marking, by a third of a character across a wide row. */
+static const float GRID_ADVANCE = 0.602f;
+std::shared_ptr<window::Font> gridFont();
+
+/** MEASURED FROM Hack ITSELF rather than estimated: a capital stands 0.729 of the font size and a
+digit advances 0.602 of it. Everything a readout's size depends on comes from these two, so a
+plate is exactly as big as what is written on it.
+
+THESE WERE NUNITO'S, 0.7041 and 0.6011, until the plugin stopped using Rack's fonts. The two faces
+are within a few per cent of each other, which is why no plate had to be re-measured. */
+static const float FIGURE_CAP = 0.729f;
+static const float FIGURE_ADVANCE = 0.602f;
 /** HOW TALL A PLATE OF NOTE SYMBOLS IS, in millimetres, and how much of it the symbol fills: a
 symbol ten millimetres from the foot of its head to the top of its stem, large enough to tell a
 dotted quarter from a quarter across a room. */

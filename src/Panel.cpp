@@ -81,8 +81,24 @@ static void drawNoteSymbol(NVGcontext* vg, float cx, float top, float height, st
 	}
 }
 
+/** THE PLUGIN'S ONE FACE, and the only font any of it loads.
+
+THE PANEL LETTERING, which was Rack's Nunito, and the chart's figures, which were Rack's Share
+Tech Mono. Neither is easy to read at the sizes a module face uses, which for someone working
+under magnification is the whole of whether a panel can be used. Hack was drawn for small text on
+a screen, it is monospaced so a grid lines up, and it ships with the plugin under the MIT licence.
+See res/HACK-LICENCE.txt and GRID_ADVANCE.
+
+NOT THE MODULE DISPLAYS. Those still load Rack's DejaVu Sans, and should. They draw running text —
+chord symbols, note names, file names, song titles — and a monospaced face sets running text much
+wider for the same number of characters, so every one of them would have overflowed its box. A
+face chosen for a grid is the wrong face for a sentence. */
+std::shared_ptr<window::Font> gridFont() {
+	return APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
+}
+
 static std::shared_ptr<window::Font> titleFont() {
-	return APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+	return gridFont();
 }
 
 static int alignFlag(Panel::Align a) {

@@ -702,7 +702,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 
 	void draw(const DrawArgs& args) override {
 		std::shared_ptr<window::Font> face =
-			APP->window->loadFont(asset::system("res/fonts/Nunito-Bold.ttf"));
+			APP->window->loadFont(asset::plugin(pluginInstance, "res/Hack-Regular.ttf"));
 		if (!face || face->handle < 0)
 			return;
 

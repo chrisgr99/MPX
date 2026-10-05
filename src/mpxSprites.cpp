@@ -204,7 +204,9 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		P_SYNC,
 		P_SRC_PITCH, P_SRC_LEVEL, P_SRC_RATE, P_SRC_DUR,
 		// APPENDED, NEVER INSERTED: a patch stores a parameter by its position in this list.
-		P_GRID, NUM_PARAMS };
+		P_GRID,
+		// APPENDED, NEVER INSERTED: a patch stores a parameter by its position in this list.
+		P_PERSIST, NUM_PARAMS };
 	enum InputId { I_CHART, I_CLOCK, NUM_INPUTS };
 	enum OutputId { O_NOTES, NUM_OUTPUTS };
 	enum LightId { NUM_LIGHTS };
@@ -263,7 +265,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	sprites there are, and the picture itself. */
 	enum SpriteVal { SV_FIELD, SV_FORCE, SV_BLEND, SV_TURN, SV_SPEED, SV_DRIFT,
 		SV_SLOW, SV_FAST, SV_DEPTH, SV_REGISTER, SV_LEVEL, SV_DURATION, SV_ARTIC,
-		SV_STEER, SV_PUSH, SV_READ, SV_SPAN, SV_ENABLE,
+		SV_STEER, SV_PUSH, SV_READ, SV_SPAN, SV_ENABLE, SV_PERSIST,
 		SV_SRC_PITCH, SV_SRC_LEVEL, SV_SRC_RATE, SV_SRC_DUR, SV_GRID, NUM_SV };
 
 	/** WHICH KNOB SHOWS EACH OF THEM. One set of controls on the panel, four sets of values
@@ -282,6 +284,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			case SV_SPEED: return P_SPEED;
 			case SV_DRIFT: return P_DRIFT;
 			case SV_SLOW: return P_SLOW;
+			case SV_PERSIST: return P_PERSIST;
 			case SV_FAST: return P_FAST;
 			case SV_DEPTH: return P_DEPTH;
 			case SV_REGISTER: return P_REGISTER;
@@ -625,9 +628,27 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		configParam(P_TURN, -180.f, 180.f, 0.f, "Rotate", "°");
 		// THE TWO LIMITS THE TIMER LIVES BETWEEN, in notes a second, set as the logarithm of the
 		// rate so that the slow end of each knob is not crowded into a few degrees of its turn.
-		configParam(P_SLOW, std::log2(0.05f), std::log2(8.f), std::log2(0.5f), "Min rate");
-		configParam(P_FAST, std::log2(0.2f), std::log2(40.f), std::log2(6.f), "Max rate");
-		configParam(P_DEPTH, -1.f, 1.f, 0.7f, "Rate from the picture", "%", 0.f, 100.f);
+		// HOW BUSY, NOT HOW FAST.
+		//
+		// These were a minimum and a maximum rate in notes a second, and the picture chose a
+		// point between them. A rate is the wrong thing to ask for: three and a bit notes a
+		// second against a sixteenth-note grid picks a scattered subset of the sixteenths, so
+		// every note lands on the grid and the result is still arrhythmic. Nothing in it knows
+		// which points of a bar matter.
+		//
+		// So they are now how FULL a beat is, nought to one: at nought a beat carries one note,
+		// at one it carries every subdivision the grid offers. The picture still chooses a point
+		// between them, which is what the module is for.
+		configParam(P_SLOW, 0.f, 1.f, 0.2f, "Min density", "%", 0.f, 100.f);
+		configParam(P_FAST, 0.f, 1.f, 0.75f, "Max density", "%", 0.f, 100.f);
+		configParam(P_DEPTH, -1.f, 1.f, 0.7f, "Density from the picture", "%", 0.f, 100.f);
+		// HOW LONG A FIGURE LASTS BEFORE IT CHANGES.
+		//
+		// The one control the old design had no notion of, and the one that decides whether a
+		// rhythm is heard as a rhythm. A figure chosen afresh every beat is a scatter however
+		// carefully each beat is weighted; the same figure held for a bar or four is a groove.
+		// At the bottom it changes every beat, at the top every four bars.
+		configParam(P_PERSIST, 0.f, 1.f, 0.6f, "Figure persistence", "%", 0.f, 100.f);
 		// AMPLITUDE RATHER THAN LEVEL on the panel. Level means too many things — a signal level, a
 		// water level, a level of detail — and the one thing it has to mean here is how hard a note
 		// is struck. Velocity would be the standard word for that and is spoken for: a sprite has a
@@ -1159,6 +1180,71 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	/** The note each sprite has sounding, and how long is left of it. */
 	int64_t noteHandle[MAX_SPRITES] = {0, 0, 0, 0};
 	float noteEndIn[MAX_SPRITES] = {-1.f, -1.f, -1.f, -1.f};
+
+	// ---- beats arriving on the cable ---------------------------------------------------------
+	//
+	/** A RHYTHM SOURCE UPSTREAM TAKES OVER, with nothing to set.
+	//
+	Patch mpxPattern into this module and its beats decide when the sprites sound; the sprites'
+	own note timing — the grid, the densities, the figure — is then ignored. That is what patching
+	one into the other MEANS, so it needs no control: a module whose whole purpose is to say when
+	notes fall, wired to a module that was deciding that for itself, is not an ambiguous request.
+
+	A sprite is taken over by the tab of its own number — sprite one by tab one — which is why
+	`Event::part` is on the note. mpxPattern has eight tabs and there are four sprites here, so
+	tabs five to eight are not heard by this module.
+
+	THE BEAT IS SWALLOWED, NOT PASSED ON. The pattern's note carries no pitch; it is a place in
+	time. Letting it through as well as the sprite's own note would sound it as whatever a
+	downstream voice makes of a pitchless note, which is the one fixed note underneath everything.
+	So the trigger is consumed here and the sprite's note replaces it.
+
+	LATCHED RATHER THAN TIMED OUT. A sprite stays cable-driven once a beat for it has arrived, and
+	goes back to its own timing only when the patching changes. A pattern with several bars' rest
+	in it would otherwise start free-running in the gap. */
+	struct Beat {
+		bool waiting = false;
+		float level = 1.f;
+		float seconds = 0.5f;
+	};
+	Beat beat[MAX_SPRITES];
+	bool cableDriven[MAX_SPRITES] = {false, false, false, false};
+	/** What the arriving beat said its level was, which scales the sprite's own. The typed beat
+	strength is the pattern's one piece of dynamics and it would be thrown away otherwise. One
+	when the sprite is deciding its own timing. */
+	float beatLevel[MAX_SPRITES] = {1.f, 1.f, 1.f, 1.f};
+	/** The handles of triggers swallowed, so that the note-off that follows one is swallowed too
+	rather than being passed on to end a note nothing downstream ever began. */
+	int64_t swallowed[16] = {0};
+	int swallowedAt = 0;
+
+	bool swallowedHandle(int64_t handle) {
+		for (int i = 0; i < 16; i++) {
+			if (swallowed[i] == handle) {
+				swallowed[i] = 0;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** An event from upstream: taken as a beat for one of the sprites, or passed along. */
+	void takeOrPass(const Event& e) {
+		const int i = (int) e.part - 1;
+		if (i >= 0 && i < MAX_SPRITES) {
+			if (e.kind == Event::ON) {
+				cableDriven[i] = true;
+				beat[i].waiting = true;
+				beat[i].level = e.level;
+				beat[i].seconds = (e.duration > 0.f) ? e.duration : 0.5f;
+				swallowed[swallowedAt++ % 16] = e.handle;
+				return;
+			}
+			if (e.kind == Event::OFF && swallowedHandle(e.handle))
+				return;
+		}
+		busPush(slot, e);
+	}
 	std::atomic<float> firing[MAX_SPRITES];   /**< Flashes on a note, for the panel. */
 	/** THE CLOCK, if one is patched: its rising edges, how long since the last, and how long the
 	last gap was. One clock for all four sprites — they are being put on a common grid, which is
@@ -1171,6 +1257,91 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	int ticksSince[MAX_SPRITES] = {-1, -1, -1, -1};
 	/** For DIVIDE: how many ticks this sprite has counted towards its division. */
 	int lockCount[MAX_SPRITES] = {0, 0, 0, 0};
+
+	// ---- rhythmic figures ----
+	//
+	// A FIGURE IS A BEAT'S WORTH OF HITS, and it is the unit the rhythm is decided in.
+	//
+	// Deciding each grid point on its own gives a scatter, however carefully each point is
+	// weighted, because nothing in it repeats. What makes a rhythm sound intended is a figure
+	// that comes back: the same notes in the same places, beat after beat, until something
+	// changes them. So a beat is divided into slots, a pattern of hits over those slots is
+	// chosen, and it is KEPT — for a bar, or four, as the persistence control says.
+	//
+	// `slots` is how finely the beat is divided and `mask` which of those slots are struck, bit
+	// nought being the beat itself, which every figure strikes: there is always an attack where
+	// the ear expects one.
+	int cellSlots[MAX_SPRITES] = {1, 1, 1, 1};
+	uint32_t cellMask[MAX_SPRITES] = {1u, 1u, 1u, 1u};
+	bool cellHold[MAX_SPRITES] = {false, false, false, false};
+	long long cellRun[MAX_SPRITES] = {-1, -1, -1, -1};
+	int lastSlot[MAX_SPRITES] = {-1, -1, -1, -1};
+	/** Which span of the figure we are in, so a figure with one slot in it begins again each
+	time round instead of never changing slot and so never playing. */
+	long long lastSpan[MAX_SPRITES] = {-1, -1, -1, -1};
+	/** The pitch a repeated-note figure keeps, and whether one is in hand. */
+	float holdPitch[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+	bool holdingPitch[MAX_SPRITES] = {false, false, false, false};
+	float lastFired[MAX_SPRITES] = {0.f, 0.f, 0.f, 0.f};
+
+	/** A SETTLED SHUFFLE. The figure a run gets is drawn from WHICH run it is and which sprite,
+	never from a running random, so a passage plays the same way twice and a loop does not
+	wander — which is the difference between a rhythm and an accident. */
+	static uint32_t shuffle(uint32_t a, uint32_t b) {
+		uint32_t h = a * 2654435761u ^ (b + 0x9e3779b9u + (a << 6) + (a >> 2));
+		h ^= h >> 15;
+		h *= 2246822519u;
+		h ^= h >> 13;
+		h *= 3266489917u;
+		h ^= h >> 16;
+		return h;
+	}
+
+	/** HOW FULL A BEAT IS, nought to one, between the two knobs as the picture says. */
+	float densityFor(int i) {
+		const float lo = math::clamp(valueOf(i, SV_SLOW), 0.f, 1.f);
+		float hi = math::clamp(valueOf(i, SV_FAST), 0.f, 1.f);
+		if (hi < lo)
+			hi = lo;
+		// BIPOLAR, so the picture can be turned upside down without a setting of its own.
+		const float depth = valueOf(i, SV_DEPTH);
+		const float read = sourceOf(i, (int) std::lround(valueOf(i, SV_SRC_RATE)));
+		const float where = math::clamp(0.5f + depth * (read - 0.5f) * 2.f, 0.f, 1.f);
+		return lo + (hi - lo) * where;
+	}
+
+	/** WHICH FIGURE THIS RUN PLAYS.
+
+	Every pattern over the beat's slots that strikes the beat itself and has as many hits as the
+	density asks for, with one of them taken. Enumerated rather than written out, so the same
+	rule serves a sixteenth grid, an eighth grid and a triplet one without three tables.
+
+	A TRIPLET IS A DEPARTURE, not an equal member of the vocabulary. One run in eight divides the
+	beat in three instead of whatever the grid says, because a triplet that happens as often as
+	everything else stops being a triplet and becomes the pulse. */
+	void chooseFigure(int i, int slots, float density, uint32_t runIndex) {
+		const uint32_t r = shuffle(runIndex, (uint32_t) i * 2654435761u + 17u);
+		int use = math::clamp(slots, 1, 8);
+		if (use >= 2 && use != 3 && (r & 7u) == 0u)
+			use = 3;
+		const int hits = math::clamp((int) std::lround(density * (float) use), 1, use);
+
+		uint32_t found[64];
+		int n = 0;
+		for (uint32_t m = 1u; m < (1u << use) && n < 64; m += 2u) {   // bit nought always set
+			int bits = 0;
+			for (int k = 0; k < use; k++)
+				bits += (int) ((m >> k) & 1u);
+			if (bits == hits)
+				found[n++] = m;
+		}
+		cellSlots[i] = use;
+		cellMask[i] = n ? found[(r >> 3) % (uint32_t) n] : 1u;
+		// A FULL BEAT IS A REPEATED-NOTE FIGURE. Four sixteenths at four different pitches is a
+		// run; the same four at one pitch is a repetition, and that is what holds the pitch.
+		cellHold[i] = (hits == use && use >= 3);
+		holdingPitch[i] = false;
+	}
 
 	/** HOW OFTEN A SPRITE FIRES, in notes a second.
 
@@ -1294,11 +1465,60 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 
 	WITH NO CHART there is no chord to ask, so it falls back to a major scale from C. A module
 	that went silent when nothing was patched to it would be a module nobody could try. */
+	/** WHICH PITCHES ARE WORTH PLAYING AT THIS MOMENT, in the best terms the cable can offer.
+
+	FOUR SOURCES, BEST FIRST, because what a source can say about its harmony varies enormously.
+	A chart knows its chords by name and that is the best answer there is. A SCORE does not: a
+	fugue carries no chord symbols, and there is often no single chord that would be correct,
+	since the harmony is implied by lines moving against one another. What a score does know is
+	exactly which pitches are sounding and how much each matters — see Harmony::pitchWeight —
+	which is a better answer than a chord somebody guessed at. Failing both, the key at least
+	keeps a line out of the wrong seven notes. Failing everything, C major, so a module with
+	nothing patched to it still plays. */
 	float pitchFor(int i, float contour, const Harmony& h) {
 		int pcs[16];
 		int n = 0;
 		if (h.valid)
 			n = chordPitchClasses(h.current, h.key, pcs);
+
+		if (n <= 0 && h.pitchesValid) {
+			// THE SOUNDING PITCHES, STRONGEST FIRST AND THE WEAK ONES LEFT OUT. The weights
+			// already say which notes are carrying the harmony and which are passing through it,
+			// so a threshold is all that is needed to tell them apart. The bass is taken
+			// whatever its weight: what the harmony stands on belongs in the set.
+			std::pair<int, int> byWeight[12];
+			int found = 0;
+			for (int pc = 0; pc < 12; pc++) {
+				if (h.pitchWeight[pc] > 0)
+					byWeight[found++] = std::make_pair(-(int) h.pitchWeight[pc], pc);
+			}
+			std::sort(byWeight, byWeight + found);
+			for (int k = 0; k < found && n < 16; k++) {
+				// A QUARTER OF THE STRONGEST. Below that a note is a flicker — a sixteenth
+				// passing between beats — and a line built on flickers wanders.
+				if (-byWeight[k].first < 64 && n >= 3)
+					break;
+				pcs[n++] = byWeight[k].second;
+			}
+			if (h.bassPitch >= 0 && n < 16) {
+				bool had = false;
+				for (int k = 0; k < n; k++)
+					had = had || (pcs[k] == h.bassPitch);
+				if (!had)
+					pcs[n++] = h.bassPitch;
+			}
+		}
+
+		if (n <= 0 && h.keyValid) {
+			// THE KEY'S OWN SEVEN NOTES. Not the harmony, but in the right seven rather than the
+			// wrong seven, which is most of the difference.
+			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
+			static const int MINOR[7] = {0, 2, 3, 5, 7, 8, 10};
+			const int* steps = h.key.minor ? MINOR : MAJOR;
+			for (int k = 0; k < 7; k++)
+				pcs[n++] = (steps[k] + h.key.tonic + 120) % 12;
+		}
+
 		if (n <= 0) {
 			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
 			for (int k = 0; k < 7; k++)
@@ -1355,7 +1575,9 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	}
 
 	/** One sprite's note. */
-	float fire(int i, float seconds, const Harmony& h) {
+	/** `keep`, where given, is a pitch this note must take rather than work out — which is how a
+	repeated-note figure repeats a note rather than running up a ladder. */
+	float fire(int i, float seconds, const Harmony& h, const float* keep = NULL) {
 		if (slot < 0)
 			return 0.f;
 		endNote(i);
@@ -1363,7 +1585,8 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		e.kind = Event::ON;
 		e.handle = noteHandle[i] = mintHandle();
 		e.contour = math::clamp(sourceOf(i, (int) std::lround(valueOf(i, SV_SRC_PITCH))), 0.f, 1.f);
-		e.pitch = pitchFor(i, e.contour, h);
+		e.pitch = keep ? *keep : pitchFor(i, e.contour, h);
+		lastFired[i] = e.pitch;
 
 		// WHERE THE SPRITE IS, ACROSS THE PICTURE, IS WHERE THE NOTE IS. No control and no
 		// setting: a sprite over there should sound over there, and a mapping that can be switched
@@ -1380,7 +1603,11 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			(int) std::lround(valueOf(i, SV_SRC_LEVEL))), 0.f, 1.f) - 0.5f) * 2.f;
 		const float away = (math::clamp(sourceOf(i,
 			(int) std::lround(valueOf(i, SV_SRC_DUR))), 0.f, 1.f) - 0.5f) * 2.f;
-		e.level = math::clamp(valueOf(i, SV_LEVEL) * (1.f + artic * awayL * 0.6f), 0.f, 1.f);
+		// AND THE BEAT'S OWN STRENGTH, where the beat came from upstream: the typed digit is the
+		// pattern's one piece of dynamics, and dropping it would make every beat of a phrase the
+		// same weight however it was written.
+		e.level = math::clamp(valueOf(i, SV_LEVEL) * (1.f + artic * awayL * 0.6f)
+			* (cableDriven[i] ? beatLevel[i] : 1.f), 0.f, 1.f);
 		// LONG ENOUGH TO BE HEARD AND SHORT ENOUGH TO GET OUT OF THE WAY, as a share of the gap
 		// to the next note — so a quick sprite runs and a slow one sustains — with a lid on it: a
 		// sprite firing once every ten seconds should not hold a note for nine of them.
@@ -1479,7 +1706,10 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 	void stepNotes(const ProcessArgs& args, const Harmony& h, bool running) {
 		const bool clocked = inputs[I_CLOCK].isConnected();
 		// THE CHART'S GRIDS, which of them have reached a new point this sample.
-		const bool chart = h.valid;
+		// A GRID NEEDS A BEAT, NOT A CHORD. This asked for `valid`, which means the chords are
+		// named — so a score driving the sprites switched every grid off and left them running
+		// free, which is why gridded settings did nothing when a score was patched in.
+		const bool chart = h.valid || h.timingValid;
 		const bool chartRunning = chart && running && !h.holding;
 		measureTempo(h, args.sampleTime);
 		bool crossed[NUM_GRIDS] = {};
@@ -1528,6 +1758,19 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 					endNote(i);
 			}
 
+			// A RHYTHM FROM UPSTREAM TAKES OVER EVERYTHING BELOW. The sprite still drifts under
+			// the field, so where it has reached is what it reads; it simply does not decide when
+			// to read. The grid, the densities and the figure are all ignored, which is what
+			// patching a module whose job is to say when notes fall into this one asks for.
+			if (cableDriven[i]) {
+				if (beat[i].waiting) {
+					beat[i].waiting = false;
+					beatLevel[i] = math::clamp(beat[i].level, 0.f, 1.f);
+					noteEndIn[i] = fire(i, beat[i].seconds, h);
+				}
+				continue;
+			}
+
 			// ON A GRID, with a chart to count it from: the sprite's timer runs as ever and says
 			// when a note is wanted, and the note begins on a point of the grid — the next one, or
 			// the nearest, or every so many, as Sync says. The TRIG input is not used.
@@ -1538,44 +1781,104 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 					ticksSince[i] = -1;
 					continue;
 				}
-				const float rate = rateFor(i);
-				notePhase[i] += rate * args.sampleTime;
-				if (!crossed[grid])
-					continue;
-				const float gridSec = gridBeats(grid, h) * beatSeconds;
-				bool play = false;
-				// The first point after the chart starts, or after a rewind, plays.
-				if (ticksSince[i] < 0) {
-					play = true;
-					notePhase[i] = 0.f;
-					lockCount[i] = 0;
-				}
-				else if (mode == SYNC_DIVIDE) {
-					const int every = math::clamp(
-						(int) std::lround(1.f / std::max(rate * gridSec, 1e-4f)), 1, 64);
-					if (++lockCount[i] >= every) {
-						play = true;
-						lockCount[i] = 0;
+				// WHICH BEAT THIS SAMPLE IS IN, AND HOW FAR THROUGH IT.
+				const int barBeats = (h.barBeats > 0) ? (int) h.barBeats : 4;
+				const float inBar = std::fmax(0.f, h.beatInBar);
+				const int beatOfBar = math::clamp((int) std::floor(inBar), 0, barBeats - 1);
+				const long long beatIndex = (long long) h.bar * barBeats + beatOfBar;
+				const float frac = inBar - std::floor(inBar);
+
+				// HOW LONG A FIGURE IS, AND HOW MANY SLOTS IT HAS.
+				//
+				// A figure runs until the grid comes round to a beat again. A sixteenth grid does
+				// that every beat, with four slots in it. A DOTTED EIGHTH does not: it takes
+				// three beats to land on a beat again, and those three beats with four slots in
+				// them are the figure. A quarter-note triplet takes two beats and has three.
+				//
+				// Worked out rather than assumed, because assuming it was the bug: a grid of
+				// exactly one beat came out as one slot that never changed, so a sprite played
+				// its first note and then nothing at all for ever.
+				float stepBeats = gridBeats(grid, h);
+				if (stepBeats <= 1e-4f)
+					stepBeats = 1.f;
+				int span = 1, slots = 1;
+				for (int w = 1; w <= 8; w++) {
+					const float n = (float) w / stepBeats;
+					const int ni = (int) std::lround(n);
+					if (ni >= 1 && ni <= 16 && std::fabs(n - (float) ni) < 0.02f) {
+						span = w;
+						slots = ni;
+						break;
 					}
+				}
+
+				// HOW LONG A FIGURE LASTS. A beat at the bottom of the knob and eight bars at the
+				// top, in whole bars between — so a figure changes where a bar changes, which is
+				// where a listener expects something to change.
+				const float persist = math::clamp(valueOf(i, SV_PERSIST), 0.f, 1.f);
+				const int runBeats = (persist < 0.2f) ? 1
+					: (persist < 0.45f) ? barBeats
+					: (persist < 0.7f) ? barBeats * 2
+					: (persist < 0.9f) ? barBeats * 4 : barBeats * 8;
+				const long long runIndex = beatIndex / std::max(1, runBeats);
+
+				if (ticksSince[i] < 0) {
+					cellRun[i] = -1;
+					lastSlot[i] = -1;
+					lastSpan[i] = -1;
+					ticksSince[i] = 0;
+				}
+				if (cellRun[i] != runIndex) {
+					cellRun[i] = runIndex;
+					chooseFigure(i, slots, densityFor(i), (uint32_t) runIndex);
+				}
+
+				// WHERE WE ARE INSIDE THE FIGURE, in beats, and which of its slots that is.
+				const long long spanIndex = beatIndex / span;
+				const float inSpan = (float) (beatIndex % span) + frac;
+				// A SLOT'S WIDTH COMES FROM THE FIGURE, NOT FROM THE GRID. Usually they agree —
+				// but a figure that has swapped in a triplet divides the same span into three
+				// where the grid divides it into four, and measuring its slots with the grid's
+				// ruler would put every hit in the wrong place and lose the last one entirely.
+				const float slotBeats = (float) span / (float) std::max(1, cellSlots[i]);
+				const int here = math::clamp(
+					(int) std::floor(inSpan / slotBeats), 0, cellSlots[i] - 1);
+
+				// A NEW FIGURE STARTS WITH NOTHING STRUCK, which is what makes a figure of one
+				// slot play on every one of its spans rather than once and never again: the slot
+				// number alone does not change, so the figure has to say when it began.
+				if (spanIndex != lastSpan[i]) {
+					lastSpan[i] = spanIndex;
+					lastSlot[i] = -1;
+				}
+				if (here == lastSlot[i])
+					continue;
+				lastSlot[i] = here;
+				if (!(cellMask[i] & (1u << here)))
+					continue;
+
+				// HOW LONG UNTIL THE FIGURE STRIKES AGAIN, which is what the duration knob is a
+				// share of — so the same duration setting sounds the same whether the figure is
+				// four sixteenths or one note held.
+				int ahead = 1;
+				while (ahead < cellSlots[i]
+						&& !(cellMask[i] & (1u << ((here + ahead) % cellSlots[i]))))
+					ahead++;
+				const float gap = (float) ahead * slotBeats * beatSeconds;
+
+				// A REPEATED-NOTE FIGURE KEEPS ITS PITCH. The pitch comes from where the sprite
+				// is, and a sprite moves — so four sixteenths come out as four different notes,
+				// which is a run and not a repetition. The first hit of such a figure chooses the
+				// pitch and the rest of it keeps that one.
+				if (cellHold[i] && here != 0 && holdingPitch[i]) {
+					noteEndIn[i] = fire(i, gap, h, &holdPitch[i]);
 				}
 				else {
-					const float reach = (mode == SYNC_NEAREST) ? 0.5f * rate * gridSec : 0.f;
-					if (notePhase[i] + reach >= 1.f) {
-						play = true;
-						notePhase[i] -= 1.f;
-						if (notePhase[i] < -1.f || notePhase[i] > 1.f)
-							notePhase[i] = 0.f;
-					}
-				}
-				if (play) {
-					// THE GAP THE GRID ACTUALLY GAVE IT, which is what the duration setting is
-					// a share of.
-					const float gap = (ticksSince[i] >= 0 && sinceNote[i] > 0.f)
-						? sinceNote[i] : 1.f / std::max(rate, 0.01f);
 					noteEndIn[i] = fire(i, gap, h);
-					ticksSince[i] = 0;
-					sinceNote[i] = 0.f;
+					holdPitch[i] = lastFired[i];
+					holdingPitch[i] = true;
 				}
+				sinceNote[i] = 0.f;
 				continue;
 			}
 
@@ -1707,6 +2010,12 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			const int n = wantCount.load();
 			for (int i = 0; i < n; i++)
 				reader.add(wantSlots[i].load(), wantGenerations[i].load());
+			// WHAT IS UPSTREAM HAS CHANGED, so whether a rhythm is coming from up there is an
+			// open question again. Unpatch the pattern and the sprites take their own timing back.
+			for (int i = 0; i < MAX_SPRITES; i++) {
+				cableDriven[i] = false;
+				beat[i].waiting = false;
+			}
 		}
 		// THE CHART PASSES THROUGH, and the sprites' own notes go out with it, so this module can
 		// sit anywhere in a chain rather than only at the head of one.
@@ -1714,7 +2023,7 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		outputs[O_NOTES].setVoltage(busFlashVolts(slot));
 		Event e;
 		while (reader.next(e))
-			busPush(slot, e);
+			takeOrPass(e);
 		Harmony h;
 		const bool haveHarmony = reader.harmony(h);
 		if (haveHarmony)
@@ -2524,11 +2833,25 @@ struct TabStrip : widget::OpaqueWidget {
 								break;
 							}
 				}
-				// THE LIGHT SWITCHES THAT SPRITE ON OR OFF; the rest of the tab selects it. A tab
-				// that had to be selected before its sprite could be switched on would make
-				// turning the fourth one on a two-click job.
-				else if (lampRect(i).contains(e.pos))
+				// THE LIGHT SWITCHES THAT SPRITE ON OR OFF, AND BRINGS IT TO THE FRONT WHEN IT
+				// SWITCHES IT ON.
+				//
+				// Turning a sprite on and being left looking at a different one is two clicks to
+				// do one thing, since what you do straight after turning a sprite on is set it
+				// up. Turning one OFF is the opposite: you have finished with it, and being moved
+				// to its tab takes you away from whatever you were working on.
+				//
+				// Which way the flip will go is read before asking for it, because `flipEnable`
+				// is a request the engine acts on and the answer is not back in time to be used
+				// here.
+				else if (lampRect(i).contains(e.pos)) {
+					const bool turningOn = !module->enabled(i);
 					module->flipEnable.store(i);
+					if (turningOn) {
+						module->selection.store(bit);
+						module->tab.store(i);
+					}
+				}
 				else {
 					module->selection.store(bit);
 					module->tab.store(i);
@@ -2845,9 +3168,14 @@ static Layout spritesLayout() {
 		L.items.push_back(i);
 		label("p.grid.label", kx[0], 63.7f, "GRID", 0.f, "p.grid");
 	}
-	knob("p.slow", 24.5f, 56.5f, SpritesModule::P_SLOW, "MIN RATE");
-	knob("p.fast", 37.5f, 56.5f, SpritesModule::P_FAST, "MAX RATE");
+	// HOW BUSY A BEAT IS, not how fast notes come: the rhythm is built a figure at a time and
+	// these say how full a figure is, between them, as the picture reads. FIGURE is the new one
+	// and the one that decides whether a rhythm is heard as a rhythm — how long a figure is kept
+	// before another is chosen.
+	knob("p.slow", 24.5f, 56.5f, SpritesModule::P_SLOW, "MIN\nDENSITY", 9.f);
+	knob("p.fast", 37.5f, 56.5f, SpritesModule::P_FAST, "MAX\nDENSITY", 9.f);
 	knob("p.depth", 50.f, 56.5f, SpritesModule::P_DEPTH, "DEPTH");
+	knob("p.persist", 62.5f, 56.5f, SpritesModule::P_PERSIST, "FIGURE\nREPEAT", 9.f);
 
 	group("high", 69.f, "NOTE PITCH");
 	plate("p.srcPitch", 79.f, SpritesModule::P_SRC_PITCH);

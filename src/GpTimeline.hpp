@@ -82,6 +82,19 @@ struct GpTimeline {
 };
 
 
+/** HOW MUCH A NOTE IS WORTH TO THE HARMONY, nought to about one and a half.
+
+LONG, ON THE BEAT AND LOUD. Those three separate a chord tone from a passing note without anyone
+having to work out which is which: a passing note is short, falls between beats and is played
+lightly, and a note holding the harmony up is none of those.
+
+HERE RATHER THAN IN THE MODULE because it has to be possible to look at what it produces. A
+weighting that decides which notes are the harmony is exactly the kind of thing that sounds
+reasonable written down and is wrong in practice, and the only way to tell is to run it over real
+music and read the answer — see test/harmony.cpp. */
+float gpHarmonyWeight(const GpTimeline& line, const GpSong& song, const GpPlayedNote& note);
+
+
 /** Builds the played order of a song. Returns false only when there is nothing to play. */
 bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why);
 

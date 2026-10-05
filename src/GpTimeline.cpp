@@ -504,4 +504,32 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 }
 
 
+
+float gpHarmonyWeight(const GpTimeline& line, const GpSong& song, const GpPlayedNote& n) {
+	// LENGTH, AGAINST THE BEAT. A sixteenth is worth a quarter of a quarter note. Anything longer
+	// than a beat is capped, since a whole note is not six times the harmony a half note is — it
+	// is the same harmony, held.
+	float worth = std::fmin(1.5f, std::fmax(0.12f, (float) n.lengthQuarters));
+
+	// WHERE IN THE BAR. A note on the beat is carrying the harmony; one between beats is as
+	// likely to be passing through it.
+	float where = 0.5f;
+	if (n.bar >= 0 && n.bar < (int) line.bars.size()) {
+		const double inBar = n.startQuarters - line.bars[(size_t) n.bar].startQuarters;
+		float beatLength = 1.f;
+		const size_t written = (size_t) line.bars[(size_t) n.bar].written;
+		if (written < song.masterBars.size()) {
+			const GpMasterBar& m = song.masterBars[written];
+			beatLength = 4.f / (float) std::max(1, m.beatUnit);
+			if (m.beatUnit >= 8 && m.beatsPerBar % 3 == 0 && m.beatsPerBar > 3)
+				beatLength *= 3.f;
+		}
+		const double beat = inBar / (double) beatLength;
+		where = (beat - std::floor(beat + 1e-6) < 1e-4) ? 1.f : 0.45f;
+		if (inBar < 1e-4)
+			where = 1.25f;      // The downbeat carries more than the other beats.
+	}
+	return worth * where * std::fmax(0.2f, n.dynamic);
+}
+
 } // namespace px

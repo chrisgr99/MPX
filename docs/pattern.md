@@ -1,89 +1,95 @@
-# mpxPattern — typed rhythms, and several lines from one melody
+# mpxPattern — typed rhythms, eight at a time
 
 ## What it is
 
-A rhythm written as text. A row of characters says where the notes fall, a second row says how strong each is, a third says roughly how high it sits. Each row cycles at its own length, so rows of eleven, seven and five come back into step only occasionally, and the pattern is longer than anything typed into it.
+A rhythm written as text. A grid of characters says where the notes fall: a full stop is a rest, an `x` is a beat, a digit from two to nine is that beat struck that many times. Bar lines are drawn where the metre says and are never typed.
 
 It takes the place of mpxPhrase. Phrase generates a rhythm from the form; this is the same slot with the rhythm written by hand.
 
-## Why it is not a note sequencer
+## A character is one beat
 
-The pattern chooses no pitches. mpxMelody chooses pitches, against the chart's harmony, as it already does. A pattern is therefore a phrase rather than a part: the same typed rows over a different chart give the same phrasing on different harmony, which is the thing worth keeping.
+Always. There is no note-value setting: a character is a beat, a bar line falls wherever the time signature puts one, and four bars make a row.
 
-## The rows
+Typing a bar of sixteenths as sixteen characters is tedious, and a settable note value put bar lines in places that depended on a control rather than on the music. Faster rhythm comes from the cycle speeds instead — the same grid of beats played at two is in eighths, at four in sixteenths.
 
-**Hits.** `x` is a stroke and `.` is a rest. A digit from 2 to 9 is a ratchet: that many evenly spaced strokes inside the one slot, which is how a roll or a drag is typed rather than chosen. A bar line and a space are layout and are ignored, so the row can be written in bars and still mean what it looks like. Its length is the chart's phrase, laid out four bars to a line — see below.
+## Eight tabs, and a tab is a voice
 
-**Strengths.** A digit from nought to nine, one per step, read round on its own length — counted across the whole timeline rather than restarting each phrase, which is what makes it phase. A missing or unreadable character is the loudest, nine, so a row left empty plays everything at full weight. It is the note's level, and it is also its weight in the line: a strong step is where a chord tone belongs and a weak one is where a passing note or an approach note belongs. Nought is a rest, so either row can thin the pattern.
+Nearly everything on the panel belongs to one pattern, so one pattern's worth is shown and the tabs say whose. Each tab has its own light, which switches that pattern on and off; turning one on brings it to the front, turning one off leaves you where you were.
 
-**Contour.** A digit saying how high in the line's range that note aims, nought at the bottom and nine at the top; a full stop carries on from the last. This is what shapes a line without naming any notes, and it is what the paths over an image did in GXW. Like the hits, it is the length of the chart's phrase, so the shape comes round when the harmony does and is heard as belonging to it.
+There are eight because `ChordVoicing` carries eight. The voicing on the cable is chosen once for the whole chain and held steady between chords, so tab three is voice three. With a voicing present a tab sounds its voice's pitch and can drive a synth directly. Without one it sends notes with no pitch, which is what mpxMelody's rhythm input takes.
 
-## The hits are as long as the phrase
+Every note carries its tab number in `Event::part`, counted from one, so a receiver that is itself one of several knows which notes are its own. A module that does not care ignores it, which is every module written before this.
 
-The hits row is not an arbitrary length. It is the length of the chart's phrase, which is almost always a multiple of four bars, so the pattern comes round where the music does rather than drifting against it. Where a section of the chart is selected, the pattern is that section's length and recurs with it, which is how a repeated section keeps its own figure.
+## The three pattern types
 
-It is shown four bars to a line, with as many lines as the phrase needs. Four bars is what the eye reads as a unit and what the hand counts in, and a thirty-two bar chorus is therefore eight lines rather than one long row nobody can find their place in.
+**Manual.** The rows are phrases, typed, played one after another. A row left empty plays the nearest typed row above it, so a whole chorus is one row until a phrase needs to differ. Measures sets how many bars a phrase spans, up to four; phrases sets how many of them there are, up to eight.
 
-The strengths row is not constrained this way. It is one row of digits, cycling on its own length, and its phasing against the phrase is the point of it: seven strengths against a sixteen-bar phrase give a line that accents differently every time round without a single character being retyped.
+**Harmony.** The rows are the chart's own bars, four to a row, so a tune can be given a different rhythm in every bar of it. The grid takes its size from whatever the chart is playing — the whole chart, or the section or span of bars chosen on mpxChart, since the chart narrows its own timeline to what it plays. The cycle speeds field is inactive here: the beats are locked to the chart's bars, and a speed other than one would unlock the grid from the thing it mirrors.
 
-The contour row follows the hits rather than the strengths: it is the phrase long. A shape that floated against the form would be heard as drifting rather than as a tune, and the whole point of a contour is that the same rise and fall arrives over the same chords each time round. The strengths alone are free, and that is what keeps a repeated phrase from being identical.
+**Euclidean.** The rows are generated from a count of active beats and a rotation, by the modulo formula — cell *i* fires when *ik* mod *n* is below *k*. That puts the first beat on cell nought, which is how a musician reads these: three in eight is the tresillo. The grid is read-only apart from ratcheting a beat that is already there.
 
-## What GXW did, and what is worth keeping
+## Typing
 
-The same feature in GXW is `deriveNormalLooped` in `src/beatPoints.js`, with the typing in `src/inspectorFields.js` and the four-bar rows in `src/chartFollow.js`. What it does that this design should keep:
+Typing **overwrites** the cell at the caret and never inserts. A character is a beat and the column it sits in is where in the bar it falls, so anything that pushed the rest of the row along would move every later beat off its place.
 
-**Ratchets.** A digit in the hits row is that many strokes in the slot. It costs nothing and it is most of what makes a typed rhythm sound played.
+A rest is the full stop or the space bar. A beat is `x` or the comma, which sits beside the full stop so a rhythm can be tapped in with one hand. A digit from two to nine ratchets that beat into that many evenly spaced strokes, which is how a roll or a drag is typed rather than chosen.
 
-**Bar lines as layout.** The typing field inserts a bar line every so many cells and strips them when the row is read, so a long row stays readable.
+Backspace and delete clear a cell to a rest. The arrow keys move the caret, up and down between rows.
 
-**A pattern per phrase, inherited forward.** Each phrase of the chart has its own row, and a phrase with nothing typed in it uses the last one that was typed. A whole chorus is therefore one row until a phrase needs to differ.
+Every keystroke is applied at once. Nothing has to be committed.
 
-**The strengths counted globally.** The strength row is sampled on the running slot number, not on the position within the phrase, so its cycle floats across the form.
+## The two short fields
 
-**The unfolded chart.** In chart-following mode the rows follow the played bar order — repeats and codas expanded — rather than the written one, so a repeated section gets the same figure each time it is played.
+**Beat strength.** A digit per beat, nought to nine, read round on its own length — counted across the whole pattern rather than restarting each row, which is what makes it phase. It is the note's level, and nought is a rest, so the strength can thin the pattern on its own. Seven strengths against a sixteen-bar pattern accent differently every time round without a character being retyped.
 
-**Variation with a seed.** A deterministic per-cycle flip, so a pattern varies without becoming random: the same seed gives the same variation every time the piece is played.
+**Cycle speeds.** A list of numbers separated by spaces, decimals allowed, a negative meaning backwards. One entry covers one trip through the whole pattern, and the list cycles, so `1 2 -1` is a pass as written, one at double time, then one backwards. An empty list is one.
 
-What is deliberately not kept here is the image: in GXW the sampled colour under each beat chose the pitch, the sustain and whether the beat sounded at all. Here the pitch belongs to mpxMelody and the harmony, which is a different answer to the same question.
+Neither field lines up with the grid. They cycle against it, so they are as long as they need to be and usually much shorter — which is why they sit below the box rather than in it.
 
-## Writing the contour by machine
+Both commit on every keystroke, so a speed typed while the pattern plays is heard at once. A list half typed never commits: `1 -` holds the last good reading until it is a number again.
 
-A contour can be typed, and for the bars that matter it should be. For the rest, a generator fills the row with digits, which are then ordinary digits: editable, saved as text, and replaced only when it is asked to generate again. What is heard is what is written down.
+## The grid
 
-The shapes worth having are the fractal one — long arcs with smaller incidents inside them, from a seed, with a roughness control — and the plain ones a tune actually uses: an arch over the phrase, a ramp, a wave of a chosen number of bars, a walk that strays by a step at a time, and a terrace of a few levels held for a bar or two each. With a seed and a range, auditioning contours takes a second or two, which is what sweeping a picture was for.
+One framed box. Each row is numbered behind a rule of its own, with a rule between rows and a bar line after every complete bar including the last.
 
-It generates a phrase's worth, since that is what the row is.
+It scrolls when it has more rows than it can show — by the wheel over the box, which the box takes so the rack does not move, or by the scroll bar down its right-hand side. While the pattern plays the box follows the sounding row, and that following pauses for a few seconds after the scroll bar or the wheel has been used, so reading somewhere else is not interrupted.
 
-## What a character is worth
+The sounding cell is marked with a white outline one character wide. The caret is the same box in the frame's own green.
 
-One setting: a bar, a beat, an eighth, a sixteenth, or a triplet eighth. The beat, the bar and the metre come from the cable, so there is no clock jack and no tempo control.
+## The face
+
+Hack, which the plugin ships under the MIT licence, at twenty-four pixels. Rack's own monospaced face is a display face with thin strokes and little between a full stop and a comma, and this grid is nothing but full stops, crosses and digits read at a glance. Hack was drawn for small text on a screen.
+
+Monospaced is the point rather than a preference: every row has to line up character for character with the rows above and below it, because the column a character sits in is where in the bar it falls.
+
+The colours are the beat-point editor's in GXW, so a pattern moved between the two reads the same way: the box is a dark grey ground, the text white, an inherited row grey, the frame and the rules green. The fields inside the box have no fill and no border of their own — the frame and the rules supply all the structure.
+
+## The panel sets its own width
+
+The grid decides it. Four bars of six beats is twenty-eight characters, and at twenty-four pixels that is a hundred and forty-five millimetres of box, which is why the module is thirty-one HP.
+
+Six-eight is the widest metre it is sized for. A longer bar than that still works; it simply shows fewer than four bars on a row.
 
 ## Several lines, one melody module
 
-Rack allows several cables into one input, and mpxMelody's rhythm input takes up to four. Each cable is a line.
+Rack allows several cables into one input, and mpxMelody's rhythm input takes several. Each cable is a line, and each tab within a cable is a part of that line.
 
-This is the point of the design. Two melody modules write two tunes that share a key; one melody module with every line's step in front of it at the same moment can write parts. It can keep lines out of unison, keep them from crossing unless it means to, move one against another rather than with it, and leave room in one line where another has just moved. Separate generators cannot do any of that, because neither knows what the other is about to play.
+This is the point of the design. Two melody modules write two tunes that share a key; one melody module with every line's beat in front of it at the same moment can write parts. It can keep lines out of unison, keep them from crossing unless it means to, move one against another rather than with it, and leave room in one line where another has just moved. Separate generators cannot do any of that, because neither knows what the other is about to play.
 
-Each line's character comes from its pattern module — its role (bass, inner or melody), its register, and its contour row. The pattern says when, how strong, how high and what kind of part; the melody decides the actual notes for all of the lines together.
+## Where it sits in the chain
 
-What comes out is one MPX cable carrying every line, since a note on that cable is an independent event. One voice module plays the lot, or the lines are split if they want different sounds.
+The chart, then the voicing if there is one, then mpxPattern, then whatever plays the notes — mpxMelody, or mpxSprites and mpxPathSprites.
 
-## What has to change elsewhere
-
-**The reader must say which cable a step came from.** mpxMelody reads its upstreams interleaved and cannot tell one from another, so every line would be treated as one. BusReader hands back the upstream index with each event.
-
-**mpxMelody gains the rules that keep lines apart.** No unisons between lines; a minimum distance between registers, which the patterns' own register settings mostly supply; contrary motion preferred where a choice is free; and a line that has just leapt leaves the next step to something else.
-
-**mpxMelody takes its weights from the pattern.** A step's strength decides how strongly a chord tone is preferred over a passing note, which is what makes a typed pattern sound phrased rather than merely rhythmic.
+The rhythm says *when* and the thing downstream says *what*, so the rhythm has to be made before the sprite sees it. A sprite takes each note of its own tab, reads the picture under wherever it has reached along its curve, chooses a pitch by melodic rules against the harmony on the cable, and passes the note on with that pitch filled in.
 
 ## What it does not do
 
-It chooses no pitches, it keeps no time of its own, and it knows nothing about the chord. Those belong to the melody, the chart and the voicing.
+It keeps no time of its own and it knows nothing about the chord. The beat, the bar and the metre are on the cable, so there is no clock jack and no tempo control. There are no level or length controls either: what plays the notes decides those.
 
-## The stages
+## What is still to do
 
-1. The module, its rows and its panel: typing, cycling, and notes out with the strengths as levels. The hits laid out four bars to a line, sized from the chart's phrase.
-2. The upstream index in the reader, so a line can be told from a line.
-3. mpxMelody reading several rhythm cables as several lines, with its own settings per line taken from the pattern.
-4. The rules that keep the lines apart.
-5. The contour row feeding the melody's register choice.
+**Harmony mode and changing metres.** The grid is sized from the chart's length in beats divided by the beats in a bar, which is right for a piece in one metre and wrong for one that changes. It needs the per-bar metre from the chart rather than a single number.
+
+**Harmony mode and folded repeats.** GXW's chart-following shows the *written* bars and plays the *unfolded* order, so a repeated section gets the same figure each time it is played and the highlight cycles through the repeat group. This shows the played length instead, which is the same thing only for a chart with no repeats.
+
+**Ratchets in Euclidean mode** are kept per row in the typed text, but a change to the count or the rotation moves the beats without moving the ratchets with them.
