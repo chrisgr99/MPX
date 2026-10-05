@@ -276,9 +276,17 @@ void Picture::clear() {
 /** Box-filtered down from the square, the same way the square itself was made: point sampling a
 photograph down to forty-eight pixels loses whatever it was of. */
 void pictureThumbnail(const std::vector<uint8_t>& rgba, std::vector<uint8_t>& out) {
-	out.assign((size_t) THUMB_SIDE * THUMB_SIDE * 4, 0);
+	// NOTHING, NOT BLACK, WHEN THERE IS NOTHING TO MAKE ONE FROM.
+	//
+	// This filled the buffer first and gave up second, so a caller handed the wrong thing got a
+	// full-sized thumbnail of solid black and no way to tell. One caller passed a picture's
+	// ENCODED bytes where the decoded square was wanted; every thumbnail it wrote was 65536 bytes
+	// of zero, the gallery read them perfectly well, and the pictures were simply invisible.
+	// Empty is the answer that cannot be mistaken for an answer.
+	out.clear();
 	if (rgba.size() < (size_t) PICTURE_SIDE * PICTURE_SIDE * 4)
 		return;
+	out.assign((size_t) THUMB_SIDE * THUMB_SIDE * 4, 0);
 	const int block = PICTURE_SIDE / THUMB_SIDE;
 	for (int y = 0; y < THUMB_SIDE; y++) {
 		for (int x = 0; x < THUMB_SIDE; x++) {

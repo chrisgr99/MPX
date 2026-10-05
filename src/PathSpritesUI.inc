@@ -120,7 +120,7 @@ struct PictureField : widget::OpaqueWidget {
 			return;
 		}
 		const std::string kept = pictureKeepCopy(module->picture.name, module->picture.file);
-		pictureRemember(kept.empty() ? path : kept, module->picture.name, module->picture.file);
+		pictureRemember(kept.empty() ? path : kept, module->picture.name, module->picture.rgba);
 		choosing = false;
 	}
 
@@ -208,7 +208,7 @@ struct PictureField : widget::OpaqueWidget {
 			if (at >= 0 && at < (int) cells.size()) {
 				if (module->picture.load(cells[(size_t) at].path)) {
 					pictureRemember(cells[(size_t) at].path, module->picture.name,
-						module->picture.file);
+						module->picture.rgba);
 				}
 				choosing = false;
 			}
@@ -488,9 +488,9 @@ struct PictureField : widget::OpaqueWidget {
 			return -2;
 		pictureThumbnail(one.rgba, bytes);
 		if (bytes.empty())
-			return -2;
+			return -2;      // it could not make one; see pictureThumbnail
 		// AND KEPT, so the next time this gallery is opened it is read rather than decoded.
-		pictureRemember(cells[(size_t) i].path, one.name, one.file);
+		pictureRemember(cells[(size_t) i].path, one.name, one.rgba);
 		return nvgCreateImageRGBA(args.vg, THUMB_SIDE, THUMB_SIDE, 0, bytes.data());
 	}
 
