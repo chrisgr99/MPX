@@ -9,9 +9,11 @@ namespace px {
 
 
 /** THE MEASUREMENTS. The picture is a square as tall as the panel, as it is in mpxSprites, and
-the width is then chosen for the column beside it. */
+the width is then chosen for the column beside it — the same 42 HP mpxSprites uses, which leaves
+an 85 millimetre column. Narrower crowded the tabs: eight of them across 54 millimetres left each
+one six millimetres wide, which is a lamp and a digit with nothing between them. */
 static const float PS_PANEL_H = 128.5f;
-static const float PS_PANEL_HP = 36.f;
+static const float PS_PANEL_HP = 42.f;
 static const float PS_PANEL_W = PS_PANEL_HP * 5.08f;
 static const float PS_INSET = 1.5f;
 static const float PS_SQUARE = PS_PANEL_H - 2.f * PS_INSET;
@@ -54,6 +56,9 @@ struct PictureField : widget::OpaqueWidget {
 	int hoverCell = -1;
 	std::vector<PictureMemory> cells;
 	std::vector<int> thumbs;
+	/** One picture decoded a frame at most, so a gallery of twenty fills in over a few frames
+	rather than stopping the panel dead on the frame it is opened. */
+	bool decodedThisFrame = false;
 
 	math::Vec toPicture(math::Vec pos) const {
 		if (box.size.x <= 0.f || box.size.y <= 0.f)
@@ -441,7 +446,36 @@ struct PictureField : widget::OpaqueWidget {
 		}
 	}
 
+	/** THE PICTURE IN A CELL, AS A THUMBNAIL.
+
+	THE KEPT THUMBNAIL IF THERE IS ONE, AND THE PICTURE ITSELF IF THERE IS NOT. An entry remembered
+	before thumbnails were written, or one whose thumbnail file has gone, has no thumbnail to read
+	— and reading it was all this did, so those cells came up empty while still choosing perfectly
+	well when clicked. Failing that, the picture is decoded and a thumbnail made from it, which is
+	slow enough that only one is done a frame.
+
+	A FAILURE IS REMEMBERED TOO, as minus two rather than minus one, or a picture whose file has
+	gone would be retried on every frame for as long as the gallery is open. */
+	int thumbFor(const DrawArgs& args, int i) {
+		std::vector<uint8_t> bytes;
+		if (pictureThumb(cells[(size_t) i], bytes))
+			return nvgCreateImageRGBA(args.vg, THUMB_SIDE, THUMB_SIDE, 0, bytes.data());
+		if (decodedThisFrame)
+			return -1;                  // next frame, so the grid fills in rather than stalling
+		decodedThisFrame = true;
+		Picture one;
+		if (!one.load(cells[(size_t) i].path))
+			return -2;
+		pictureThumbnail(one.rgba, bytes);
+		if (bytes.empty())
+			return -2;
+		// AND KEPT, so the next time this gallery is opened it is read rather than decoded.
+		pictureRemember(cells[(size_t) i].path, one.name, one.file);
+		return nvgCreateImageRGBA(args.vg, THUMB_SIDE, THUMB_SIDE, 0, bytes.data());
+	}
+
 	void drawChooser(const DrawArgs& args) {
+		decodedThisFrame = false;
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 		nvgFillColor(args.vg, nvgRGBA(0x0d, 0x10, 0x14, 0xe8));
@@ -458,13 +492,9 @@ struct PictureField : widget::OpaqueWidget {
 
 		for (int i = 0; i < (int) cells.size() && i < ACROSS * DOWN; i++) {
 			const math::Rect r = cellRect(i);
-			if (thumbs[(size_t) i] < 0) {
-				std::vector<uint8_t> bytes;
-				if (pictureThumb(cells[(size_t) i], bytes))
-					thumbs[(size_t) i] = nvgCreateImageRGBA(args.vg, THUMB_SIDE, THUMB_SIDE, 0,
-						bytes.data());
-			}
-			if (thumbs[(size_t) i] >= 0) {
+			if (thumbs[(size_t) i] < 0)
+				thumbs[(size_t) i] = thumbFor(args, i);
+			if (thumbs[(size_t) i] > 0) {
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, r.pos.x + 1.f, r.pos.y + 1.f, r.size.x - 2.f, r.size.y - 2.f);
 				nvgFillPaint(args.vg, nvgImagePattern(args.vg, r.pos.x + 1.f, r.pos.y + 1.f,
@@ -671,7 +701,7 @@ static Layout pathSpritesLayout() {
 			const std::vector<std::string>& names, const std::string& group) {
 		Item i;
 		i.key = key; i.kind = Item::PARAM; i.id = id; i.style = "lamps";
-		i.x = x; i.y = y; i.names = names; i.horizontal = true; i.pitch = 11.f;
+		i.x = x; i.y = y; i.names = names; i.horizontal = true; i.pitch = 24.f;
 		i.labelSide = Panel::RIGHT;
 		L.items.push_back(i);
 		label(key + ".group", x + 10.f, y - 4.2f, group, 0.f, key);
@@ -713,15 +743,15 @@ static Layout pathSpritesLayout() {
 
 	// THE OUTPUTS: one a sprite, in two rows of four, and the polyphonic one beside the input.
 	for (int i = 0; i < MAX_PATHS; i++) {
-		const float x = left + 5.5f + (float) (i % 4) * 9.5f;
-		const float y = 112.f + (float) (i / 4) * 9.f;
+		const float x = left + 8.f + (float) (i % 4) * 13.f;
+		const float y = 112.f + (float) (i / 4) * 9.5f;
 		Item o;
 		o.key = string::f("out.cv%d", i + 1);
 		o.kind = Item::PORT_OUT; o.id = PathSpritesModule::O_CV + i; o.x = x; o.y = y;
 		o.ring = PATH_INK[i];
 		L.items.push_back(o);
 	}
-	label("l.outs", left + 5.5f, 106.f, "OUT", 6.4f, "", Panel::LEFT);
+	label("l.outs", left + 8.f, 105.f, "OUT", 7.f, "", Panel::LEFT);
 
 	jack("in.chart", Item::PORT_IN, PS_COLUMN - 9.f, 112.f, PathSpritesModule::I_CHART,
 		"mpx", NOTE_CABLE);
@@ -730,9 +760,9 @@ static Layout pathSpritesLayout() {
 
 	Item run;
 	run.key = "p.run"; run.kind = Item::PARAM; run.id = PathSpritesModule::P_RUN;
-	run.style = "latch"; run.diameter = 5.5f; run.x = left + 5.5f; run.y = 98.f;
+	run.style = "latch"; run.diameter = 5.5f; run.x = left + 8.f; run.y = 98.f;
 	L.items.push_back(run);
-	label("p.run.label", left + 5.5f, 104.f, "RUN", 6.4f, "p.run");
+	label("p.run.label", left + 8.f, 104.f, "RUN", 7.f, "p.run");
 
 	L.bindOffsets();
 	return L;
