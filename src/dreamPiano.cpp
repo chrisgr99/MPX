@@ -1,10 +1,12 @@
-/** mpxPiano — a piano modelled rather than recorded, played from an MPX cable.
+/** dreamPiano — a piano modelled rather than recorded, played from an MPX cable.
 See docs/piano-model.md.
 
-mpxPiano ON THE FACE, mpxPianoModel IN THE SLUG. The plain name belongs to this, because it is the
-one that will be reached for; the slug cannot be the plain name because the sampled piano took it
-years ago and a slug is what a saved patch stores. Renaming that one would empty every rack it is
-in. A slug is never shown, so the mismatch is invisible — but it is here, so it is written down.
+ITS OWN NAME, AND THE SAME NAME IN ITS SLUG. This was arranged the other way round first, with the
+modelled piano taking the plain name on its face and carrying a different one in its slug, because
+a slug is what a saved patch stores and the sampler's could not move without emptying every rack it
+is in. It worked, and it left two modules whose displayed names and stored names were different
+things, each needing a comment to explain why. A name of its own ends all of it: the sampler stays
+mpxPiano, which is what it has always been called, and this is dreamPiano in both places.
 
 NO SAMPLES, AND SO NO DOWNLOAD. Every string of the instrument is here, two hundred and sixty of
 them on one bridge, and what comes out is what they do. The sampled piano beside it is better at
@@ -45,7 +47,7 @@ static float speedOf(float level) {
 }
 
 
-struct PianoModelModule : Module, NoteSink {
+struct DreamPianoModule : Module, NoteSink {
 	enum ParamId {
 		P_VOLUME,
 		P_SUSTAIN,
@@ -91,7 +93,7 @@ struct PianoModelModule : Module, NoteSink {
 	std::atomic<float> wantedRate{48000.f};
 	std::thread builder;
 
-	PianoModelModule() {
+	DreamPianoModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(P_VOLUME, 0.f, 2.f, 1.f, "Volume", "%", 0.f, 100.f);
 		configSwitch(P_SUSTAIN, 0.f, 1.f, 0.f, "Sustain pedal", {"up", "down"});
@@ -106,7 +108,7 @@ struct PianoModelModule : Module, NoteSink {
 		startBuild(48000.f);
 	}
 
-	~PianoModelModule() {
+	~DreamPianoModule() {
 		usable = false;
 		if (builder.joinable())
 			builder.join();
@@ -294,10 +296,10 @@ static const float MID = PANEL_W / 2.f;
 static const float PAIR_L = MID - 5.f;
 static const float PAIR_R = MID + 5.f;
 
-static Layout pianoModelLayout() {
+static Layout dreamPianoLayout() {
 	Layout L;
 	L.hp = 6.f;
-	L.title = "mpxPiano";
+	L.title = "dreamPiano";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,
@@ -332,36 +334,36 @@ static Layout pianoModelLayout() {
 			key);
 	};
 
-	knob("p.volume", MID, 24.f, PianoModelModule::P_VOLUME, "VOLUME", 11.f);
+	knob("p.volume", MID, 24.f, DreamPianoModule::P_VOLUME, "VOLUME", 11.f);
 
 	label("h.pedals", MID, 46.f, "PEDALS", Panel::CENTRE, true);
-	latch("p.sustain", MID, 58.f, PianoModelModule::P_SUSTAIN, "SUST");
-	latch("p.soft", PAIR_L, 76.f, PianoModelModule::P_SOFT, "SOFT");
-	latch("p.sostenuto", PAIR_R, 76.f, PianoModelModule::P_SOSTENUTO, "SOST");
+	latch("p.sustain", MID, 58.f, DreamPianoModule::P_SUSTAIN, "SUST");
+	latch("p.soft", PAIR_L, 76.f, DreamPianoModule::P_SOFT, "SOFT");
+	latch("p.sostenuto", PAIR_R, 76.f, DreamPianoModule::P_SOSTENUTO, "SOST");
 
 	// A lamp saying whether anything is sounding, which while the instrument is still being
 	// built is the only way to tell it apart from a module that is simply not working.
 	Item lamp;
-	lamp.key = "l.sounding"; lamp.kind = Item::LIGHT; lamp.id = PianoModelModule::L_SOUNDING;
+	lamp.key = "l.sounding"; lamp.kind = Item::LIGHT; lamp.id = DreamPianoModule::L_SOUNDING;
 	lamp.x = MID; lamp.y = 94.f;
 	L.items.push_back(lamp);
 
-	jack("in.mpx", Item::PORT_IN, MID, 110.f, PianoModelModule::I_MPX, "mpx IN", NOTE_CABLE);
-	jack("out.audio", Item::PORT_OUT, MID, 119.5f, PianoModelModule::O_OUT, "OUT", SIG_AUDIO);
+	jack("in.mpx", Item::PORT_IN, MID, 110.f, DreamPianoModule::I_MPX, "mpx IN", NOTE_CABLE);
+	jack("out.audio", Item::PORT_OUT, MID, 119.5f, DreamPianoModule::O_OUT, "OUT", SIG_AUDIO);
 
 	L.bindOffsets();
 	return L;
 }
 
 
-struct PianoModelWidget : ModuleWidget {
+struct DreamPianoWidget : ModuleWidget {
 	Panel* panel = NULL;
 	Layout layout;
 
-	PianoModelWidget(PianoModelModule* module) {
+	DreamPianoWidget(DreamPianoModule* module) {
 		setModule(module);
-		layout = pianoModelLayout();
-		layoutApplyUser("mpxPianoModel", layout);
+		layout = dreamPianoLayout();
+		layoutApplyUser("dreamPiano", layout);
 		panel = new Panel;
 		addChild(panel);
 		layoutBuild(this, panel, layout);
@@ -369,11 +371,11 @@ struct PianoModelWidget : ModuleWidget {
 
 	void step() override {
 		ModuleWidget::step();
-		PianoModelModule* m = dynamic_cast<PianoModelModule*>(module);
+		DreamPianoModule* m = dynamic_cast<DreamPianoModule*>(module);
 		if (!m)
 			return;
 
-		PortWidget* port = getInput(PianoModelModule::I_MPX);
+		PortWidget* port = getInput(DreamPianoModule::I_MPX);
 		int slots[MAX_UPSTREAM];
 		uint32_t gens[MAX_UPSTREAM];
 		int n = 0;
@@ -396,12 +398,12 @@ struct PianoModelWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		PianoModelModule* m = dynamic_cast<PianoModelModule*>(module);
+		DreamPianoModule* m = dynamic_cast<DreamPianoModule*>(module);
 		if (!m)
 			return;
 		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createMenuLabel("A modelled piano: every string, on one bridge"));
-		layoutAppendMenu(menu, this, panel, &layout, "mpxPianoModel");
+		layoutAppendMenu(menu, this, panel, &layout, "dreamPiano");
 	}
 };
 
@@ -409,4 +411,4 @@ struct PianoModelWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelMpxPianoModel = createModel<px::PianoModelModule, px::PianoModelWidget>("mpxPianoModel");
+Model* modelDreamPiano = createModel<px::DreamPianoModule, px::DreamPianoWidget>("dreamPiano");

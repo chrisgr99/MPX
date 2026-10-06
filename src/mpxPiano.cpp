@@ -960,11 +960,7 @@ static const float PAIR_R = 33.f;       // Soft over the right
 static Layout pianoLayout() {
 	Layout L;
 	L.hp = 8.f;
-	// mpxSPiano ON THE FACE, mpxPiano IN THE SLUG. The name a person reads and the name a patch
-	// stores are different things, and the slug is the one that must never move: every saved patch
-	// names its modules by it, so renaming it would empty every rack that has this piano in it.
-	// The S is for sampled; the modelled piano beside it takes the plain name.
-	L.title = "mpxSPiano";
+	L.title = "mpxPiano";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,

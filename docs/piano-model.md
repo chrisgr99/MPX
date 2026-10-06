@@ -530,13 +530,13 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 They stand beside each other. The sampler is good at what it is good at, and a modelled instrument is a different thing rather than a better one.
 
-**The modelled piano is `mpxPiano`** — the plain name, because it is the one that will be reached for.
+**The sampler is `mpxPiano`**, which is what it has always been called and what its slug says.
 
-**The sampler becomes `mpxSPiano`**, the S for sampled.
+**The modelled one is `dreamPiano`**, in its name and in its slug alike.
 
-**Neither slug moves.** A slug is what a saved patch stores, so the sampler keeps `mpxPiano` as its slug for ever, however it is named on the face; renaming it would empty every rack that has this piano in it. The modelled one therefore needs a slug of its own that is not the word anybody would guess, and the mismatch is invisible — a slug is never shown.
+This was arranged the other way round first — the modelled piano taking the plain name `mpxPiano` on its face while carrying `mpxPianoModel` in its slug, because a slug is what a saved patch stores and the sampler's could not move without emptying every rack it is in. That worked, and it meant two modules whose displayed names and stored names were different things, each needing a comment to explain why. Giving the new one a name of its own ends all of it: both names now match their slugs, nothing a person has got used to has changed, and the two comments are gone.
 
-So: the name a person reads and the name a patch stores are different things here, deliberately, and the comment on the panel title says why.
+Nothing was lost in the change. The modelled module was hours old, so no saved patch and no saved layout named it.
 
 ## Open
 
