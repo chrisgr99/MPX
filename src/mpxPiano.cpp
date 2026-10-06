@@ -582,7 +582,10 @@ struct PianoModule : Module, NoteSink {
 		return quietest;
 	}
 
-	void startOneShot(const PianoRegion* r, float gain, int part, int key, float sampleRate) {
+	/** `dies` is how long this one-shot is allowed to last, in seconds, or nought to let the
+	recording play out as it was recorded. */
+	void startOneShot(const PianoRegion* r, float gain, int part, int key, float sampleRate,
+			float dies = 0.f) {
 		const PianoBank* bank = gLib.bank.load();
 		if (!r || !bank || gain <= 0.0001f)
 			return;
@@ -600,6 +603,10 @@ struct PianoModule : Module, NoteSink {
 		// hammer noise is one recording per key and is played as it was recorded.
 		const float m = (part == PART_RESONANCE) ? noteOf(((float) key - 60.f) / 12.f) : (float) r->key;
 		v->step = std::pow(2.0, (m - r->key) / 12.0) * SAMPLES_RATE / sampleRate;
+		if (dies > 0.f) {
+			v->releasing = true;
+			v->decay = std::exp(-6.9f / (dies * sampleRate));
+		}
 	}
 
 	/** LETS A KEY UP, by whatever told it to: a note-off, or its own length running out. */
@@ -712,7 +719,22 @@ struct PianoModule : Module, NoteSink {
 		// to take, so this costs nothing further.
 		const float remaining = (v.peak > 0.f) ? math::clamp(v.follow / v.peak, 0.f, 1.f) : 0.f;
 		const float gain = params[P_RELEASE].getValue() * v.amp * remaining;
-		startOneShot(bank->find(PART_RESONANCE, v.key, v.vel), gain, PART_RESONANCE, v.key, sampleRate);
+		// A DAMPER STOPS THE RESONANCE AS WELL AS THE NOTE, which is why this one-shot is given
+		// the damper's own time and not left to play out.
+		//
+		// WHAT IT DID BEFORE, and what that was mistaken for. These recordings are two and eight
+		// tenths of a second long, and one was started at full level every time a key came up and
+		// allowed to run to its end. In a fugue, with a hundred and eighteen notes released
+		// inside twenty seconds, something like twenty of them overlap at every moment — a
+		// continuous wash that no setting of the DAMPING knob could touch, because the knob sets
+		// the string voices' envelope and never reached these. So the knob appeared to do nothing
+		// at either extreme while the strings underneath it were in fact damping correctly.
+		//
+		// Three times the damper's own time: a damper that stops a string in a fiftieth of a
+		// second leaves a thud rather than a ring, which is what a released key sounds like, and
+		// one let down slowly leaves the resonance that a slow damper really does leave.
+		startOneShot(bank->find(PART_RESONANCE, v.key, v.vel), gain, PART_RESONANCE, v.key,
+			sampleRate, 3.f * seconds);
 	}
 
 	/** Every key up at once, as though each had been released: the pedal still decides how long
