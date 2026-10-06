@@ -34,13 +34,13 @@ static const double MODE_SCATTER = 0.34;
 heavily damped, because a board that rang like a bell would be a board that was not giving its
 energy to the air, which is its whole job. Lower at the bottom, where the ribs and the case damp
 it most. */
-static const double Q_LOW = 22.0;
-static const double Q_HIGH = 55.0;
+static const double Q_LOW = 9.0;
+static const double Q_HIGH = 30.0;
 
 /** HOW FAR A MODE LIFTS THE ADMITTANCE ABOVE THE SMOOTH BACKGROUND AT ITS OWN FREQUENCY. A handful
 of times, which is what measured mobility curves show: peaks and dips of ten or fifteen decibels
 about the trend, not the forty or fifty of a lightly damped resonator. */
-static const double MODE_LIFT = 4.0;
+static const double MODE_LIFT = 2.2;
 
 /** HOW WELL A MODE OF A GIVEN FREQUENCY GETS THE SOUND INTO THE AIR.
 
@@ -164,6 +164,51 @@ void Soundboard::prepare() {
 	instant = smoothGain;
 	for (const Mode& m : modes)
 		instant += m.g;
+
+	// ---- AND THE AVERAGE IS MADE TO BE THE AVERAGE IT WAS ASKED FOR ----
+	//
+	// WHY THIS IS NEEDED AT ALL. A soundboard's mobility is a measured quantity — about a
+	// two-thousandth of a metre per second per newton — and every phase before the board existed
+	// was calibrated against a plain resistance of exactly that. Modes are supposed to redistribute
+	// it, not add to it. They do add to it: near a mode each resonator contributes its peak, and
+	// twenty-eight of them across six hundred hertz overlap enough that the TREND of the sum sits
+	// well above the figure asked for. Measured, it came out at twice: 0.97 against 0.47.
+	//
+	// WHAT THAT SOUNDED LIKE, which is how it was found. Every note in the modal region — which is
+	// the whole bass and tenor — gave up its energy to the bridge more than twice as fast as any
+	// of the earlier phases had been built for, and by a different amount each note, so the bass
+	// came out short, uneven and unpleasant. Nothing in the bench caught it: the admittance curve
+	// was printed and looked like a mobility curve, the unevenness was measured and celebrated,
+	// and nobody took the average of the thing.
+	//
+	// HOW. Everything in here is linear, so scaling every mode by one number scales the whole
+	// admittance by that number — which means the average can be measured and divided out in one
+	// step. Twice over, because the smooth remainder is in the sum too and does not scale with the
+	// modes. The peak-to-dip swing is untouched by a scaling, so the unevenness the modes exist
+	// for survives it.
+	if (!flat && !modes.empty()) {
+		const double from = FIRST_MODE_HZ * 0.72, to = std::fmin(highest * 1.24, rate * 0.4);
+		for (int pass = 0; pass < 2; pass++) {
+			double logs = 0.0;
+			int n = 0;
+			for (double hz = from; hz < to; hz *= 1.01) {
+				logs += std::log(std::fmax((double) admittanceAt((float) hz), 1e-12));
+				n++;
+			}
+			if (n < 4)
+				break;
+			const double mean = std::exp(logs / (double) n);
+			if (mean < 1e-12)
+				break;
+			const double scale = smooth / mean;
+			instant = smoothGain;
+			for (Mode& m : modes) {
+				m.g *= scale;
+				m.peak *= scale;
+				instant += m.g;
+			}
+		}
+	}
 	silence();
 }
 
