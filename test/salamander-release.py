@@ -12,7 +12,7 @@ second — and when the two DISAGREE, that disagreement is itself the finding.
 What it mirrors, from mpxPiano.cpp:
   the string voice   amp = ((1-vt) + vt x^2), vt = 0.73, x = velocity over 127
   its release        decay per sample = exp(-6.9 / (seconds * rate)),
-                     seconds = 0.02 * 40^DAMPING / max(0.05, 1 - sustain)
+                     seconds = 0.8 * (1/40)^DAMPING / max(0.05, 1 - sustain)
   the resonance      gain = RELEASE * amp * (how loud the note still is), dying in 3 * seconds
   the key-up noise   gain = HAMMER * amp, played out as recorded
 
@@ -62,7 +62,9 @@ def main():
         return best
 
     # The module's own arithmetic for how fast a damper falls.
-    fall = 0.02 * (40.0 ** damping) / max(0.05, 1.0 - SUSTAIN)
+    # Clockwise is MORE damping, so the knob up means a faster fall. See configParam in
+    # mpxPiano.cpp, from which this is copied.
+    fall = 0.8 * ((1.0 / 40.0) ** damping) / max(0.05, 1.0 - SUSTAIN)
     string_decay = math.exp(-6.9 / (fall * SR))
     res_decay = math.exp(-6.9 / (3.0 * fall * SR))
 

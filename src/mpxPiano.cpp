@@ -499,8 +499,18 @@ struct PianoModule : Module, NoteSink {
 		//
 		// A fiftieth of a second to four fifths, with the default in the middle of the travel at
 		// about an eighth of a second — a damper rather than a long fade.
+		//
+		// CLOCKWISE IS MORE DAMPING, which is the way round the word means and was the way round
+		// it was not. The number underneath is how long the damper takes to fall, so turning it up
+		// made the note last LONGER: a control called DAMPING that damped less the further it was
+		// turned. The travel is reversed rather than the control renamed, because what somebody
+		// wants from a thing called damping is more of it.
+		//
+		// The display shows the time, so its base and multiplier are reversed with the travel:
+		// four fifths of a second times a fortieth to the power of the knob runs from 0.8 down to
+		// 0.02, which is what the tooltip now reads.
 		configParam(P_DAMPING, 0.f, 1.f, 0.5f,
-			"Damping", " s", 40.f, 0.02f);
+			"Damping", " s", 1.f / 40.f, 0.8f);
 		configSwitch(P_SUSTAIN, 0.f, 1.f, 0.f, "Sustain pedal", {"Up", "Down"});
 		configSwitch(P_SOFT, 0.f, 1.f, 0.f, "Soft pedal", {"Up", "Down"});
 		configInput(I_MPX, "MPX note");
@@ -738,8 +748,9 @@ static float partGain(int part) {
 	void damp(PianoVoice& v, float sampleRate, float sustain) {
 		if (v.releasing || v.undamped)
 			return;
+		// CLOCKWISE IS MORE DAMPING: the knob up means the damper falls FASTER. See configParam.
 		const float k = params[P_DAMPING].getValue();
-		float seconds = 0.02f * std::pow(40.f, k);
+		float seconds = 0.8f * std::pow(1.f / 40.f, k);
 		// Half-pedalling: a pedal part way down lets the note ring longer, fully down holds it.
 		seconds /= std::max(0.05f, 1.f - sustain);
 		v.releasing = true;
