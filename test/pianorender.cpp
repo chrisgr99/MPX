@@ -24,11 +24,13 @@ using namespace px;
 
 static const double SR = 48000.0;
 
-/** The module's own mapping, and the module's own scaling. */
+/** The module's own mapping, and the module's own scaling. The output is the soundboard's surface
+velocity in metres per second, of the order of a hundredth, and this puts the loudest playing just
+under the ten volts a Rack module may send. */
 static float speedOf(float level) {
 	return 0.2f * std::pow(30.f, level < 0.f ? 0.f : (level > 1.f ? 1.f : level));
 }
-static const double OUT_SCALE = 0.085;
+static const double OUT_SCALE = 100.0;
 
 
 /** A sixteen-bit stereo WAV, which is the one format everything can open. The same signal in both

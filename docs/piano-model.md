@@ -16,7 +16,7 @@ mpxPiano plays the Salamander sample set. This is the other thing: the instrumen
 
 **Inharmonicity that varies across the compass.** A guitar has one stiffness number. A piano's partial stretch is least around the middle and rises toward both ends — steeply in the bass, and again at the top where the strings are very short. It is why pianos are tuned stretched, and getting it wrong makes the instrument sound like something else.
 
-**The soundboard**, which is not a tone control but the radiator and the path by which one string reaches another.
+**The soundboard**, which is not a tone control but the radiator and the path by which one string reaches another. As of phase 6 it is one object doing both of those, because on a real piano they are one piece of spruce.
 
 **The dampers**, per note, felt, and absent from the top two octaves.
 
@@ -336,33 +336,36 @@ C3 struck and nothing else touched. Two seconds later, how much every note is mo
 
 | note | dB | why |
 |---|---|---|
-| C3 | -43.5 | struck |
-| C2 | -50.4 | C3 is its partial 2 |
-| C4 | -52.5 | partial 2 of C3 |
-| F1 | -61.2 | C3 is its partial 3 |
-| C1 | -63.1 | C3 is its partial 4 |
-| F2 | -64.9 | its 3rd = C3's 2nd |
-| G2 | -67.8 | its 4th = C3's 3rd |
-| F3 | -69.1 | its 3rd = C3's 4th |
-| G3 | -74.6 | its 2nd = C3's 3rd |
-| **G4** | **-74.8** | **partial 3 of C3 — the twelfth, which is the gate** |
-| C5 | -80.5 | partial 4 of C3 |
-| B2 | -86.9 | — |
+| C3 | -35.4 | struck |
+| Eb6 | -76.7 | — |
+| C4 | -80.5 | partial 2 of C3 |
+| C2 | -80.8 | C3 is its partial 2 |
+| Ab6 | -81.4 | — |
+| B6 | -82.2 | — |
+| **G4** | **-82.6** | **partial 3 of C3 — the twelfth, which is the gate** |
+| B2 | -83.3 | — |
+| G3 | -83.5 | its 2nd = C3's 3rd |
+| F1 | -83.6 | C3 is its partial 3 |
+| D6 | -83.7 | partial 9 of C3 |
 
-Every note that answers is accounted for by a partial it shares with C3, and finding that out took fixing the explanation rather than the model: looking only for a whole-number ratio between the two **fundamentals** explains C2 and C4 and leaves F2, G2, F3 and G3 looking like noise. They are not noise. F2's third partial is C4, which is C3's second; G2's fourth is G4, which is C3's third. Two strings talk through any partial they have in common.
+The control, which the measurement needs as much as the result: the same strike with the bridge made rigid leaves the loudest other note at -108 dB instead of -77. Nothing resonates through a bridge that cannot be shifted.
 
-**The low notes answer loudest, which is right**, and is the same mechanism seen from the other end: C3 is the second partial of C2 and the fourth of C1, so those strings are being driven at a frequency they ring at. It is what a real piano does with the pedal down, where the bass hums under everything. The bass also holds what it picks up for twenty seconds, so it has longer than anything else to gather it.
+Some answer because they share a partial and some because they never stop. The named ones are being driven at a frequency they ring at — C3 is the second partial of C2 as surely as C4 is C3's, which is the same mechanism from either end. The unexplained ones are all in the top two octaves, which have **no dampers at all**: they take whatever broadband shaking the bridge gives them and nothing ever stops them again.
 
-**The control**, which the measurement needs as much as the result: the same strike with the bridge made rigid leaves the loudest other note at -79 dB instead of -50. Nothing resonates through a bridge that cannot be shifted.
+Finding that out took fixing the explanation rather than the model: looking only for a whole-number ratio between the two **fundamentals** explains C2 and C4 and leaves G3 looking like noise. It is not noise — G3's second partial is G4, which is C3's third. Two strings talk through any partial they have in common.
+
+**And the bass answers less than it did before phase 6**, which is the soundboard's doing and is right. A board goes stiff below its own lowest mode, so the bridge will not be shifted at twenty-seven hertz however hard it is pushed — and a string that cannot shift the bridge cannot hear through it either. With the plain resistance phase 4 was written against, the bass hummed under everything, because a plain resistance gives way just as readily at twenty-seven hertz as at two thousand. No piece of spruce does.
 
 #### And a note's decay depends on the whole instrument being there
 
 | A3 | first T60 | then T60 |
 |---|---|---|
-| on a board with nothing damped | 2.44 | 33.83 |
+| on a board with nothing damped | 1.30 | 29.90 |
 | alone | 2.79 | 20.63 |
 
-**The aftersound is half as long again on the board** — the instrument becomes a reservoir. A3 puts energy into every string that shares a partial with it, and those strings put it back, so the note is fed from the room it is filling. The initial fall is barely touched, because that part of the note is over before any of this has had time to happen. It is what a pianist hears when the pedal goes down.
+**The aftersound is half as long again on the board** — the instrument becomes a reservoir. A3 puts energy into every string that shares a partial with it, and those strings put it back, so the note is fed from the room it is filling.
+
+**And since phase 6 the initial fall is twice as fast as well**, which it was not before. That is the soundboard rather than the other strings: at A3's own frequency this board gives way more readily than the featureless resistance phase 4 had, so the note parts with its first energy faster. The two halves of the note now move in opposite directions — a quicker attack into a longer tail, which is more like a piano than either was on its own.
 
 **This paragraph said the opposite when phase 4 was written**, and the correction belongs here rather than tidied away: it reported that the board *halved* the aftersound and that sympathetic resonance was a cost the note paid. That was a fault in the reading and not in the model. The old measurement fitted a straight line across the beat plateau, which on a board full of ringing strings is a quite different shape from the one a lone note makes, and phase 5 only found it because the same measurement started disagreeing with itself about the sustain pedal. See phase 5 for what the reading does now.
 
@@ -455,10 +458,12 @@ What it does to a note already sounding — whose own damper is off either way, 
 
 | A3, with the rest of the board | first T60 | then T60 |
 |---|---|---|
-| damped | 2.77 | 20.71 |
-| free | 2.44 | 33.83 |
+| damped | 2.02 | 10.39 |
+| free | 1.30 | 29.90 |
 
-A3 by itself, with no other strings at all, is 2.79 and 20.63 — which is what a board full of damped strings comes to as well, since a damped string can neither take anything nor give anything back. Lift the dampers and the aftersound is half as long again, because every string sharing a partial with A3 is holding some of it and handing it back. **The initial fall barely moves**: that part of the note is over before any of this has had time to happen. The pedal does nothing to the attack and everything to what follows it, which is exactly what it is used for.
+Lifting the dampers lengthens the aftersound by three times, because every string sharing a partial with A3 is holding some of it and handing it back.
+
+A3 by itself, on a bridge with nothing else on it and no modes in it, is 2.79 and 20.63. **A board full of damped strings is not the same thing**, and before phase 6 it came to the same figures — a damped string can neither take anything nor give anything back, so with a featureless bridge the two were indistinguishable. With a real board they are not: its modes decide how readily the bridge gives way at A3's own frequency, and at two hundred and twenty hertz it gives way more than a featureless bridge would, so the note parts with its energy faster whatever the other strings are doing.
 
 #### The soft pedal, which is not a volume control
 
@@ -498,7 +503,103 @@ The second rate is still the shakiest number in the bench and is worth distrusti
 
 ### Phase 6 — the soundboard
 
-A radiation filter with its own modes, and a bridge impedance that makes the string-to-string coupling right rather than approximately right. This phase is where the instrument stops sounding like strings and starts sounding like a piano in a room.
+**Done.** `src/Soundboard.hpp` and `.cpp`, with `PianoBoard` solving the junction between it and the strings.
+
+#### It is one object and not two
+
+A soundboard is usually modelled as a tone filter bolted on the end — the strings make a signal and the board colours it — and that is two objects where there is one. The board the strings are tied to and the board that radiates the sound are the same piece of spruce, so the thing that decides how hard the bridge is to move is the same thing that decides what comes out of it.
+
+So it is one object asked two questions. **What the strings feel:** the bridge gives way, and how much it gives way at a frequency is the board's admittance there. **And what comes out:** the board's own surface moving, which is the same motion.
+
+Which means the phases before this one had a soundboard already — a very poor one. A plain resistance, the same at every frequency, which is a board with no modes at all: perfectly even, and with no reason to prefer one note over another.
+
+#### A few modes and a smooth remainder
+
+A real soundboard has hundreds of modes, something like one every twenty hertz all the way up, because a plate's modes are evenly spaced **in frequency** rather than in octaves — there are as many between four hundred and five hundred as between fifty and a hundred and fifty. Modelling several hundred resonators would be expensive and pointless: above a few hundred hertz they overlap so heavily that what a string sees is a smooth average rather than any one of them.
+
+So the low ones, where they are sparse and individually audible, are resonators — twenty-eight of them, the lowest at 41 Hz and the highest at 612 — and everything above is the smooth average they tend to.
+
+**Scattered off a perfect grid**, by about a third of the spacing and deterministically, so that an instrument is the same instrument every time it is built. An even spacing is a comb, and notes played through a comb ring like a plate reverb rather than like an instrument.
+
+**Heavily damped**, with quality factors of twenty to fifty-five. A board that rang like a bell would be a board that was not giving its energy to the air, which is its whole job.
+
+#### The remainder had to be a rise and not a resistance
+
+The first attempt put a full flat background under the modes and added them on top. That counts the low region twice: the admittance between fifty hertz and seven hundred came out two to five times what it was asked for, which would have quietly undone the decay calibration of every phase before this one.
+
+The remainder stands for every mode **above** the ones modelled one by one, so it has no business being present at frequencies where those modes are not. And a plate really does go stiff below its lowest mode: there is nothing for the force to excite, so the bridge barely moves and a bass note's fundamental is hardly radiated — which is why the bottom octave of a piano is heard through its partials, and why the board has to be as large as it is.
+
+So the remainder is a first-order rise: nothing at the bottom, the asked-for admittance above the modes. With no modes at all it reverts to a plain resistance, which is the board the earlier phases had and the control this one is measured against. That reversion matters: leaving the rise in place would make the control a board that goes stiff below fifty hertz, and comparing against it would be comparing two boards rather than one board with and without its modes.
+
+| Hz | with modes | featureless |
+|---|---|---|
+| 47 | 0.148 | 0.50 |
+| 92 | 0.159 | 0.50 |
+| 150 | 1.566 | 0.50 |
+| 247 | 1.677 | 0.49 |
+| 406 | 2.438 | 0.50 |
+| 479 | 0.674 | 0.50 |
+| 787 | 0.668 | 0.50 |
+| 1526 | 0.435 | 0.50 |
+
+Millimetres per second per newton. The admittance swings about twelve decibels either side of the trend, which is what measured mobility curves show.
+
+#### Nothing here is a delay, and the loop is solved rather than broken
+
+The board responds to the force on it in the same sample, which makes a loop with no delay in it: the strings' force depends on how far the bridge moves and how far the bridge moves depends on the force. Putting a delay in to break it would be a sample added to every string's loop — which phase 1 tuned to a fraction of one — and a lie about the physics besides.
+
+So the board is asked for the two halves of its answer separately: what it will do this sample with no force at all, and how much it moves per newton applied now. Then
+
+	v = A (2W − S v) + c      and so      v = (2 A W + c) / (1 + A S)
+
+where W is the strings' weighted drive, S the sum of their impedances, A how much the board gives per newton and c what it was already doing. One line, exact, and it cannot divide by nothing since A and S are both positive. The instantaneous gain A falls out of the resonators for free: it is the only term in each difference equation with the present input in it.
+
+#### The gate: the instrument becomes uneven
+
+A chromatic octave, each note's initial decay with the board's modes and with a featureless bridge in their place:
+
+| note | with modes | featureless | ratio |
+|---|---|---|---|
+| A2 | 4.73 | 4.75 | 1.00 |
+| Bb2 | 3.10 | 4.75 | 0.65 |
+| B2 | 7.60 | 7.43 | 1.02 |
+| C3 | 6.08 | 6.80 | 0.89 |
+| D3 | 3.91 | 5.16 | 0.76 |
+| F3 | 7.08 | 10.53 | 0.67 |
+| F#3 | 7.69 | 6.58 | 1.17 |
+| G3 | 7.00 | 6.69 | 1.05 |
+| A3 | 4.70 | 5.57 | 0.84 |
+
+The board makes some notes die 35% faster than a featureless bridge would and others 17% slower — a note-to-note unevenness of about 1.8 to one across a single octave. A note whose fundamental lands on one of the board's modes finds a bridge that gives way easily and loses its energy into it; a note that lands between modes finds one that hardly moves and hangs on.
+
+**Real pianos are uneven in exactly this way, and it is not a defect to be smoothed out.** It is most of what makes an instrument sound like an instrument rather than like a patch.
+
+**The ratio is the measurement, and the first way of putting this was wrong.** It claimed the featureless column would run smoothly from note to note. It does not: a note's decay depends on its own strings too — its stretch, how many of them there are, how far apart they are tuned, how well its loss filter was fitted — so the spread of either column conflates the board with all of that. Only the ratio, which is one note against itself, says what the board did.
+
+#### What gets into the air
+
+A plate is a poor radiator until its bending waves travel as fast as sound does. Below that frequency — a few hundred hertz for a piano soundboard — the surface pushes air back and forth between its own crests and troughs instead of away from itself, so little leaves; above it, nearly all of the motion radiates. Each mode is weighted by that, and the same blow at every octave gives:
+
+| note | peak out |
+|---|---|
+| A0 | 0.0048 |
+| A1 | 0.0058 |
+| A2 | 0.0079 |
+| A3 | 0.0112 |
+| A4 | 0.0093 |
+| A5 | 0.0061 |
+| A6 | 0.0049 |
+| A7 | 0.0033 |
+
+Metres per second at the board's surface. Seven decibels down at the bottom and ten at the top against the middle: an instrument a little stronger in the tenor than at either end, which is what a piano is. The falling away at the very top is the strings and not the board — there is hardly any string up there to drive it with.
+
+#### What it costs, and what it did not cost
+
+Nothing measurable. The whole instrument is still half a processor, because the board is **one filter on one summed signal**: every string's drive arrives at the same junction, so there is one admittance to evaluate per sample however many notes are ringing.
+
+#### And the output changed from a force to a velocity
+
+Before phase 6 the module's output was the force on the bridge, which was the right signal with nothing to radiate it. Now there is something to radiate it, and what comes out is the board's surface velocity in metres per second — a number of the order of a hundredth where the force was of the order of a hundred, so the module's one scaling constant moved by four orders of magnitude. It was measured again rather than guessed: both hands at fortissimo peaks at about nine hundredths of a metre per second, which puts the loudest playing just under the ten volts a Rack module may send.
 
 ### Phase 7 — playing it
 
@@ -522,7 +623,7 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 **Cost.** Settled in phase 4: the whole instrument is half a processor, and silence is free. Most strings being still turned out to be no help at all once anything is sounding, because a shared bridge drives every string in the instrument — so the saving is in the silence between the music rather than during it, and it is an optimisation rather than the thing that makes the instrument possible.
 
-**Holding a decay law with a low-order loop filter.** Phase 1 got the measured power right and an individual partial's decay time to within about forty per cent, and that is where a three-shelf filter runs out. It is also probably the wrong target to chase further: a power law is a stand-in, and the physically grounded account of string damping — air, viscoelastic and support losses summed — gives a curve that is not a power law and may well be easier for a low-order filter to follow, because it comes from first-order physics rather than from a convenient exponent. That belongs with phase 6, where the soundboard's own frequency-dependent losses arrive in the same place.
+**Holding a decay law with a low-order loop filter.** Partly superseded by phase 6, which put the soundboard's own frequency-dependent admittance in the loop and so made the decay vary with frequency for a physical reason rather than a fitted one. What remains is the string's own internal losses, where phase 1 got the measured power right and an individual partial's decay time to within about forty per cent, and that is where a three-shelf filter runs out. It is also probably the wrong target to chase further: a power law is a stand-in, and the physically grounded account of string damping — air, viscoelastic and support losses summed — gives a curve that is not a power law and may well be easier for a low-order filter to follow, because it comes from first-order physics rather than from a convenient exponent. Phase 6 did not touch this: the soundboard decides how a string's energy leaves it, and this is about how a string loses energy inside itself, which is a separate account.
 
 **The bass.** Wound strings are the most inharmonic, the most strongly double-decaying, and the ones where phantom partials are audible. They will be the last to sound right.
 

@@ -27,6 +27,7 @@ private bridge on one note. That is a note on a bridge with nothing else attache
 the thing phases 1 to 3 were measured on, and keeping it means those measurements still mean what
 they said. */
 #include "PianoNote.hpp"
+#include "Soundboard.hpp"
 
 #include <vector>
 
@@ -47,9 +48,19 @@ struct PianoBoard {
 	the instrument is being played. Not for the audio thread. */
 	void setSampleRate(float hz);
 
-	/** THE BRIDGE'S IMPEDANCE, as a multiple of the average string's. About a thousand: a
-	soundboard's measured driving-point impedance against a string's two. */
+	/** THE BRIDGE'S IMPEDANCE WELL AWAY FROM ANY OF THE BOARD'S MODES, as a multiple of the
+	average string's. About a thousand: a soundboard's measured driving-point impedance against a
+	string's two. The modes are built around this rather than instead of it, so it is still the
+	number everything before phase 6 was calibrated against. */
 	void setBridgeImpedance(float timesStringImpedance);
+
+	/** HOW MANY OF THE SOUNDBOARD'S MODES ARE MODELLED ONE BY ONE. Nought is the plain resistance
+	the phases before 6 had, which is a board with no modes at all — useful as a control and as
+	nothing else. */
+	void setSoundboardModes(int modes);
+
+	/** The soundboard, for the bench to ask about its own modes. */
+	const Soundboard& soundboard() const { return board; }
 
 	/** Strike a note: the key goes down and the hammer is thrown at it, at this many metres per
 	second. Out-of-compass notes are ignored rather than clamped — a piano has eighty-eight keys
@@ -113,6 +124,9 @@ private:
 	bool dirty = true;
 	int lastAwake = 0;
 	double lastVelocity = 0.0;
+
+	Soundboard board;
+	int wantedModes = 28;
 
 	PianoNote notes[NOTES];
 	bool asleep[NOTES] = {};

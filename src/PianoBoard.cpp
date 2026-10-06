@@ -28,6 +28,13 @@ void PianoBoard::setBridgeImpedance(float times) {
 	}
 }
 
+void PianoBoard::setSoundboardModes(int modes) {
+	if (modes != wantedModes) {
+		wantedModes = modes;
+		dirty = true;
+	}
+}
+
 void PianoBoard::setFloor(float level) {
 	floorLevel = std::fmax(0.0, (double) level);
 }
@@ -64,6 +71,10 @@ void PianoBoard::setup() {
 	}
 	mean = (strings > 0) ? mean / (double) strings : 2.0;
 	bridgeZ = bridgeRatio * mean;
+	board.setSampleRate((float) rate);
+	board.setModeCount(wantedModes);
+	board.setAdmittance((float) (1.0 / bridgeZ));
+	board.prepare();
 	lastAwake = 0;
 }
 
@@ -164,6 +175,7 @@ void PianoBoard::silence() {
 		notes[i].silence();
 		asleep[i] = true;
 	}
+	board.silence();
 	lastAwake = 0;
 	lastVelocity = 0.0;
 	dcIn = dcOut = 0.f;
@@ -223,9 +235,27 @@ float PianoBoard::process() {
 
 	// ---- the bridge: every string in the instrument, and the soundboard ----
 	//
-	// One junction and not a sum. Each string's impedance times twice the wave arriving along it,
-	// over the impedances of everything tied there including the soundboard's own; what goes back
-	// along each string is the junction's velocity less what came in.
+	// ONE JUNCTION AND NOT A SUM. Each string's impedance times twice the wave arriving along it,
+	// against everything tied there including the board; what goes back along each string is the
+	// junction's velocity less what came in.
+	//
+	// AND THE BOARD GIVES WAY DIFFERENTLY AT DIFFERENT FREQUENCIES, which is phase 6 and is the
+	// reason this is no longer a division by a constant. Near one of the board's own modes the
+	// bridge moves easily and a string tuned there loses its energy quickly; between modes it
+	// hardly moves and a string hangs on. That is why a real piano is uneven from note to note.
+	//
+	// A LOOP WITH NO DELAY IN IT, SOLVED RATHER THAN BROKEN. The strings' force depends on how far
+	// the bridge moves, and how far the bridge moves depends on the force, both within the same
+	// sample. Putting a delay in to break it would be a sample of delay added to every string's
+	// loop, which phase 1 tuned to a fraction of one — and a lie about the physics besides. So the
+	// board is asked for the two halves of its answer separately: what it will do with no force at
+	// all this sample, and how much it moves per newton applied now. Then
+	//
+	//     v = A (2W - S v) + c      and so      v = (2 A W + c) / (1 + A S)
+	//
+	// where W is the strings' weighted drive, S the sum of their impedances, A how much the board
+	// gives per newton and c what it was already doing. One line, exact, and it cannot divide by
+	// nothing, since A and S are both positive.
 	double weighted = 0.0;
 	for (int i = 0; i < NOTES; i++) {
 		if (asleep[i])
@@ -236,7 +266,11 @@ float PianoBoard::process() {
 			weighted += (double) s.impedanceOf() * (double) s.arrivingAtBridge();
 		}
 	}
-	const double velocity = 2.0 * weighted / (sumZ + bridgeZ);
+	const double give = board.instantly();
+	const double velocity = (2.0 * give * weighted + board.standing()) / (1.0 + give * sumZ);
+	// What the strings are pressing the bridge with, now that it is known how far it gives.
+	board.drive(2.0 * weighted - sumZ * velocity);
+
 	for (int i = 0; i < NOTES; i++) {
 		if (asleep[i])
 			continue;
@@ -249,9 +283,12 @@ float PianoBoard::process() {
 
 	lastVelocity = velocity;
 
-	// The force on the bridge, not its motion: the bridge is where the strings drive the
-	// soundboard, and the force is what survives a bridge being made rigid.
-	const float out = (float) (bridgeZ * velocity);
+	// WHAT COMES OUT IS THE BOARD'S SURFACE MOVING, which is the sound. Before phase 6 it was the
+	// force on the bridge, which was the right signal with nothing to radiate it; now there is
+	// something to radiate it, and a plate radiates its own motion — poorly at the bottom, where
+	// its bending waves travel slower than sound and it pushes air about between its own crests
+	// instead of away, and freely above that.
+	const float out = board.radiated();
 
 	// A DC blocker on the way out, outside every loop.
 	const float y = out - dcIn + 0.995f * dcOut;

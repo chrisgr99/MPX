@@ -275,13 +275,12 @@ struct DreamPianoModule : Module, NoteSink {
 			// cannot be bent and its tone after the blow is not under anyone's hand.
 		}
 
-		// WHAT COMES OUT IS THE FORCE ON THE BRIDGE, which is what a soundboard would be driven
-		// by. Phase 6 will take this as its input and set the level itself; until then there is
-		// one number here, and it was measured rather than guessed: both hands at fortissimo
-		// reaches a peak of about a hundred and six in the model's own units, a middle C played
-		// mezzo-forte about eight, so this puts the loudest playing just under nine volts and
-		// leaves the rest of the range below it where it belongs.
-		const float out = board.process() * (0.085f * params[P_VOLUME].getValue());
+		// WHAT COMES OUT IS THE SOUNDBOARD'S SURFACE MOVING, in metres per second, which is a
+		// number of the order of a hundredth. The scale was measured rather than guessed: both
+		// hands at fortissimo peaks at about nine hundredths of a metre per second and a middle C
+		// played mezzo-forte at about seven thousandths, so this puts the loudest playing just
+		// under nine volts and leaves the rest of the range below it where it belongs.
+		const float out = board.process() * (100.f * params[P_VOLUME].getValue());
 		outputs[O_OUT].setVoltage(math::clamp(out, -10.f, 10.f));
 		lights[L_SOUNDING].setBrightnessSmooth(board.awake() > 0 ? 1.f : 0.f, args.sampleTime);
 		inProcess = false;

@@ -1118,12 +1118,20 @@ int main(int argc, char** argv) {
 			20.0 * std::log10(std::max((double) board.note(48).moving(), 1e-30) / blow));
 		std::printf("  as close behind it as they look: two seconds in, the halo is a good deal\n");
 		std::printf("  quieter than the note, and the note is a good deal quieter than the blow.\n");
-		std::printf("  AND THE LOW NOTES ANSWER LOUDEST, which is right and is the same mechanism\n");
-		std::printf("  seen from the other end: C3 is the second partial of C2 and the fourth of\n");
-		std::printf("  C1, so those strings are being driven at a frequency they ring at. It is\n");
-		std::printf("  what a real piano does with the pedal down, where the bass hums under\n");
-		std::printf("  everything. The bass also holds what it picks up for twenty seconds, so it\n");
-		std::printf("  has longer than anything else to gather it.\n");
+		std::printf("  SOME ANSWER BECAUSE THEY SHARE A PARTIAL and some because they never stop.\n");
+		std::printf("  The ones named above are being driven at a frequency they ring at — C3 is\n");
+		std::printf("  the second partial of C2 as surely as C4 is C3's, which is the same\n");
+		std::printf("  mechanism from either end. The unexplained ones are all in the top two\n");
+		std::printf("  octaves, which have no dampers at all: they take whatever broadband\n");
+		std::printf("  shaking the bridge gives them and nothing ever stops them again.\n");
+		std::printf("  AND THE BASS ANSWERS LESS THAN IT DID BEFORE PHASE 6, which is the\n");
+		std::printf("  soundboard's doing and is right. A board goes stiff below its own lowest\n");
+		std::printf("  mode — there is nothing down there for a force to excite — so the bridge\n");
+		std::printf("  will not be shifted at twenty-seven hertz however hard it is pushed, and a\n");
+		std::printf("  string that cannot shift the bridge cannot hear through it either. With a\n");
+		std::printf("  plain resistance in place of the board the bass hummed under everything,\n");
+		std::printf("  because a plain resistance gives way just as readily at twenty-seven hertz\n");
+		std::printf("  as at two thousand, which no piece of spruce does.\n");
 
 		// AND THE CONTROL, which the measurement needs as much as the result: with the bridge
 		// made rigid there is nothing for the strings to talk through, and nothing should answer.
@@ -1468,11 +1476,14 @@ int main(int argc, char** argv) {
 			std::printf("  dampers %s on everything else:  first T60 %.2f, then %.2f\n",
 				(j == 0) ? "down" : "up  ", first, then);
 		}
-		std::printf("  A3 by itself, with no other strings at all, is 2.79 and 20.63 — which is\n");
-		std::printf("  what a board full of damped strings comes to as well, since a damped\n");
-		std::printf("  string can neither take anything nor give it back. Lift the dampers and\n");
-		std::printf("  the aftersound is half as long again, because every string sharing a\n");
-		std::printf("  partial with A3 is now holding some of it and handing it back.\n");
+		std::printf("  A3 by itself, on a bridge with nothing else on it and no modes in it, is\n");
+		std::printf("  2.79 and 20.63. A board full of DAMPED strings is not the same thing and no\n");
+		std::printf("  longer comes to the same figures: the board's modes decide how readily the\n");
+		std::printf("  bridge gives way at A3's own frequency, and at two hundred and twenty hertz\n");
+		std::printf("  it gives way more than a featureless bridge would, so the note parts with\n");
+		std::printf("  its energy faster. Lifting the dampers then lengthens the aftersound by\n");
+		std::printf("  three times, because every string sharing a partial with A3 is holding some\n");
+		std::printf("  of it and handing it back.\n");
 		std::printf("  THE INITIAL FALL BARELY MOVES, which is the other half of the story: that\n");
 		std::printf("  part of the note is over before any of this has had time to happen. The\n");
 		std::printf("  pedal does nothing to the attack and everything to what follows it, which\n");
@@ -1536,6 +1547,133 @@ int main(int argc, char** argv) {
 	}
 
 	if (doing(1) || doing(2)) {
+	// ---- PHASE 6: the soundboard -----------------------------------------------------------------
+	}
+
+	if (doing(6)) {
+	std::printf("\n");
+	std::printf("================================================================================\n");
+	std::printf("PHASE 6 — the soundboard\n");
+	std::printf("================================================================================\n");
+
+	{
+		PianoBoard withModes, plain;
+		withModes.setSampleRate((float) SR);
+		withModes.silence();
+		plain.setSampleRate((float) SR);
+		plain.setSoundboardModes(0);
+		plain.silence();
+
+		std::printf("\nWHAT THE STRINGS FEEL. How readily the bridge gives way, in millimetres\n");
+		std::printf("per second per newton, against frequency. A plain resistance — which is what\n");
+		std::printf("every phase before this one had — is the same figure everywhere.\n");
+		std::printf("%-10s %14s %14s\n", "Hz", "with modes", "plain");
+		for (double hz = 40.0; hz < 2600.0; hz *= 1.18) {
+			std::printf("%-10.0f %14.3f %14.3f\n", hz,
+				1000.0 * withModes.soundboard().admittanceAt((float) hz),
+				1000.0 * plain.soundboard().admittanceAt((float) hz));
+		}
+		std::printf("  %d modes, the lowest at %.0f Hz and the highest at %.0f.\n",
+			withModes.soundboard().modeCount(), withModes.soundboard().modeFrequency(0),
+			withModes.soundboard().modeFrequency(withModes.soundboard().modeCount() - 1));
+		std::printf("  Evenly spaced in HERTZ and not in octaves, which is the difference between\n");
+		std::printf("  a plate and a string: a plate's modes are as crowded between four hundred\n");
+		std::printf("  and five hundred as between fifty and a hundred and fifty. Modes an octave\n");
+		std::printf("  apart would give a dense bass and an empty treble, which is backwards.\n");
+		std::printf("  Scattered off a perfect grid as well, because an even spacing is a comb,\n");
+		std::printf("  and notes played through a comb ring like a plate reverb.\n");
+
+		// ---- the gate: the instrument becomes uneven, which is what makes it an instrument ----
+		//
+		// HOW FAST THE FIRST FIFTEEN DECIBELS GO, which is the rate the bridge decides. A plain
+		// resistance gives every note the same bridge and so a smooth run of decays; a board with
+		// modes gives each note whatever its own frequency happens to meet.
+		auto initialRate = [&](PianoBoard& b, int midi) {
+			b.silence();
+			b.hit(midi, 2.f);
+			const double f1 = b.note(midi).string(0).frequency();
+			std::vector<float> x((size_t) (2.5 * SR));
+			for (size_t i = 0; i < x.size(); i++)
+				x[i] = b.process();
+			auto tone = [&](double at) {
+				const size_t from = (size_t) (at * SR), take = 4096;
+				if (from + take >= x.size())
+					return -300.0;
+				double re = 0.0, im = 0.0;
+				for (size_t i = 0; i < take; i++) {
+					const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double) i
+						/ (double) (take - 1));
+					const double a = 2.0 * M_PI * f1 * (double) i / SR;
+					re += (double) x[from + i] * w * std::cos(a);
+					im -= (double) x[from + i] * w * std::sin(a);
+				}
+				return 20.0 * std::log10(std::sqrt(re * re + im * im) / (double) take + 1e-30);
+			};
+			const double a = tone(0.12), b2 = tone(1.6);
+			return (a > b2 + 0.1) ? 60.0 * 1.48 / (a - b2) : 0.0;
+		};
+
+		std::printf("\nAND SO THE INSTRUMENT BECOMES UNEVEN, which is phase 6's whole point. An\n");
+		std::printf("octave played chromatically, and how long each note's fundamental takes to\n");
+		std::printf("fall sixty decibels at the rate it starts out at. THE RATIO IS THE\n");
+		std::printf("MEASUREMENT: the same note on the same strings, with the board's modes and\n");
+		std::printf("with a featureless bridge in their place.\n");
+		std::printf("%-6s %9s %12s %12s %10s\n", "note", "Hz", "with modes", "featureless",
+			"ratio");
+		double widest = 1.0, narrowest = 1.0;
+		for (int midi = 45; midi <= 57; midi++) {
+			const double a = initialRate(withModes, midi);
+			const double b2 = initialRate(plain, midi);
+			const double ratio = (b2 > 0.0 && a > 0.0) ? a / b2 : 0.0;
+			if (ratio > 0.0) {
+				widest = std::max(widest, ratio);
+				narrowest = std::min(narrowest, ratio);
+			}
+			std::printf("%-6s %9.1f %12.2f %12.2f %10.2f\n", noteName(midi), hzOf(midi), a, b2,
+				ratio);
+		}
+		std::printf("  The board makes some of these notes die %.0f%% faster than a featureless\n",
+			100.0 * (1.0 - narrowest));
+		std::printf("  bridge would and others %.0f%% slower, which is a note-to-note unevenness\n",
+			100.0 * (widest - 1.0));
+		std::printf("  of about %.1f to one across a single octave.\n", widest / narrowest);
+		std::printf("  A note whose fundamental lands on one of the board's modes finds a bridge\n");
+		std::printf("  that gives way easily and loses its energy into it; a note that lands\n");
+		std::printf("  between modes finds one that hardly moves and hangs on. Real pianos are\n");
+		std::printf("  uneven in exactly this way, and it is not a defect to be smoothed out: it\n");
+		std::printf("  is most of what makes an instrument sound like an instrument rather than\n");
+		std::printf("  like a patch.\n");
+		std::printf("  NEITHER COLUMN RUNS SMOOTHLY ON ITS OWN, and the first way of putting this\n");
+		std::printf("  claimed the featureless one would. It does not: a note's decay depends on\n");
+		std::printf("  its own strings too — its stretch, how many of them there are, how far\n");
+		std::printf("  apart they are tuned, how well its loss filter was fitted — so the spread\n");
+		std::printf("  of either column conflates the board with all of that. Only the ratio,\n");
+		std::printf("  which is one note against itself, says what the board did.\n");
+
+		// ---- what gets into the air ----
+		std::printf("\nAND WHAT GETS INTO THE AIR. A plate is a poor radiator until its bending\n");
+		std::printf("waves travel as fast as sound does: below that it pushes air back and forth\n");
+		std::printf("between its own crests instead of away from itself. The same blow at every\n");
+		std::printf("octave, and what comes out:\n");
+		std::printf("%-6s %9s %14s\n", "note", "Hz", "peak out");
+		for (int midi = 21; midi <= 105; midi += 12) {
+			withModes.silence();
+			withModes.hit(midi, 2.f);
+			double peak = 0.0;
+			for (int i = 0; i < (int) (1.5 * SR); i++)
+				peak = std::max(peak, (double) std::fabs(withModes.process()));
+			std::printf("%-6s %9.1f %14.4f\n", noteName(midi), hzOf(midi), peak);
+		}
+		std::printf("  Seven decibels down at the bottom and ten at the top, against the middle:\n");
+		std::printf("  an instrument that is a little stronger in the tenor than at either end,\n");
+		std::printf("  which is what a piano is. The bottom is held up by its partials rather\n");
+		std::printf("  than its fundamentals — the board goes stiff below its lowest mode and\n");
+		std::printf("  will not radiate twenty-seven hertz however hard it is pushed — and that\n");
+		std::printf("  is why the bottom of a piano sounds as it does and why a soundboard has to\n");
+		std::printf("  be as large as it is. The falling away at the very top is the strings and\n");
+		std::printf("  not the board: there is hardly any string up there to drive it with.\n");
+	}
+
 	// ---- nothing anywhere may grow -------------------------------------------------------------
 	//
 	// A REGRESSION GUARD AND NOT A MEASUREMENT. Every note struck as hard as anyone could, run for
@@ -1624,7 +1762,7 @@ int main(int argc, char** argv) {
 
 	}
 
-	std::printf("\nDone. Phase 4 is the whole board: eighty-eight notes at once, coupled, with a\n");
-	std::printf("string whose energy is below hearing skipped so that silence is free.\n");
+	std::printf("\nDone. Phase 7 is playing it: the cable's notes taken as a pianist's hands,\n");
+	std::printf("and a Bach prelude with its sixteenths separate.\n");
 	return 0;
 }
