@@ -428,6 +428,10 @@ struct PianoVoice {
 	float env = 1.f;
 	float decay = 1.f;          // per-sample envelope multiplier while releasing
 	bool keyDown = false;
+	/** HOW MANY SAMPLES THE KEY HAS LEFT BEFORE IT COMES UP OF ITS OWN ACCORD, or nought for "wait
+	to be told". A source reading from a score says how long a note is when it starts it and sends
+	nothing afterwards; see `noteOn`. */
+	int64_t endsIn = 0;
 	bool releasing = false;
 	bool undamped = false;
 	float timbre = 0.5f;
@@ -596,7 +600,44 @@ struct PianoModule : Module, NoteSink {
 		v->step = std::pow(2.0, (m - r->key) / 12.0) * SAMPLES_RATE / sampleRate;
 	}
 
-	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft) {
+	/** LETS A KEY UP, by whatever told it to: a note-off, or its own length running out. */
+	void liftKey(PianoVoice& v, float sampleRate, float sustain, bool heard) {
+		v.keyDown = false;
+		v.endsIn = 0;
+		const PianoBank* bank = gLib.bank.load();
+		// The key coming up is heard whatever the pedal is doing.
+		if (heard && bank)
+			startOneShot(bank->find(PART_HAMMER, v.key, v.vel),
+				params[P_HAMMER].getValue() * v.amp, PART_HAMMER, v.key, sampleRate);
+		if (sustain < 0.95f)
+			damp(v, sampleRate, sustain);
+	}
+
+	/** THE KEYS WHOSE TIME IS UP.
+
+	WHY THIS EXISTS AT ALL, which is worth setting down because its absence was taken for a fault
+	in the samples. The cable's protocol lets a source say how long a note is at the moment it
+	starts it instead of sending a note-off later, and a source reading from a score knows the
+	length and uses it: mpxScore, mpxGuitarChart and mpxGuitarChart6 send an Event::ON with a
+	duration and NOTHING afterwards — there is not one Event::OFF in GuitarChart.hpp. This module
+	released only on a note-off, so driven from a score it never damped a single note: they rang
+	until the sample ran out or until one of thirty-two voices was taken for something else.
+
+	WHAT THAT WAS MISTAKEN FOR. A Bach fugue played through it sustained into a smear, which reads
+	as a sampled piano that will not stop — and the DAMPING knob appeared to do nothing, which it
+	did not, because the thing it adjusts was never reached. mpxGuitar has always read e.duration;
+	this did not, and neither did the modelled piano until the same fault was found there. */
+	void liftDueKeys(float sampleRate, float sustain) {
+		for (PianoVoice& v : voices) {
+			if (!v.active || v.part != PART_STRINGS || !v.keyDown || v.endsIn <= 0)
+				continue;
+			if (--v.endsIn == 0)
+				liftKey(v, sampleRate, sustain, true);
+		}
+	}
+
+	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft,
+			float duration) {
 		const PianoBank* bank = gLib.bank.load();
 		if (!bank)
 			return;
@@ -671,18 +712,13 @@ struct PianoModule : Module, NoteSink {
 		}
 	}
 
+	/** TOLD TO LET A KEY UP, which takes precedence over whatever duration it was given: a source
+	that sends both means the second one. */
 	void noteOff(int64_t source, float sampleRate, float sustain) {
-		const PianoBank* bank = gLib.bank.load();
 		for (PianoVoice& v : voices) {
 			if (!v.active || v.part != PART_STRINGS || v.source != source || !v.keyDown)
 				continue;
-			v.keyDown = false;
-			// The key coming up is heard whatever the pedal is doing.
-			if (bank)
-				startOneShot(bank->find(PART_HAMMER, v.key, v.vel), params[P_HAMMER].getValue() * v.amp,
-					PART_HAMMER, v.key, sampleRate);
-			if (sustain < 0.95f)
-				damp(v, sampleRate, sustain);
+			liftKey(v, sampleRate, sustain, true);
 		}
 	}
 
@@ -744,7 +780,7 @@ struct PianoModule : Module, NoteSink {
 			Event e;
 			while (reader.next(e)) {
 				if (e.kind == Event::ON)
-					noteOn(e.handle, e.pitch, e.level, sr, soft);
+					noteOn(e.handle, e.pitch, e.level, sr, soft, e.duration);
 				else if (e.kind == Event::OFF)
 					noteOff(e.handle, sr, sustain);
 				else
@@ -767,6 +803,10 @@ struct PianoModule : Module, NoteSink {
 			Event e;
 			while (reader.next(e)) {}
 		}
+		// The keys that come up by themselves, every sample: a damper landing a buffer late is
+		// audibly late on a sixteenth.
+		liftDueKeys(sr, sustain);
+
 		sustainWas = sustain;
 
 		// ---- the mix ----
