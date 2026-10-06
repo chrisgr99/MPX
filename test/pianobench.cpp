@@ -33,6 +33,7 @@ It is driven here against GuitarString, which is the waveguide the piano's strin
 from, so that the bench is proven and the starting point is written down before anything changes.
 */
 #include "../src/GuitarString.hpp"
+#include "../src/PianoString.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -164,9 +165,33 @@ static double stretchOf(const std::vector<Partial>& ps) {
 	return (bottom > 0.0) ? top / bottom : 0.0;
 }
 
+/** B FITTED THE WAY THE MODEL DEFINES IT: against the string's FIRST PARTIAL rather than against
+the hypothetical B-less fundamental, since the first partial is what is tuned and what is heard.
+The nth then sits at n times the first times the square root of (1 + B n squared) over (1 + B), so
+what least squares can fit linearly is u = B / (1 + B) against n squared minus one. */
+static double stretchRelative(const std::vector<Partial>& ps) {
+	if (ps.size() < 2)
+		return 0.0;
+	const double first = ps[0].hz;
+	double strongest = 0.0;
+	for (const Partial& p : ps)
+		strongest = std::max(strongest, p.level);
+	double top = 0.0, bottom = 0.0;
+	for (const Partial& p : ps) {
+		if (p.n < 2 || p.level < strongest * 0.001)
+			continue;
+		const double r = p.hz / ((double) p.n * first);
+		const double y = r * r - 1.0;
+		const double x = (double) p.n * (double) p.n - 1.0;
+		top += x * y;
+		bottom += x * x;
+	}
+	const double u = (bottom > 0.0) ? top / bottom : 0.0;
+	return (u < 0.999) ? u / (1.0 - u) : 0.0;
+}
+
 static std::vector<Partial> partialsOf(const std::vector<float>& x, double sr, double f0,
-		int want) {
-	const size_t N = 1u << 16;
+		int want, size_t N = (size_t) 1u << 16) {
 	const std::vector<double> mag = spectrum(x.data(), x.size(), N);
 	const double binHz = sr / (double) N;
 
@@ -214,9 +239,16 @@ static double fitB(const std::vector<Partial>& ps, double, double* fittedF0) {
 
 /** HOW LONG A PARTIAL TAKES TO FALL SIXTY DECIBELS, by following its level through the note in
 short windows and fitting a straight line to the decibels against time. */
-static double t60Of(const std::vector<float>& x, double sr, double hz) {
-	const size_t N = 1u << 13;
-	const size_t hop = N / 2;
+/** THE WINDOW MATTERS AS MUCH AS THE ARITHMETIC, and getting it wrong reads as a fault in the
+string. Too short and the partials of a bass note are one smeared blob: the bottom A's partials are
+27 Hz apart, a window of an eighth of a second resolves to 6 Hz, and every partial below about
+sixty hertz then decays at whatever the fundamental is doing — which is exactly what the first run
+of this measured, and it reported the second partial of A0 dying in 29.9 seconds when a flat loop
+gain could only give it 15. Too LONG and the window averages over the decay it is meant to be
+following, which is what made the top octave read as nothing at all. So the caller says how long,
+and the caller works it out from the note. */
+static double t60Of(const std::vector<float>& x, double sr, double hz, size_t N = (size_t) 1u << 13) {
+	const size_t hop = N / 4;
 	std::vector<double> t, db;
 	for (size_t at = 0; at + N < x.size(); at += hop) {
 		const std::vector<double> mag = spectrum(x.data() + at, N, N);
@@ -448,6 +480,182 @@ int main() {
 		std::printf("%-8.2f %12.3f %12.3f\n", cents, beatRate(x, SR), expect);
 	}
 
-	std::printf("\nThe bench works. Phase 1 replaces the string.\n");
+	// ---- PHASE 1: the piano's own string ---------------------------------------------------------
+	//
+	// EVERY NUMBER HERE IS A VERDICT. The string is told nothing but which note it is, and the
+	// bench asks it, by listening, whether it did what the compass says that note should do.
+	std::printf("\n");
+	std::printf("================================================================================\n");
+	std::printf("PHASE 1 — PianoString, told nothing but its note\n");
+	std::printf("================================================================================\n");
+
+	// A LONG LOOK AND A FINE ONE. The bottom A is 27.5 Hz, and a transform short enough to be quick
+	// puts three-quarters of a semitone in one bin down there, which cannot measure a stretch of a
+	// hundredth of a per cent. Six seconds through a quarter-million-point transform puts the bins
+	// a fifth of a hertz apart, and the parabola between them does the rest.
+	const int notesOf[8] = {21, 33, 45, 57, 69, 81, 93, 108};
+
+	// THE WINDOW, PER NOTE: long enough to put at least eight bins between one partial and the
+	// next, short enough not to average over the decay being measured. The bottom A needs both
+	// ends of that and the top needs neither, so it is worked out rather than fixed.
+	auto windowFor = [&](int midi, double fraction) {
+		const double f0 = hzOf(midi);
+		const double t60 = pianoDecaySeconds((float) midi);
+		size_t least = 1u << 10;
+		while ((double) least < 8.0 * SR / f0 && least < (1u << 19))
+			least <<= 1;
+		size_t most = 1u << 10;
+		while ((double) (most << 1) <= fraction * t60 * SR && most < (1u << 19))
+			most <<= 1;
+		return std::max(least, most);
+	};
+
+	std::printf("\nSTRETCH: what the compass asks of each note against what the string does.\n");
+	std::printf("%-5s %9s %10s %10s %8s %7s %7s %8s\n", "note", "asked B", "measured B",
+		"error %", "stages", "coeff", "worst c", "pitch c");
+	for (int k = 0; k < 8; k++) {
+		const int midi = notesOf[k];
+		PianoString s;
+		s.setSampleRate((float) SR);
+		s.setNote((float) midi);
+		s.strike(0.9f);
+		// THE PARTIALS ARE MEASURED FROM THE ATTACK, over a window that is a third of the decay
+		// at most: beyond that the upper partials have gone and the transform is measuring
+		// silence, which is why the top note read as having no stretch at all.
+		const size_t N = windowFor(midi, 0.34);
+		std::vector<float> x(N + (size_t) (0.05 * SR));
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] = s.process();
+		const std::vector<Partial> ps = partialsOf(x, SR, hzOf(midi), 24, N);
+		const double asked = pianoInharmonicity((float) midi);
+		const double got = stretchRelative(ps);
+		const double pitch = ps.empty() ? 0.0
+			: 1200.0 * std::log2(ps[0].hz / hzOf(midi));
+		std::printf("%-5s %9.2e %10.2e %+10.1f %8d %7.3f %7.2f %+8.2f\n",
+			noteName(midi), asked, got,
+			(asked > 0.0) ? 100.0 * (got - asked) / asked : 0.0,
+			s.stages(), s.dispersion(), s.fitErrorCents(), pitch);
+	}
+	std::printf("  measured B is fitted to the first twenty-four partials of the sound itself.\n");
+	std::printf("  worst c is what the string's own fit predicted its worst partial would be out\n");
+	std::printf("  by, in cents; the two should agree, and when they do not, the loop is doing\n");
+	std::printf("  something the design arithmetic does not know about.\n");
+	std::printf("  pitch c is the first partial against the note asked for: tuning, not stretch.\n");
+
+	std::printf("\nWHERE THE PARTIALS LAND, for A3 and A6, in cents from where a stiff string\n");
+	std::printf("says they should be. This is the measurement the fit exists to make small.\n");
+	for (int k = 0; k < 2; k++) {
+		const int midi = (k == 0) ? 57 : 93;
+		PianoString s;
+		s.setSampleRate((float) SR);
+		s.setNote((float) midi);
+		s.strike(0.9f);
+		const size_t N = windowFor(midi, 0.34);
+		std::vector<float> x(N + (size_t) (0.05 * SR));
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] = s.process();
+		const std::vector<Partial> ps = partialsOf(x, SR, hzOf(midi), 24, N);
+		std::printf("  %-4s ", noteName(midi));
+		if (ps.empty()) {
+			std::printf("nothing found\n");
+			continue;
+		}
+		const double B = s.inharmonicity();
+		for (const Partial& p : ps) {
+			if (p.n < 2)
+				continue;
+			const double ideal = ps[0].hz * p.n
+				* std::sqrt((1.0 + B * p.n * p.n) / (1.0 + B));
+			std::printf("%+.1f ", 1200.0 * std::log2(p.hz / ideal));
+		}
+		std::printf("\n");
+	}
+	std::printf("  partials 2 upward, left to right.\n");
+
+	// ---- decay, which is the other half of phase 1 ------------------------------------------------
+	//
+	// THE SLOPE, NOT THE WHOLE FALL. A bass note takes half a minute to lose sixty decibels and
+	// there is no need to wait for it: the decibels fall in a straight line against time, so four
+	// seconds of the line says where it would reach.
+	std::printf("\nDECAY: seconds to fall sixty decibels, per partial, against what was asked.\n");
+	std::printf("%-5s %8s %9s %9s %9s %9s %8s %8s %7s\n", "note", "asked", "partial 1",
+		"partial 2", "partial 4", "partial 8", "power", "reached", "fit %");
+	for (int k = 0; k < 8; k++) {
+		const int midi = notesOf[k];
+		PianoString s;
+		s.setSampleRate((float) SR);
+		s.setNote((float) midi);
+		s.strike(0.9f);
+		// LONG ENOUGH TO SEE A SLOPE. The bass hangs on for half a minute and there is no need to
+		// wait for all of it, but four seconds of a thirty-second decay is eight decibels, which
+		// is a slope measured off the end of a short lever.
+		const size_t N = windowFor(midi, 0.08);
+		const double seconds = std::min(10.0, std::max(1.0, 0.4 * pianoDecaySeconds((float) midi)));
+		std::vector<float> x((size_t) (seconds * SR) + 2 * N);
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] = s.process();
+		const double f1 = s.frequency();
+		const double B = s.inharmonicity();
+		auto partialHz = [&](int n) {
+			return f1 * n * std::sqrt((1.0 + B * n * n) / (1.0 + B));
+		};
+		const double t1 = t60Of(x, SR, f1, N);
+		const double t2 = (partialHz(2) < SR * 0.45) ? t60Of(x, SR, partialHz(2), N) : 0.0;
+		const double t4 = (partialHz(4) < SR * 0.45) ? t60Of(x, SR, partialHz(4), N) : 0.0;
+		const double t8 = (partialHz(8) < SR * 0.45) ? t60Of(x, SR, partialHz(8), N) : 0.0;
+		// The power measured from the sound: the straight line through the logarithm of each
+		// partial's decay time against the logarithm of its frequency.
+		double sx = 0, sy = 0, sxy = 0, sxx = 0;
+		int used = 0;
+		const double ts[4] = {t1, t2, t4, t8};
+		const int ns[4] = {1, 2, 4, 8};
+		for (int i = 0; i < 4; i++) {
+			if (ts[i] <= 0.0)
+				continue;
+			const double x = std::log(partialHz(ns[i]) / f1), y = std::log(t1 / ts[i]);
+			sx += x; sy += y; sxy += x * y; sxx += x * x;
+			used++;
+		}
+		const double power = (used > 1 && used * sxx - sx * sx > 1e-12)
+			? (used * sxy - sx * sy) / (used * sxx - sx * sx) : 0.0;
+		std::printf("%-5s %8.1f %9.2f %9.2f %9.2f %9.2f %8.2f %8.2f %7.1f\n",
+			noteName(midi), pianoDecaySeconds((float) midi), t1, t2, t4, t8,
+			power, s.decayExponentReached(), s.decayFitError());
+	}
+	std::printf("  power is measured from the sound, reached is what the string says its own loop\n");
+	std::printf("  gains come to, and 1.15 is what was asked.\n");
+	std::printf("  NOUGHT is what costs nothing, not one: everything in the loop comes round once\n");
+	std::printf("  per period of the FUNDAMENTAL, the delay line being one of those long, so a\n");
+	std::printf("  loop gain that treats every frequency alike gives every partial the same decay\n");
+	std::printf("  and the whole of this power law is the loss filter's work. Measuring that was\n");
+	std::printf("  what found it: the model claimed 1.18 while the sound said 0.04.\n");
+	std::printf("  fit %% is the worst partial's decay time against the law, as a percentage. It is\n");
+	std::printf("  what three first-order shelves can hold a power law to; the form is argued, with\n");
+	std::printf("  the measurements of the three forms that failed, in src/PianoString.cpp.\n");
+
+	// ---- the strike point ------------------------------------------------------------------------
+	//
+	// NOT THE HAMMER, which is phase 2, but the one thing the placeholder gets right and must keep
+	// getting right: a string cornered at a seventh of its length has no seventh partial.
+	std::printf("\nTHE STRIKE POINT: partial levels for A3 struck at a seventh of the length,\n");
+	std::printf("in decibels below the strongest. The seventh and fourteenth should be missing.\n");
+	{
+		PianoString s;
+		s.setSampleRate((float) SR);
+		s.setNote(57.f);
+		s.strike(0.9f, 1.f / 7.f);
+		std::vector<float> x((size_t) (2.0 * SR));
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] = s.process();
+		const std::vector<Partial> ps = partialsOf(x, SR, hzOf(57), 16);
+		double strongest = 0.0;
+		for (const Partial& p : ps)
+			strongest = std::max(strongest, p.level);
+		for (const Partial& p : ps)
+			std::printf("  %2d %7.1f%s\n", p.n, 20.0 * std::log10(p.level / strongest),
+				(p.n == 7 || p.n == 14) ? "   <- node at the strike point" : "");
+	}
+
+	std::printf("\nDone. Phase 2 is the hammer, and the number it has to move is the centroid.\n");
 	return 0;
 }

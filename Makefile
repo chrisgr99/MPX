@@ -472,7 +472,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -483,9 +483,18 @@ pathread:
 		-o build/pathread
 	@./build/pathread $(ARGS)
 
+# WHAT SHAPE OF LOOP FILTER CAN HOLD THE DECAY LAW. A measurement, not a model: for one note's
+# target curve, the best worst-relative-error each candidate form can reach. This is what chose the
+# piano string's three pole-zero shelves over a pole, two poles, and a symmetric FIR.
+lossprobe:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/lossprobe.cpp -o build/lossprobe
+	@./build/lossprobe $(ARGS)
+
 # THE PIANO BENCH. Phase 0 of docs/piano-model.md: the means of measuring, before the thing
 # measured. Partials and stretch, decay per partial, brightness against force, and beating.
 pianobench:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp -o build/pianobench
+	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp src/PianoString.cpp \
+		-o build/pianobench
 	@./build/pianobench $(ARGS)
