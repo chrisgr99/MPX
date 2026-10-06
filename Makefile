@@ -225,6 +225,15 @@ gpxmltest:
 		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
 	@./build/gpxmltest $(ARGS)
 
+# WHAT A SCORE SENDS DOWN THE CABLE, as plain text, for the release testbed to play.
+#   make scorenotes ARGS="a-piece.mxl 20" > notes.txt
+scorenotes:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
+		test/scorenotes.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scorenotes
+	@./build/scorenotes $(ARGS)
+
 # mpxPiano's RELEASE ENGINE, RUN OUTSIDE RACK. Its voice engine lives inside a Rack Module where
 # nothing but Rack can reach it, and three changes to its damping were reported as working when
 # they were not. A thing that cannot be run cannot be verified.
@@ -233,31 +242,8 @@ pianorelease:
 	@mkdir -p build
 	@python3 test/salamander-release.py $(ARGS)
 
-# THE MODEL BESIDE A RECORDING OF THE SAME NOTES, which is the only measurement that says whether
-# the thing is worth playing. Needs the Salamander samples installed, since the recording IS the
-# reference. See test/salamander-compare.py for what each figure means.
-pianocompare:
-	@mkdir -p build
-	@python3 test/salamander-compare.py $(ARGS)
 
-# ONE NOTE OF THE MODELLED PIANO TO A FILE, to be set beside a recording of the same note.
-#   make pianonote ARGS="60 0.6 4 build/c4.wav"
-pianonote:
-	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/pianonote.cpp src/PianoBoard.cpp src/PianoNote.cpp \
-		src/PianoString.cpp src/Soundboard.cpp -o build/pianonote
-	@./build/pianonote $(ARGS)
 
-# PLAYS A REAL SCORE THROUGH THE MODELLED PIANO. Short made-up pieces show whether a mechanism
-# works; real music shows whether an instrument is worth playing, and shows it far faster.
-#   make pianoscore ARGS="~/Downloads/a-piece.mxl 20 build/first-bars.wav"
-pianoscore:
-	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
-		test/pianoscore.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
-		src/PianoBoard.cpp src/PianoNote.cpp src/PianoString.cpp src/Soundboard.cpp \
-		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/pianoscore
-	@./build/pianoscore $(ARGS)
 
 # WHAT COMES IN WHEN A SCORE IS LOADED, by whichever reader the file calls for. The module's own
 # path, without the module. See test/scoreread.cpp.
@@ -506,7 +492,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench pianorender pianoscore pianonote pianocompare pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -517,26 +503,5 @@ pathread:
 		-o build/pathread
 	@./build/pathread $(ARGS)
 
-# WHAT SHAPE OF LOOP FILTER CAN HOLD THE DECAY LAW. A measurement, not a model: for one note's
-# target curve, the best worst-relative-error each candidate form can reach. This is what chose the
-# piano string's three pole-zero shelves over a pole, two poles, and a symmetric FIR.
-lossprobe:
-	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/lossprobe.cpp -o build/lossprobe
-	@./build/lossprobe $(ARGS)
 
-# LISTENING TO THE MODELLED PIANO. Renders a handful of short pieces to build/*.wav, playing the
-# same arithmetic the module plays, so the sound can be heard without opening a rack.
-pianorender:
-	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/pianorender.cpp src/PianoBoard.cpp src/PianoNote.cpp \
-		src/PianoString.cpp src/Soundboard.cpp -o build/pianorender
-	@./build/pianorender $(ARGS)
 
-# THE PIANO BENCH. Phase 0 of docs/piano-model.md: the means of measuring, before the thing
-# measured. Partials and stretch, decay per partial, brightness against force, and beating.
-pianobench:
-	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp src/PianoString.cpp src/PianoNote.cpp src/PianoBoard.cpp src/Soundboard.cpp \
-		-o build/pianobench
-	@./build/pianobench $(ARGS)
