@@ -160,16 +160,16 @@
     {
       "slug": "mpxPiano",
       "name": "mpxPiano",
-      "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable: the sampled piano. mpxDreamPiano is the modelled one.",
+      "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable.",
       "tags": [
         "Polyphonic",
         "Sampler"
       ]
     },
     {
-      "slug": "mpxDreamPiano",
-      "name": "mpxDreamPiano",
-      "description": "A piano modelled rather than recorded: every string of the instrument on one bridge, with felt hammers, dampers and three pedals. mpxPiano is the sampled one.",
+      "slug": "mpxModelPiano",
+      "name": "mpxModelPiano",
+      "description": "DEPRECATED. A piano modelled rather than recorded: every string on one bridge, with felt hammers, dampers and three pedals. It does things no sample set can, and does not sound as good as one. mpxPiano is the sampled piano and the one to use.",
       "tags": [
         "Polyphonic",
         "Sampler"

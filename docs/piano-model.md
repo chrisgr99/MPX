@@ -1,4 +1,32 @@
-# A physically modelled piano
+# A physically modelled piano — DEPRECATED
+
+**This work is parked.** It is kept on the branch `piano-model`; the module is `mpxModelPiano` and
+`mpxPiano` is the sampled piano and the one to use.
+
+**Why it stops here, and it is not because it failed.** Measured against the Salamander recordings
+note by note, it is right about the treble balance, right about tuning to under a cent, and right
+about the hammer's contact times. It is wrong about three things, each of which is real work: its
+brightness barely changes with how hard a note is struck, moving by a factor of 1.3 where a real
+piano moves by 2.4, and the error is all at the quiet end where most music lives; its attack is
+five to twenty times too fast, one to eight milliseconds against twelve to twenty-two, which reads
+as a click where a piano blooms; and its bass rings a third as long as it should while its tenor
+rings twice too long.
+
+**And the faults that made the sampled piano sound bad turned out not to be the samples.** Every
+group volume in the sample map had been lost on the way in, so the key-release noise played
+thirty-seven decibels hot and was louder than the music — three quarters of the energy was at
+frequencies belonging to no note on the keyboard. And neither piano read a note's own length from
+the cable, so nothing was ever damped when played from a score. With those two fixed the sampled
+piano is good enough, which is the honest reason this one is parked rather than any fault in it.
+
+**What it is still uniquely right about**, and what would be worth coming back for: half-pedalling
+as a damper resting lightly rather than a switch, a note struck again before its damper has landed,
+a chord held silently and set ringing by something else, and the whole instrument joining in when
+the pedal goes down. All of those are measured and correct here and are structurally impossible for
+a sample set. If they are ever wanted, the way in is the resonator mode described in the phase 6
+notes: drive the bridge from the sampler's audio and take only the halo, so the model's weak attack
+is never heard.
+
 
 mpxPiano plays the Salamander sample set. This is the other thing: the instrument itself, modelled, so that what it does under the hands is a consequence rather than a setting. Sampled pianos are convincing until you ask them something the samples were not recorded doing — a key released while the pedal is half down, a note struck again before its damper has landed, a chord that rings sympathetically with one held silently. All of those are ordinary piano playing and none of them is in a sample set.
 
@@ -637,7 +665,7 @@ They stand beside each other. The sampler is good at what it is good at, and a m
 
 **The sampler is `mpxPiano`**, which is what it has always been called and what its slug says.
 
-**The modelled one is `mpxDreamPiano`**, in its name and in its slug alike.
+**The modelled one is `mpxModelPiano`**, in its name and in its slug alike, and it is deprecated — see the note at the top of this file.
 
 This was arranged the other way round first — the modelled piano taking the plain name `mpxPiano` on its face while carrying `mpxPianoModel` in its slug, because a slug is what a saved patch stores and the sampler's could not move without emptying every rack it is in. That worked, and it meant two modules whose displayed names and stored names were different things, each needing a comment to explain why. Giving the new one a name of its own ends all of it: both names now match their slugs, nothing a person has got used to has changed, and the two comments are gone.
 
