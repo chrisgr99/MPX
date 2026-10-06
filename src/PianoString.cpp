@@ -102,6 +102,145 @@ float pianoDecaySeconds(float midi) {
 }
 
 
+/** THE STRING'S WAVE IMPEDANCE: its mass per unit length times the speed waves travel along it.
+It decides how hard the string pushes back at the felt, and so how long the two stay together.
+
+WORKED OUT FROM THE STRINGING RATHER THAN GUESSED AT, because guessing at it got it wrong by a
+factor of fourteen. The speed along a string is twice its speaking length times its fundamental,
+and the mass per unit length is the wire's cross-section times the density of steel, with the
+wound bass strings carrying several times the mass of their core. For a six or seven foot grand:
+
+	note   length m   diameter mm   speed m/s   kg/m      Z
+	A0       1.20     wound          66         0.055    3.6
+	A1       1.05     wound         116         0.020    2.3
+	A2       0.95     1.20          209         0.0089   1.9
+	A3       0.72     1.05          317         0.0068   2.2
+	A4       0.40     0.95          352         0.0056   2.0
+	A5       0.22     0.90          387         0.0050   1.9
+	A6       0.115    0.85          405         0.0045   1.8
+	C8       0.05     0.80          419         0.0039   1.6
+
+WHICH IS VERY NEARLY FLAT, and that is the point rather than a coincidence. The first attempt at
+this curve had it falling from four to a quarter across the compass, on the reasoning that treble
+strings are short and thin — but they are only a little thinner, and what they lose in mass they
+make up in speed, because a short string at a high pitch carries waves fast. A maker aims for an
+even impedance so that the tone is even, and the numbers show them succeeding.
+
+The wrong curve was caught by the hammer rather than by inspection: a quarter of a kilogram per
+second at the top of the compass let the string slide out from under the felt, and the contact at
+A6 came out at two and a sixth milliseconds where a real one is under one, with no stiffness of
+felt able to shorten it. */
+static const Anchor IMPEDANCE[] = {
+	{21.f, 3.6f},
+	{33.f, 2.3f},
+	{45.f, 1.9f},
+	{57.f, 2.2f},
+	{69.f, 2.0f},
+	{81.f, 1.9f},
+	{93.f, 1.8f},
+	{108.f, 1.6f},
+};
+
+float pianoImpedance(float midi) {
+	return throughAnchors(IMPEDANCE, (int) (sizeof(IMPEDANCE) / sizeof(Anchor)), midi);
+}
+
+
+/** HOW MANY STRINGS THE NOTE HAS, which the hammer needs to know even while only one of them is
+being modelled.
+
+A STEP AND NOT A CURVE, because that is what it is: a maker chooses where the breaks fall. The
+bottom octave or so is single wound strings, a stretch above that is pairs, and from somewhere
+around the bottom of the bass bridge upward it is threes all the way to the top.
+
+WHY A SINGLE STRING HAS TO KNOW. The hammer pushes all of a note's strings at once, so they resist
+it together: three strings are three times as hard to shift as one, the hammer's momentum drains
+three times as fast, and the contact is correspondingly shorter. A hammer modelled against one
+string where a real one pushes three stays on for twice as long as it should, which is exactly what
+the bench measured before this was put in. So the hammer feels the whole choir's impedance and the
+one string modelled takes its own share of the force — which is also what makes it a correct member
+of the choir that phase 3 will build around it, rather than an approximation to be undone. */
+int pianoStringsPerNote(float midi) {
+	if (midi < 30.f)
+		return 1;
+	if (midi < 41.f)
+		return 2;
+	return 3;
+}
+
+
+/** THE HAMMER'S MASS. About eleven grams at the bottom falling to four at the top, and that taper
+is most of why the treble speaks so much more quickly than the bass: a light hammer on a light
+string is done with it in a fraction of the time. */
+static const Anchor HAMMER_MASS[] = {
+	{21.f, 0.0115f},
+	{45.f, 0.0085f},
+	{69.f, 0.0062f},
+	{93.f, 0.0046f},
+	{108.f, 0.0040f},
+};
+
+float pianoHammerMass(float midi) {
+	return throughAnchors(HAMMER_MASS, (int) (sizeof(HAMMER_MASS) / sizeof(Anchor)), midi);
+}
+
+
+/** THE POWER THE FELT'S FORCE GOES AS, rising toward the treble where the felt is harder and
+thinner. Published measurements on real hammers put it between about one and a half and three and a
+half, and it is not a constant even for one hammer — felt stiffens as it is played in, which is
+what a technician is undoing when they needle a hammer. */
+static const Anchor FELT_POWER[] = {
+	{21.f, 2.2f},
+	{57.f, 2.5f},
+	{81.f, 2.8f},
+	{108.f, 3.0f},
+};
+
+float pianoFeltPower(float midi) {
+	return throughAnchors(FELT_POWER, (int) (sizeof(FELT_POWER) / sizeof(Anchor)), midi);
+}
+
+
+/** THE FELT'S STIFFNESS, in newtons per metre raised to that power.
+//
+SET BY MEASUREMENT AND NOT QUOTED, which is the only honest way to come by it. Its units depend on
+the power above, so the number means nothing on its own and cannot be compared between registers or
+with anything in the literature; what CAN be compared is how long the felt stays on the string,
+which is published, which the bench measures directly, and which this was adjusted until it
+matched: about two milliseconds in the middle of the compass at a moderate blow, longer in the
+bass, shorter in the treble, and falling by a factor of three or so from the quietest note to the
+loudest. */
+static const Anchor FELT_STIFFNESS[] = {
+	{21.f, 5.0e9f},
+	{45.f, 8.0e9f},
+	{57.f, 8.0e9f},
+	{69.f, 1.6e10f},
+	{81.f, 1.3e11f},
+	{93.f, 1.6e12f},
+	{108.f, 8.0e12f},
+};
+
+float pianoFeltStiffness(float midi) {
+	return throughAnchors(FELT_STIFFNESS, (int) (sizeof(FELT_STIFFNESS) / sizeof(Anchor)), midi);
+}
+
+
+/** WHERE THE HAMMER LANDS, as a fraction of the speaking length from the agraffe. About an eighth
+over most of the compass, and a smaller fraction at the top, where there is not much string to aim
+at. The choice is a compromise a maker makes: nearer the end is brighter and thinner, further along
+is fuller but loses the partials whose nodes are there. */
+static const Anchor STRIKE[] = {
+	{21.f, 0.125f},
+	{69.f, 0.125f},
+	{93.f, 0.10f},
+	{108.f, 0.07f},
+};
+
+float pianoStrikeFraction(float midi) {
+	return throughAnchors(STRIKE, (int) (sizeof(STRIKE) / sizeof(Anchor)), midi);
+}
+
+
 // ---- the filters, as the design has to see them -------------------------------------------------
 //
 // IN DOUBLE PRECISION. The same lesson as the path reading: a stretch of a hundredth of a per cent
@@ -245,8 +384,10 @@ static void readResponse(double d, double w, double* delay, double* gain) {
 // ---- setting up ---------------------------------------------------------------------------------
 
 PianoString::PianoString() {
-	line.assign(1024, 0.f);
-	mask = 1023;
+	rightLine.assign(1024, 0.f);
+	rightMask = 1023;
+	leftLine.assign(64, 0.f);
+	leftMask = 63;
 }
 
 
@@ -286,6 +427,27 @@ void PianoString::setDecaySeconds(float seconds) {
 	}
 }
 
+void PianoString::setFeltStiffness(float k) {
+	if ((double) k != feltKAsked) {
+		feltKAsked = k;
+		dirty = true;
+	}
+}
+
+void PianoString::setFeltPower(float power) {
+	if ((double) power != feltPAsked) {
+		feltPAsked = power;
+		dirty = true;
+	}
+}
+
+void PianoString::setHammerMass(float kg) {
+	if ((double) kg != massAsked) {
+		massAsked = kg;
+		dirty = true;
+	}
+}
+
 void PianoString::setDecayExponent(float power) {
 	power = std::fmax(0.f, std::fmin(4.f, power));
 	if ((double) power != powerAsked) {
@@ -299,20 +461,23 @@ void PianoString::setDecayExponent(float power) {
 it only ever grows, and a string that has been down to the bottom A keeps the room for it. */
 void PianoString::resize() {
 	const unsigned want = (unsigned) (rate / freq) + 32u;
-	if (want <= mask)
+	if (want <= rightMask && want <= leftMask + 1u)
 		return;
 	unsigned n = 64;
 	while (n < want)
 		n <<= 1;
-	line.assign(n, 0.f);
-	mask = n - 1;
-	write = 0;
+	// Both lines get room for the whole period: which way the strike point divides it is the
+	// note's business and may move, and a line is cheap beside getting that wrong.
+	rightLine.assign(n, 0.f);
+	leftLine.assign(n, 0.f);
+	rightMask = leftMask = n - 1;
+	rightWrite = leftWrite = 0;
 	lastRead = 0.f;
 	for (int i = 0; i < LOSS_SECTIONS; i++)
 		shelfIn[i] = shelfOut[i] = 0.f;
 	for (int i = 0; i < MAX_STAGES; i++)
 		chainIn[i] = chainOut[i] = 0.f;
-	excitePos = (int) excitation.size();
+	hammerOn = false;
 }
 
 
@@ -320,9 +485,15 @@ void PianoString::resize() {
 after the loss filter and the allpass chain have taken their share, corrected for what the
 interpolator itself delays — in two passes, because the correction moves the delay and the delay
 moves the correction. */
-static double solveDelayFor(double period, double w1, double stagesN, double a, const Loss& loss,
-		unsigned mask) {
-	const double want = period - lossDelay(loss, w1) - stagesN * allpassDelay(a, w1);
+/** THE RIGHT SECTION'S DELAY, solved so that the FIRST partial lands on the note.
+
+WHAT IS LEFT OF THE PERIOD once the left section, the loss filter and the allpass chain have taken
+their shares. The left section is a whole number of samples — exact, with no gain and no dispersion
+of its own — so the whole of the interpolating is in the right one, and the whole of the correcting
+with it. */
+static double solveDelayFor(double period, double w1, double leftWhole, double stagesN, double a,
+		const Loss& loss, unsigned mask) {
+	const double want = period - leftWhole - lossDelay(loss, w1) - stagesN * allpassDelay(a, w1);
 	double d = want;
 	for (int pass = 0; pass < 3; pass++) {
 		d = std::fmax(3.0, std::fmin(d, (double) mask - 4.0));
@@ -392,9 +563,9 @@ void PianoString::fitChain() {
 		// Never ask the chain for more delay than the loop has to give: a chain that eats the
 		// period cannot be tuned at all.
 		const double chainAt1 = stagesN * allpassDelay(a, w1);
-		if (chainAt1 > period * 0.6 || chainAt1 < 0.0)
+		if (chainAt1 > (period - (double) leftDelay) * 0.6 || chainAt1 < 0.0)
 			return false;
-		const double d = solveDelayFor(period, w1, stagesN, a, loss, mask);
+		const double d = solveDelayFor(period, w1, (double) leftDelay, stagesN, a, loss, rightMask);
 
 		double worst = 0.0;
 		for (int n = 2; n <= want; n++) {
@@ -405,7 +576,7 @@ void PianoString::fitChain() {
 				for (int i = 0; i < 6; i++) {
 					double dr, gr;
 					readResponse(d, wn, &dr, &gr);
-					const double total = dr + lossDelay(loss, wn)
+					const double total = (double) leftDelay + dr + lossDelay(loss, wn)
 						+ stagesN * allpassDelay(a, wn);
 					if (total <= 1.0)
 						return false;
@@ -416,7 +587,8 @@ void PianoString::fitChain() {
 			else {
 				double dr, gr;
 				readResponse(d, w, &dr, &gr);
-				const double total = dr + lossDelay(loss, w) + stagesN * allpassDelay(a, w);
+				const double total = (double) leftDelay + dr + lossDelay(loss, w)
+					+ stagesN * allpassDelay(a, w);
 				if (total <= 1.0)
 					return false;
 				// Turns per round trip, against the whole number it should be.
@@ -779,7 +951,7 @@ void PianoString::solveLoss() {
 void PianoString::solveRead() {
 	const double period = rate / freq;
 	const double w1 = 2.0 * PI * freq / rate;
-	readDelay = solveDelayFor(period, w1, (double) chainStages, chainA, loss, mask);
+	readDelay = solveDelayFor(period, w1, (double) leftDelay, (double) chainStages, chainA, loss, rightMask);
 }
 
 
@@ -828,14 +1000,32 @@ void PianoString::tune() {
 	t60Used = (decayAsked > 0.0) ? decayAsked : (double) pianoDecaySeconds((float) note);
 
 	resize();
+	setupHammer();
+
+	// WHERE THE STRIKE POINT DIVIDES THE PERIOD. The left section is the hammer's distance from
+	// the agraffe and back, in whole samples, and the right section is everything else; together
+	// they are the round trip, so the loop is the same length it was in phase 1 and every number
+	// fitted for it still holds.
+	//
+	// AND AT THE TOP OF THE COMPASS IT CANNOT BE DIVIDED AT ALL. The top C's period is eleven
+	// samples, a tenth of which is one, and there is no room for a junction in that. Those notes
+	// keep phase 1's single loop with the force fed straight into it, which costs nothing real:
+	// the first partial with a node at the strike point would be the tenth, at forty kilohertz.
+	{
+		const double period = rate / freq;
+		const double frac = (double) pianoStrikeFraction((float) note);
+		const int whole = (int) std::lround(frac * period);
+		leftDelay = (whole >= 4 && period - (double) whole >= 8.0) ? whole : 0;
+	}
 
 	const bool refit = (chainStages <= 0 || fitB != bUsed || fitRate != rate
-		|| fitPower != powerAsked || fitDecay != t60Used
+		|| fitPower != powerAsked || fitDecay != t60Used || fitSplit != leftDelay
 		|| std::fabs(std::log2(freq / std::fmax(fitFreq, 1.0))) > 1.0 / 48.0);
 
 	if (refit) {
 		// A provisional read, so that the loss has something to divide its own share out of.
-		readDelay = std::fmax(3.0, std::fmin(rate / freq, (double) mask - 4.0));
+		readDelay = std::fmax(3.0, std::fmin(rate / freq - (double) leftDelay,
+			(double) rightMask - 4.0));
 		for (int round = 0; round < 2; round++) {
 			solveLoss();
 			fitChain();
@@ -846,12 +1036,25 @@ void PianoString::tune() {
 		fitRate = rate;
 		fitPower = powerAsked;
 		fitDecay = t60Used;
+		fitSplit = leftDelay;
 	}
 	else {
 		// A cent of detuning, or a bend: the design stands and only the length moves.
 		solveRead();
 	}
 	refreshGain();
+	// The bridge is halfway along the right section's round trip.
+	bridgeTap = std::max(1, (int) std::lround(readDelay * 0.5));
+}
+
+
+/** THE HAMMER AND THE STRING'S IMPEDANCE, from the compass or from what was asked for. */
+void PianoString::setupHammer() {
+	impedance = (double) pianoImpedance((float) note);
+	strings = pianoStringsPerNote((float) note);
+	hammerMass = (massAsked > 0.0) ? massAsked : (double) pianoHammerMass((float) note);
+	feltP = (feltPAsked > 0.0) ? feltPAsked : (double) pianoFeltPower((float) note);
+	feltK = (feltKAsked > 0.0) ? feltKAsked : (double) pianoFeltStiffness((float) note);
 }
 
 
@@ -876,60 +1079,31 @@ void PianoString::refreshGain() {
 
 // ---- playing it ---------------------------------------------------------------------------------
 
-/** THE STRIKE, for now the string's own shape when a finger lets it go: a triangle cornered at the
-strike point. A PLACEHOLDER. A hammer is not a shape put into the string, it is a mass in contact
-with it for a millisecond or two, pushing while the string pushes back, and that is phase 2.
+/** THE HAMMER, PUT ON THE STRING AT A SPEED.
 
-What this does have right is the corner's place. A triangle cornered at a point has no partial with
-a node there, so striking at a seventh of the length leaves the seventh partial — and the
-fourteenth — missing, which is true of a real piano and is one reason the strike point is where it
-is. The bench can see this, so phase 2 has something to not break. */
-void PianoString::strike(float level, float position) {
+The felt starts just touching, travelling at the speed asked for. Nothing else is set: how loud the
+note is, how bright, and how long the two stay together all come out of the physics from here.
+
+A RINGING STRING IS NOT STOPPED, which is a thing the phase 1 placeholder could not have got right.
+The hammer meets whatever the string is already doing — its motion at the strike point is part of
+how far the felt compresses — so a note struck again before its damper has landed behaves as it
+does on a piano rather than being cut off and started afresh. */
+void PianoString::hit(float metresPerSecond) {
 	if (dirty)
 		tune();
-	const int n = std::max(2, (int) std::lround(rate / freq));
-	position = std::fmax(0.03f, std::fmin(0.5f, position));
-	level = std::fmax(0.f, std::fmin(1.f, level));
-
-	excitation.assign((size_t) n, 0.f);
-	double mean = 0.0;
-	for (int i = 0; i < n; i++) {
-		const double x = (double) i / (double) n;
-		const double v = (x < position) ? x / position : (1.0 - x) / (1.0 - position);
-		excitation[(size_t) i] = (float) v;
-		mean += v;
-	}
-	mean /= (double) n;
-	double peak = 1e-9;
-	for (int i = 0; i < n; i++) {
-		excitation[(size_t) i] -= (float) mean;
-		peak = std::fmax(peak, std::fabs((double) excitation[(size_t) i]));
-	}
-	// STARTED WHERE IT CROSSES NOUGHT, rising. The shape repeats once a period, so it may begin
-	// anywhere in its cycle; begun at the corner it starts partway up its own height, and the sound
-	// steps from silence to there in one sample. A step holds every frequency at once, and the note
-	// would begin with a click that has nothing to do with a piano.
-	int start = 0;
-	double best = 1e9;
-	for (int i = 0; i < n; i++) {
-		const float a = excitation[(size_t) i], b = excitation[(size_t) ((i + 1) % n)];
-		if (a < 0.f && b >= 0.f && std::fabs((double) b) < best) {
-			best = std::fabs((double) b);
-			start = (i + 1) % n;
-		}
-	}
-	std::vector<float> turned((size_t) n);
-	for (int i = 0; i < n; i++)
-		turned[(size_t) i] = excitation[(size_t) ((start + i) % n)];
-	const double scale = level / peak;
-	for (int i = 0; i < n; i++)
-		excitation[(size_t) i] = (float) (turned[(size_t) i] * scale);
-	excitePos = 0;
+	hammerSpeed = std::fmax(0.01, std::fmin((double) metresPerSecond, 12.0));
+	hammerAt = 0.0;
+	stringAt = 0.0;
+	lastForce = 0.0;
+	hammerOn = true;
+	contactSamples = 0;
+	hammerSamples = 0;
 }
 
 
 void PianoString::silence() {
-	std::fill(line.begin(), line.end(), 0.f);
+	std::fill(rightLine.begin(), rightLine.end(), 0.f);
+	std::fill(leftLine.begin(), leftLine.end(), 0.f);
 	for (int i = 0; i < MAX_STAGES; i++)
 		chainIn[i] = chainOut[i] = 0.f;
 	for (int i = 0; i < LOSS_SECTIONS; i++)
@@ -937,56 +1111,176 @@ void PianoString::silence() {
 	lastRead = 0.f;
 	driven = 0.f;
 	dcIn = dcOut = 0.f;
-	excitePos = (int) excitation.size();
+	hammerOn = false;
+	lastForce = 0.0;
 }
+
+
+/** THE FELT'S FORCE FOR THIS SAMPLE, SOLVED RATHER THAN ESTIMATED.
+
+This is the part the design note named as the one most likely to take several attempts, and the
+reason is a circle inside a single sample: the force depends on how far the felt is compressed,
+which depends on where the string has moved to, which depends on the force. Taken explicitly —
+compressing against where the string was LAST sample — it is merely inaccurate at a whisper and
+unstable at full force, because at full force the string moves a long way in one sample.
+
+IT IS ONE SCALAR EQUATION AND IT HAS EXACTLY ONE ROOT. Write the sample's updates as they stand:
+
+	the hammer loses speed by the force over its mass, and moves by its new speed,
+	the string's junction moves by the waves arriving plus the force over twice the impedance,
+
+and the compression left over is what the two have NOT closed:
+
+	u(F) = u0 - c F,   c = dt squared over the mass, plus dt over twice the impedance
+
+where u0 is how far they would overlap if the force were nought. The felt says F = K u to the
+power p. So F = K (u0 - c F) to the power p: the left side rises with F and the right side falls,
+both continuously, so they cross exactly once. Newton's method gets there in a handful of steps
+from any start, and its derivative is one plus a positive quantity, so it never divides by nothing
+and never overshoots into nonsense.
+
+WHAT THIS BUYS is the thing phase 2 exists for. Hit harder and u0 is larger, so the felt compresses
+further, so it is stiffer, so the contact is SHORTER and what goes into the string is a briefer and
+therefore brighter pulse. Nothing arranges that; it falls out of the power law. */
+static double solveFelt(double u0, double c, double k, double p, double from) {
+	if (u0 <= 0.0)
+		return 0.0;
+	double force = std::fmax(0.0, from);
+	for (int i = 0; i < 6; i++) {
+		const double u = std::fmax(u0 - c * force, 0.0);
+		const double fromFelt = k * std::pow(u, p);
+		const double slope = 1.0 + k * p * c * std::pow(u, p - 1.0);
+		force -= (force - fromFelt) / slope;
+		if (force < 0.0)
+			force = 0.0;
+	}
+	return force;
+}
+
+
+/** THE LONGEST THE FELT IS LET STAY ON THE STRING. A real contact is one to four milliseconds and
+this is twenty, so it never fires in ordinary playing; it is there because a blow slow enough can
+in principle have the hammer resting against the string, and a hammer that never leaves is a
+hammer damping the note it just sounded. */
+static const double CONTACT_LIMIT_MS = 20.0;
 
 
 float PianoString::process() {
 	if (dirty)
 		tune();
 
-	// What went in one loop ago, read between samples.
+	const unsigned rm = rightMask, lm = leftMask;
+
+	// WHAT ARRIVES AT THE JUNCTION FROM THE BRIDGE SIDE: the wave that went out, came back off the
+	// bridge, and paid the loop's losses.
+	//
+	// A RIGID END TURNS THE SIGN OVER, AND THERE ARE TWO OF THEM. The bridge inverts and so does
+	// the agraffe, so a full round trip comes back the way it started — which is what phase 1's
+	// single loop did, and is why its tuning carries over. WHEN THERE IS NO LEFT SECTION THERE IS
+	// ALSO NO SECOND INVERSION TO PAIR WITH, so this one is left out: inverting once a round trip
+	// puts the resonances halfway between where they belong, and the top of the compass came out
+	// twenty cents flat at A6 and seventy-two at the top C.
+	const bool split = leftDelay > 0;
 	const int base = (int) std::floor(readDelay) - 1;
 	double h[4];
 	lagrange(readDelay - (double) base, h);
-	float out = 0.f;
+	float fromRight = 0.f;
 	for (int j = 0; j < 4; j++)
-		out += (float) h[j] * line[(write - (unsigned) (base + j)) & mask];
-	lastRead = out;
+		fromRight += (float) h[j] * rightLine[(rightWrite - (unsigned) (base + j)) & rm];
+	lastRead = fromRight;
+	if (split)
+		fromRight = -fromRight;
 
 	// The loss: the three shelves, in the direct form of K (1 - q z^-1) / (1 - p z^-1).
-	float lossy = out;
 	for (int i = 0; i < LOSS_SECTIONS; i++) {
-		const float y = shelfB0[i] * lossy + shelfB1[i] * shelfIn[i] + shelfA1[i] * shelfOut[i];
-		shelfIn[i] = lossy;
+		const float y = shelfB0[i] * fromRight + shelfB1[i] * shelfIn[i] + shelfA1[i] * shelfOut[i];
+		shelfIn[i] = fromRight;
 		shelfOut[i] = y;
-		lossy = y;
+		fromRight = y;
 	}
 
 	// The stiffness: the fitted chain of first-order allpasses.
 	const float a = (float) chainA;
-	float stiff = lossy;
 	for (int i = 0; i < chainStages; i++) {
-		const float y = a * stiff + chainIn[i] - a * chainOut[i];
-		chainIn[i] = stiff;
+		const float y = a * fromRight + chainIn[i] - a * chainOut[i];
+		chainIn[i] = fromRight;
 		chainOut[i] = y;
-		stiff = y;
+		fromRight = y;
 	}
-
-	float in = (float) passGain * stiff + driven;
+	fromRight = (float) passGain * fromRight + driven;
 	driven = 0.f;
-	if (excitePos < (int) excitation.size())
-		in += excitation[(size_t) excitePos++];
-	line[write & mask] = in;
-	write = (write + 1u) & mask;
+
+	// And from the agraffe side: a whole number of samples, turned over, and nothing else.
+	const float fromLeft = split ? -leftLine[(leftWrite - (unsigned) leftDelay) & lm] : 0.f;
+
+	// ---- THE JUNCTION, with the hammer on it ----
+	//
+	// Two sections of the same string meet, so they have the same impedance, and the junction is
+	// transparent when nothing is pushing on it: the wave from one side goes straight out the
+	// other, which is why the loop still behaves as the single loop phase 1 tuned. A force applied
+	// there sees the two halves in parallel and so adds its own velocity of F over twice the
+	// impedance.
+	double force = 0.0;
+	const double arriving = (double) fromLeft + (double) fromRight;
+	// AND WHEN THERE IS NO LEFT SECTION the junction is not a junction: the string is one loop,
+	// as in phase 1, and the force is simply fed into it. Keeping the junction's arithmetic in
+	// that case throws the circulating wave away — what goes back into the line is the junction's
+	// motion less what arrived, which with nothing arriving from the other side is the force and
+	// nothing else. The top of the compass came out as a whine at forty hertz.
+	if (hammerOn) {
+		const double dt = 1.0 / rate;
+		// How far the two would overlap by the end of this sample with no force between them.
+		const double u0 = (hammerAt + dt * hammerSpeed) - (stringAt + dt * arriving);
+		// The hammer feels the whole choir: n strings resist n times as much.
+		const double c = dt * dt / hammerMass + dt / (2.0 * impedance * (double) strings);
+		force = solveFelt(u0, c, feltK, feltP, lastForce);
+		lastForce = force;
+
+		hammerSpeed -= dt * force / hammerMass;
+		hammerAt += dt * hammerSpeed;
+		hammerSamples++;
+		if (force > 0.0)
+			contactSamples++;
+		// THE FELT LEAVES WHEN IT IS NO LONGER PRESSING AND THE HAMMER IS GOING AWAY. Both
+		// conditions: a hammer that has been stopped dead by the string is not finished with it,
+		// and one still pressing has not left however it is moving.
+		if (force <= 0.0 && hammerSpeed <= 0.0)
+			hammerOn = false;
+		else if ((double) hammerSamples > CONTACT_LIMIT_MS * 0.001 * rate)
+			hammerOn = false;
+	}
+	// AND THIS STRING TAKES ITS OWN SHARE OF THE FORCE, not all of it: the hammer's force is spread
+	// over the note's strings.
+	const double junction = arriving + force / (2.0 * impedance * (double) strings);
+	stringAt += junction / rate;
+
+	// What leaves the junction into each section is the junction's own motion less what arrived
+	// from that side.
+	if (split) {
+		rightLine[rightWrite & rm] = (float) (junction - (double) fromRight);
+		leftLine[leftWrite & lm] = (float) (junction - (double) fromLeft);
+		leftWrite = (leftWrite + 1u) & lm;
+	}
+	else
+		rightLine[rightWrite & rm] = (float) junction;
+	rightWrite = (rightWrite + 1u) & rm;
+
+	// ---- WHAT COMES OUT ----
+	//
+	// THE FORCE ON THE BRIDGE AND NOT THE MOTION OF IT, because the bridge is where the string
+	// drives the soundboard and a rigid end does not move: its velocity is nought by definition,
+	// while the force it feels is twice the impedance times the wave arriving at it. So the output
+	// is the right section's wave at its halfway point, which is where the bridge is. It is also
+	// what phase 3 will couple the strings of a choir through, and what phase 6 will put a
+	// soundboard on the end of.
+	const float atBridge = rightLine[(rightWrite - (unsigned) bridgeTap) & rm];
 
 	// A DC blocker on the way out, not in the loop: the loop's own tuning is worked out to a
 	// fraction of a sample and a filter in it would have to be accounted for in that.
-	const float y = out - dcIn + 0.995f * dcOut;
-	dcIn = out;
+	const float y = atBridge - dcIn + 0.995f * dcOut;
+	dcIn = atBridge;
 	dcOut = y;
 	return y;
 }
-
 
 } // namespace px

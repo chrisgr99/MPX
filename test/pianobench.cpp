@@ -518,7 +518,7 @@ int main() {
 		PianoString s;
 		s.setSampleRate((float) SR);
 		s.setNote((float) midi);
-		s.strike(0.9f);
+		s.hit(3.f);
 		// THE PARTIALS ARE MEASURED FROM THE ATTACK, over a window that is a third of the decay
 		// at most: beyond that the upper partials have gone and the transform is measuring
 		// silence, which is why the top note read as having no stretch at all.
@@ -549,7 +549,7 @@ int main() {
 		PianoString s;
 		s.setSampleRate((float) SR);
 		s.setNote((float) midi);
-		s.strike(0.9f);
+		s.hit(3.f);
 		const size_t N = windowFor(midi, 0.34);
 		std::vector<float> x(N + (size_t) (0.05 * SR));
 		for (size_t i = 0; i < x.size(); i++)
@@ -585,7 +585,7 @@ int main() {
 		PianoString s;
 		s.setSampleRate((float) SR);
 		s.setNote((float) midi);
-		s.strike(0.9f);
+		s.hit(3.f);
 		// LONG ENOUGH TO SEE A SLOPE. The bass hangs on for half a minute and there is no need to
 		// wait for all of it, but four seconds of a thirty-second decay is eight decibels, which
 		// is a slope measured off the end of a short lever.
@@ -633,29 +633,131 @@ int main() {
 	std::printf("  what three first-order shelves can hold a power law to; the form is argued, with\n");
 	std::printf("  the measurements of the three forms that failed, in src/PianoString.cpp.\n");
 
-	// ---- the strike point ------------------------------------------------------------------------
+	// ---- PHASE 2: the hammer ----------------------------------------------------------------------
+	std::printf("\n");
+	std::printf("================================================================================\n");
+	std::printf("PHASE 2 — the felt hammer\n");
+	std::printf("================================================================================\n");
+
+	// THE MEASUREMENT PHASE 2 LIVES OR DIES BY, and the one phase 0 set up to catch. A fixed
+	// excitation scaled by how hard it was hit has a spectral centroid that does not move; a felt
+	// hammer's must climb, because the felt stiffens as it compresses, so the contact shortens and
+	// what goes into the string is a briefer and brighter pulse.
+	std::printf("\nBRIGHTNESS AND CONTACT AGAINST BLOW SPEED. Hit harder and a real hammer stays\n");
+	std::printf("on the string for LESS time, not more, and the sound comes out brighter.\n");
+	std::printf("%-5s %8s %10s %9s %10s %9s\n", "note", "m/s", "contact ms", "peak N",
+		"centroid", "peak out");
+	const int hammerNotes[4] = {33, 57, 69, 93};
+	const float speeds[5] = {0.2f, 0.6f, 1.5f, 3.f, 6.f};
+	for (int k = 0; k < 4; k++) {
+		for (int j = 0; j < 5; j++) {
+			PianoString s;
+			s.setSampleRate((float) SR);
+			s.setNote((float) hammerNotes[k]);
+			s.hit(speeds[j]);
+			std::vector<float> x((size_t) (0.6 * SR));
+			double force = 0.0, peak = 0.0;
+			for (size_t i = 0; i < x.size(); i++) {
+				x[i] = s.process();
+				force = std::max(force, (double) s.hammerForce());
+				peak = std::max(peak, (double) std::fabs(x[i]));
+			}
+			std::printf("%-5s %8.2f %10.3f %9.2f %10.1f %9.4f\n",
+				noteName(hammerNotes[k]), speeds[j], s.contactMilliseconds(), force,
+				centroidOf(x, SR, 0.01, 0.1), peak);
+		}
+	}
+	std::printf("  A real hammer is on the string for about four milliseconds in the bass and\n");
+	std::printf("  about one at the top, falling by something like a factor of two from the\n");
+	std::printf("  quietest blow to the loudest, with peak forces from a newton or two up to a\n");
+	std::printf("  hundred. The felt stiffness anchors were set by this table and nothing else:\n");
+	std::printf("  their units depend on the felt's power, so the numbers cannot be compared\n");
+	std::printf("  with anything, while the contact times can.\n");
+	std::printf("  THE CENTROID IS THE ONE THAT MATTERS. Compare it with the plucked string\n");
+	std::printf("  measured above, whose centroid is 571 Hz at every level: a fixed excitation\n");
+	std::printf("  scaled by how hard it was hit cannot brighten, and a felt hammer must.\n");
+	std::printf("  In the bass the contact barely shortens with force, and that is not a\n");
+	std::printf("  shortcoming: a single heavy hammer on a single slow string stays on until the\n");
+	std::printf("  string's own reflection returns from the agraffe and throws it off, which for\n");
+	std::printf("  the bottom A is four and a half milliseconds after the blow however hard it\n");
+	std::printf("  was struck. The brightening is there regardless, from the felt.\n");
+
+	// ---- the strike point, now a consequence rather than an arrangement --------------------------
 	//
-	// NOT THE HAMMER, which is phase 2, but the one thing the placeholder gets right and must keep
-	// getting right: a string cornered at a seventh of its length has no seventh partial.
-	std::printf("\nTHE STRIKE POINT: partial levels for A3 struck at a seventh of the length,\n");
-	std::printf("in decibels below the strongest. The seventh and fourteenth should be missing.\n");
+	// A MODE WITH A NODE AT THE STRIKE POINT CANNOT BE MOVED BY A FORCE APPLIED THERE. Phase 1's
+	// placeholder faked this with the corner of a triangle; now the force enters the string at a
+	// junction, and the nulls are simply what that junction cannot excite.
+	std::printf("\nTHE STRIKE POINT. A3 is struck an eighth of the way along, so the eighth\n");
+	std::printf("partial and the sixteenth have a node under the hammer and should be absent.\n");
+	std::printf("Decibels below the strongest partial.\n");
 	{
 		PianoString s;
 		s.setSampleRate((float) SR);
 		s.setNote(57.f);
-		s.strike(0.9f, 1.f / 7.f);
+		s.hit(3.f);
 		std::vector<float> x((size_t) (2.0 * SR));
 		for (size_t i = 0; i < x.size(); i++)
 			x[i] = s.process();
-		const std::vector<Partial> ps = partialsOf(x, SR, hzOf(57), 16);
+		const std::vector<Partial> ps = partialsOf(x, SR, hzOf(57), 18);
 		double strongest = 0.0;
 		for (const Partial& p : ps)
 			strongest = std::max(strongest, p.level);
 		for (const Partial& p : ps)
 			std::printf("  %2d %7.1f%s\n", p.n, 20.0 * std::log10(p.level / strongest),
-				(p.n == 7 || p.n == 14) ? "   <- node at the strike point" : "");
+				(p.n == 8 || p.n == 16) ? "   <- node under the hammer" : "");
+		std::printf("  the split is %d samples of %0.1f, so the node is where it should be.\n",
+			s.strikeSplit(), SR / s.frequency());
 	}
 
-	std::printf("\nDone. Phase 2 is the hammer, and the number it has to move is the centroid.\n");
+	// ---- nothing anywhere may grow -------------------------------------------------------------
+	//
+	// A REGRESSION GUARD AND NOT A MEASUREMENT. Every note struck as hard as anyone could, run for
+	// long enough that a loop gain a hair above one would show: a thing worth re-checking after
+	// every change to the loop, since an unstable string is silent until it is deafening.
+	std::printf("\nSTABILITY: all eighty-eight notes, struck at twelve metres per second, run for\n");
+	std::printf("twelve seconds. The last second must be quieter than the first.\n");
+	{
+		int faults = 0;
+		double worst = 0.0;
+		int worstNote = 0;
+		for (int midi = 21; midi <= 108; midi++) {
+			PianoString s;
+			s.setSampleRate((float) SR);
+			s.setNote((float) midi);
+			s.hit(12.f);
+			double first = 0.0, last = 0.0;
+			const int n = (int) (12.0 * SR);
+			bool finite = true;
+			for (int i = 0; i < n; i++) {
+				const float y = s.process();
+				if (!std::isfinite(y)) {
+					std::printf("  %s: not a number at %.3f s\n", noteName(midi), i / SR);
+					finite = false;
+					faults++;
+					break;
+				}
+				if (i < (int) SR)
+					first = std::max(first, (double) std::fabs(y));
+				if (i > n - (int) SR)
+					last = std::max(last, (double) std::fabs(y));
+			}
+			if (!finite)
+				continue;
+			const double ratio = last / std::max(first, 1e-30);
+			if (ratio > worst) {
+				worst = ratio;
+				worstNote = midi;
+			}
+			if (ratio > 1.0) {
+				std::printf("  %s GREW: first %.3e, last %.3e\n", noteName(midi), first, last);
+				faults++;
+			}
+		}
+		std::printf("  %d faults. The worst ratio of last second to first is %.2e, at %s.\n",
+			faults, worst, noteName(worstNote));
+	}
+
+	std::printf("\nDone. Phase 3 is the choir: two or three strings a note, coupled at a bridge,\n");
+	std::printf("and the measurement it has to produce is the double decay.\n");
 	return 0;
 }

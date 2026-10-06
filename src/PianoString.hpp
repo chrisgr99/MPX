@@ -1,5 +1,6 @@
 #pragma once
-/** ONE PIANO STRING, physically modelled. Phase 1 of docs/piano-model.md.
+/** ONE PIANO STRING AND THE HAMMER THAT STRIKES IT, physically modelled. Phases 1 and 2 of
+docs/piano-model.md.
 
 NO RACK IN HERE, as with the guitar's string and the performer: it builds into a command-line
 bench that measures it — the frequency of every partial, the stretch fitted to them, how long each
@@ -37,13 +38,38 @@ amount of stiffness and a decay in seconds, and those are the wrong questions to
 	by exactly as much as the read sharpens them.
 
 	THE DECAY IS TWO NUMBERS, NOT ONE. How long the fundamental takes to fall sixty decibels, and
-	how much faster the eighth partial does. A loop closed through a lowpass cannot make its upper
-	partials ring LONGER than one-over-n, which is a real limit and not a shortcoming: a piano's
-	high partials die faster than that, so the model is on the right side of it.
+	the power by which the partials above it die faster.
 
-WHAT IS NOT HERE YET. The hammer is phase 2 and this string is struck with a stand-in, a plain
-triangle as the guitar's pick leaves. One string is one string: the choir of two or three coupled
-at a bridge is phase 3, the whole board phase 4, the dampers and pedals phase 5. */
+AND A FELT HAMMER, WHICH IS WHAT MAKES IT A PIANO AND NOT A HARP.
+
+	THE STRING IS SPLIT AT THE STRIKE POINT, which is the structural price of having a hammer at
+	all. A hammer is not a shape put into a string; it is a mass in contact with it for a
+	millisecond or two, pushing while the string pushes back. To work that out there has to be a
+	PLACE on the string where the pushing happens, so the one loop of phase 1 becomes two
+	sections — strike point to the agraffe, strike point to the bridge — meeting at a junction
+	where the force goes in. The round trip is the same length through the same filters, so every
+	number phase 1 fitted still holds.
+
+	AND THE MISSING PARTIALS THEN HAPPEN RATHER THAN BEING ARRANGED. A mode with a node at the
+	strike point cannot be moved by a force applied there, so striking an eighth of the way along
+	leaves the eighth partial and the sixteenth all but absent — which is true of a real piano,
+	and is one reason the strike point is where it is. Phase 1's placeholder faked this with the
+	corner of a triangle; now it is a consequence of where the force enters.
+
+	FELT IS A NONLINEAR SPRING, and that is the whole reason for the trouble. The force it returns
+	goes as its compression raised to a power of between two and three, so a harder blow
+	compresses it further, which makes it STIFFER, which SHORTENS the contact and puts the energy
+	higher up the spectrum. It is why a piano brightens when it is played harder rather than only
+	getting louder, and no envelope or filter reproduces it.
+
+	SOLVED IMPLICITLY, EVERY SAMPLE. The force depends on how far the felt is compressed, which
+	depends on where the string has moved to, which depends on the force, all within one sample.
+	Done explicitly — with last sample's string position — it is wrong at a whisper and unstable
+	at full force. It is instead solved as one scalar equation per sample, which has exactly one
+	root and is reached by Newton's method in a handful of steps from any start.
+
+WHAT IS NOT HERE YET. One string is one string: the choir of two or three coupled at a bridge is
+phase 3, the whole board phase 4, the dampers and pedals phase 5. */
 #include <vector>
 
 namespace px {
@@ -58,6 +84,35 @@ float pianoInharmonicity(float midi);
 /** HOW LONG THE FUNDAMENTAL OF A NOTE RINGS, damper up, in seconds to fall sixty decibels: tens of
 seconds in the bass, a fraction of one at the top. */
 float pianoDecaySeconds(float midi);
+
+/** THE STRING'S WAVE IMPEDANCE, in kilograms per second: its mass per unit length times the speed
+waves travel along it. This is what decides how hard the string pushes back at the hammer, and so
+how long the two stay in contact. A few kilograms per second in the bass, a fraction of one at the
+top, where the strings are thin and short. */
+float pianoImpedance(float midi);
+
+/** HOW MANY STRINGS THE NOTE HAS: one in the bottom octave, two for a stretch above it, three from
+the bass bridge upward. The hammer needs this even when only one string is modelled, because the
+strings of a note resist it together and so decide how long the contact lasts. */
+int pianoStringsPerNote(float midi);
+
+/** THE HAMMER'S MASS, in kilograms: about eleven grams in the bass falling to about four at the
+top, which is most of why the treble speaks so much more quickly. */
+float pianoHammerMass(float midi);
+
+/** THE POWER THE FELT'S FORCE GOES AS. Between two and three, rising toward the treble, where the
+felt is harder and thinner. The nonlinearity itself is what brightens a piano under a harder blow;
+this number is how sharply. */
+float pianoFeltPower(float midi);
+
+/** THE FELT'S STIFFNESS, in newtons per metre raised to that power. Set by measurement rather than
+quoted: it is whatever makes the contact last as long as a real hammer's does, which the bench
+reports directly. */
+float pianoFeltStiffness(float midi);
+
+/** WHERE ALONG THE STRING THE HAMMER LANDS, as a fraction of the speaking length from the agraffe.
+About an eighth for most of the compass, and a smaller fraction at the top. */
+float pianoStrikeFraction(float midi);
 
 
 struct PianoString {
@@ -101,12 +156,32 @@ struct PianoString {
 	loop actually settled for rather than what it was told. */
 	void setDecayExponent(float power);
 
-	/** STRUCK, for now, as a guitar's string is picked: the string's own shape when it is let go,
-	a triangle with its apex at the strike point. A PLACEHOLDER, and a visible one — the whole
-	point of phase 2 is that a felt hammer is not this. What it does have right is the strike
-	point, a seventh or so of the way along, which is why the seventh and ninth partials are weak
-	on a real piano: a triangle cornered at a point has no partial with a node there. */
-	void strike(float level, float position = 0.14f);
+	/** THE HAMMER'S FELT, overriding the curves. Not positive puts the curve back. */
+	void setFeltStiffness(float newtonsPerMetreToThePower);
+	void setFeltPower(float power);
+	void setHammerMass(float kilograms);
+
+	/** STRUCK, by the hammer, at this many metres per second.
+	
+	A SPEED AND NOT A LEVEL, because that is the only thing a pianist's finger actually decides and
+	everything else follows from it: how loud, how bright, how long the felt stays on the string.
+	About a fifth of a metre per second is as quiet as a note can be made to speak, and five or six
+	is as hard as anyone can hit it.
+	
+	A RINGING STRING IS NOT STOPPED. The hammer meets whatever the string is already doing and
+	pushes against it, which is what makes a note restruck before its damper has landed sound as it
+	does on a piano. */
+	void hit(float metresPerSecond);
+
+	/** Whether the felt is still on the string. */
+	bool inContact() const { return hammerOn; }
+	/** How long the last blow's contact lasted, in milliseconds — the measurement phase 2 lives or
+	dies by, since it must fall from about four at a whisper toward one at full force. */
+	float contactMilliseconds() const { return (float) (1000.0 * contactSamples / rate); }
+	/** The force the felt last returned, in newtons. */
+	float hammerForce() const { return (float) lastForce; }
+	/** How many strings the note has, which the hammer pushes together even while one is modelled. */
+	int stringsPerNote() const { return strings; }
 
 	/** Adds to what goes into the string at the bridge on the next sample: another string's
 	vibration, arriving through the bridge. */
@@ -131,6 +206,10 @@ struct PianoString {
 	/** How far the fitted loss misses that law at its worst partial, as a percentage of that
 	partial's own decay time. */
 	float decayFitError() const { return (float) lossError; }
+	/** The whole samples from the strike point to the agraffe and back. Nought when the note is
+	too short to divide: at the top of the compass a period is a dozen samples, and there is no
+	room for a junction in it. */
+	int strikeSplit() const { return leftDelay; }
 
 private:
 	// ---- what it was asked for ----
@@ -156,14 +235,30 @@ private:
 	bool dirty = true;
 	// What the chain was fitted for, so a cent of detuning does not refit it.
 	double fitFreq = 0.0, fitB = -1.0, fitRate = 0.0, fitPower = -1.0, fitDecay = -1.0;
+	int fitSplit = -1;
 
-	// ---- the loop ----
-	// A POWER OF TWO AND NO LONGER THAN THE NOTE NEEDS. Eighty-eight notes three strings deep is
-	// two hundred and sixty-odd of these, and a fixed line long enough for the bottom A would
-	// spend eight megabytes on strings that are four inches long.
-	std::vector<float> line;
-	unsigned mask = 0;
-	unsigned write = 0;
+	// ---- the hammer ----
+	double feltKAsked = -1.0, feltPAsked = -1.0, massAsked = -1.0;
+	double feltK = 1e10, feltP = 2.5, hammerMass = 0.008, impedance = 2.0;
+	int strings = 3;
+	double hammerAt = 0.0, hammerSpeed = 0.0, stringAt = 0.0;
+	double lastForce = 0.0;
+	bool hammerOn = false;
+	int contactSamples = 0, hammerSamples = 0;
+
+	// ---- the two sections ----
+	// A POWER OF TWO EACH AND NO LONGER THAN THE NOTE NEEDS. Eighty-eight notes three strings deep
+	// is two hundred and sixty-odd of these, and lines long enough for the bottom A would spend
+	// megabytes on strings that are four inches long.
+	//
+	// EACH LINE IS A SECTION'S WHOLE ROUND TRIP — out to the end and back — rather than a pair of
+	// one-way lines. The two are equivalent and this is half the memory and half the arithmetic;
+	// the end's reflection is applied once where the wave comes back.
+	std::vector<float> rightLine, leftLine;
+	unsigned rightMask = 0, leftMask = 0;
+	unsigned rightWrite = 0, leftWrite = 0;
+	int leftDelay = 0;        // whole samples: strike point to the agraffe and back
+	int bridgeTap = 0;        // where in the right line the wave is at the bridge
 
 	static const int MAX_STAGES = 48;
 	float chainIn[MAX_STAGES] = {}, chainOut[MAX_STAGES] = {};
@@ -174,11 +269,8 @@ private:
 	float driven = 0.f;
 	float dcIn = 0.f, dcOut = 0.f;
 
-	// The strike, played into the loop a sample at a time over one period.
-	std::vector<float> excitation;
-	int excitePos = 0;
-
 	void tune();
+	void setupHammer();
 	void fitChain();
 	void solveLoss();
 	void refreshGain();

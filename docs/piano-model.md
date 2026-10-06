@@ -156,9 +156,77 @@ The hammer is phase 2, and the string is struck with a visible placeholder: a pl
 
 ### Phase 2 — the hammer
 
-A felt hammer with a nonlinear characteristic, in contact with the string for as long as the physics says and no longer. Struck at a point along the string, which is what suppresses the partial whose node is near the strike point — the reason the seventh and ninth partials are weak on a real piano.
+**Done.** The hammer is in `PianoString` with the string, because the two cannot be separated: they are in contact, pushing against each other, for a millisecond or two at the start of every note.
 
-**Done when** contact time falls from about four milliseconds at a whisper to about one at full force, the spectral centroid rises with blow speed, and the partials near the strike point are missing.
+#### The string had to be split, and that is the structural price of having a hammer at all
+
+A hammer is not a shape put into a string. It is a mass in contact with it, pushing while the string pushes back, so there has to be a **place** on the string where the pushing happens. Phase 1's single loop therefore becomes two sections — strike point to the agraffe, strike point to the bridge — meeting at a junction where the force goes in.
+
+**The round trip is the same length through the same filters, so every number phase 1 fitted still holds.** Two sections of the same string have the same impedance, which makes the junction transparent when nothing is pushing on it: the wave from one side goes straight out the other. The left section is a whole number of samples, exact and with no dispersion of its own, so all the interpolating stays in the right one and the delay solve only had to learn to subtract the left section's length.
+
+Each section is one delay line carrying its whole round trip — out to the end and back — rather than a pair of one-way lines. The two are equivalent and this is half the memory and half the arithmetic.
+
+**A rigid end turns the sign over, and there are two of them**, so a full round trip comes back the way it started, as phase 1's loop did. Where the note is too short to divide there is no second inversion to pair with, so that one is left out. Getting this wrong inverted once a round trip, which puts the resonances halfway between where they belong: A6 came out twenty cents flat and the top C seventy-two.
+
+**At the top of the compass it cannot be divided at all.** The top C's period is eleven samples and a tenth of that is one. Those notes keep phase 1's single loop with the force fed straight into it, which costs nothing real — the first partial with a node under the hammer would be the tenth, at forty kilohertz. The junction's own arithmetic has to be skipped there too, not merely given a zero-length section: what goes back into the line is the junction's motion less what arrived from each side, and with nothing arriving from the other side that is the force and nothing else. The circulating wave was being thrown away and the top octave came out as a whine at forty hertz.
+
+#### The missing partials now happen rather than being arranged
+
+A mode with a node at the strike point cannot be moved by a force applied there. Phase 1's placeholder faked this with the corner of a triangle; now it is simply what the junction cannot excite. A3 struck an eighth of the way along gives the eighth partial 71 dB below the fundamental and the sixteenth 106 dB below, with their neighbours at 60.
+
+#### Felt is a nonlinear spring, and that is the whole point
+
+The force it returns goes as its compression raised to a power of between two and three, rising toward the treble where the felt is harder and thinner. A harder blow compresses it further, which makes it **stiffer**, which **shortens** the contact, which puts a briefer and therefore brighter pulse into the string. It is why a piano brightens when played harder rather than only getting louder, and no envelope or filter reproduces it.
+
+#### Solved implicitly, every sample
+
+The design note named this as the part most likely to take several attempts. The reason is a circle inside a single sample: the force depends on how far the felt is compressed, which depends on where the string has moved to, which depends on the force. Taken explicitly — compressing against where the string was last sample — it is inaccurate at a whisper and unstable at full force, because at full force the string moves a long way in one sample.
+
+Written out, the sample's updates reduce to one scalar equation. The hammer loses speed by the force over its mass and moves by its new speed; the string's junction moves by the waves arriving plus its share of the force over twice the impedance; so the compression left over is `u = u0 - cF`, where `u0` is how far the two would overlap with no force between them and `c` collects the hammer's inertia and the string's yielding. The felt says `F = K u^p`. The left side rises with F and the right side falls, both continuously, so they cross exactly once, and Newton's method reaches it in a handful of steps from any start with a derivative that is always positive. It did not take several attempts.
+
+#### A single string has to know how many strings the note has
+
+The hammer pushes all of a note's strings at once, so they resist it together: three strings are three times as hard to shift, the hammer's momentum drains three times as fast, and the contact is correspondingly shorter. Modelled against one string where a real hammer pushes three, the contact came out twice as long as it should. So the hammer feels the whole choir's impedance and the one string modelled takes its own share of the force — which also makes it a correct member of the choir phase 3 will build around it, rather than an approximation to be undone.
+
+#### The impedance curve was wrong by a factor of fourteen, and the hammer caught it
+
+The string's wave impedance is its mass per unit length times the speed waves travel along it, and it decides how hard the string pushes back. Guessed at, it came out falling from four kilograms per second at the bottom to a quarter at the top, on the reasoning that treble strings are short and thin. Worked out from the stringing instead — the speed is twice the speaking length times the pitch, the mass per unit length is the wire's cross-section times the density of steel — it is very nearly flat:
+
+| note | length m | diameter mm | speed m/s | kg/m | Z |
+|---|---|---|---|---|---|
+| A0 | 1.20 | wound | 66 | 0.055 | 3.6 |
+| A1 | 1.05 | wound | 116 | 0.020 | 2.3 |
+| A2 | 0.95 | 1.20 | 209 | 0.0089 | 1.9 |
+| A3 | 0.72 | 1.05 | 317 | 0.0068 | 2.2 |
+| A4 | 0.40 | 0.95 | 352 | 0.0056 | 2.0 |
+| A5 | 0.22 | 0.90 | 387 | 0.0050 | 1.9 |
+| A6 | 0.115 | 0.85 | 405 | 0.0045 | 1.8 |
+| C8 | 0.05 | 0.80 | 419 | 0.0039 | 1.6 |
+
+Treble strings are only a little thinner, and what they lose in mass they make up in speed. A maker aims for an even impedance so the tone is even, and the numbers show them succeeding. The wrong curve was not caught by inspection: it let the string slide out from under the felt, and A6's contact came out at two and a sixth milliseconds where a real one is under one, with no stiffness of felt able to shorten it.
+
+#### The felt's stiffness is set by measurement, because it cannot be looked up
+
+Its units depend on the felt's power, so the number means nothing on its own and cannot be compared between registers or against anything published. What can be compared is how long the felt stays on the string. So the stiffness curve was chosen to put the contact times where the measurements say, and nothing else went into it.
+
+A first attempt calibrated each anchor note separately against a hand-picked target, and produced a stiffness curve with a tenfold spike at A2 — which is not defensible, because a hammer's felt hardens smoothly toward the treble. The curve is smooth and the contact times it gives were then checked across the whole compass.
+
+| note | strings | contact at 0.2 m/s | at 1.5 | at 6.0 | peak force at 6.0 | centroid 0.2 → 6.0 |
+|---|---|---|---|---|---|---|
+| A1 | 2 | 4.50 | 3.90 | 3.73 | 50 N | 345 → 827 Hz |
+| A3 | 3 | 3.17 | 2.19 | 1.79 | 71 N | 385 → 881 Hz |
+| A4 | 3 | 3.10 | 1.79 | 1.46 | 78 N | 491 → 1093 Hz |
+| A6 | 3 | 1.42 | 0.77 | 0.65 | 54 N | 1719 → 2461 Hz |
+
+Milliseconds. A real hammer is on the string for about four milliseconds in the bass and about one at the top, falling by something like a factor of two from the quietest blow to the loudest, with peak forces from a newton or two up to a hundred.
+
+**The centroid is the measurement phase 2 lives or dies by**, and phase 0 set it up to catch exactly this. The plucked string it was measured against gives 571 Hz at every level, because a fixed excitation scaled by how hard it was hit cannot brighten. The hammer more than doubles the centroid across the dynamic range.
+
+**In the bass the contact barely shortens with force, and that is not a shortcoming.** A single heavy hammer on a single slow string stays on until the string's own reflection returns from the agraffe and throws it off, which for the bottom A is four and a half milliseconds after the blow however hard it was struck. The brightening is there regardless, because it comes from the felt rather than from the contact's end.
+
+#### Nothing anywhere may grow
+
+All eighty-eight notes, struck at twelve metres per second — harder than anyone can play — and run for twelve seconds. The worst ratio of the last second's peak to the first's is seven parts in a thousand. This is a regression guard rather than a measurement, and worth re-running after any change to the loop, because an unstable string is silent until it is deafening. It is part of `make pianobench`.
 
 ### Phase 3 — the choir
 
@@ -198,7 +266,7 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 ## Known hard parts, named now
 
-**The hammer–string loop.** The hammer's force depends on the string's position and the string's response depends on the hammer's force, in the same sample. Done naively it is unstable at high velocity. This is the part most likely to take several attempts.
+**The hammer–string loop.** Done, in phase 2, and in one attempt rather than several: written out, the sample's updates reduce to a single scalar equation with exactly one root, which Newton's method reaches from any start. The trouble that was expected never arrived; the trouble that did arrive was elsewhere, in the impedance curve and in the sign of a reflection.
 
 **Tuning against dispersion.** Done, in phase 1, and it was not hard once the fit was asked the right question: rather than correcting for the chain's delay, the fit solves for where the loop will actually ring and compares that against the stiff string. Everything the implementation does to the partials is then inside the error being minimised. The loss filter's delay belongs to the same problem and is in the same solve.
 
