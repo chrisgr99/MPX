@@ -359,10 +359,12 @@ Every note that answers is accounted for by a partial it shares with C3, and fin
 
 | A3 | first T60 | then T60 |
 |---|---|---|
-| on the board | 3.62 | 6.86 |
-| alone | 3.46 | 14.18 |
+| on a board with nothing damped | 2.44 | 33.83 |
+| alone | 2.79 | 20.63 |
 
-The initial fall is a little slower, because the loaded bridge is harder to shift, so the note keeps rather more of its first energy. **And the aftersound is halved**, which is the more interesting half of it. A note alone has nowhere to lose its out-of-step energy to and rings on at its own internal rate; a note on a board full of undamped strings leaks it into every string that shares a partial with it — the halo above is where it goes. Sympathetic resonance is not free, and this is its price measured. On a real piano it is the price of the sustain pedal, and phase 5, which puts the dampers back on the other strings, should hand most of it back.
+**The aftersound is half as long again on the board** — the instrument becomes a reservoir. A3 puts energy into every string that shares a partial with it, and those strings put it back, so the note is fed from the room it is filling. The initial fall is barely touched, because that part of the note is over before any of this has had time to happen. It is what a pianist hears when the pedal goes down.
+
+**This paragraph said the opposite when phase 4 was written**, and the correction belongs here rather than tidied away: it reported that the board *halved* the aftersound and that sympathetic resonance was a cost the note paid. That was a fault in the reading and not in the model. The old measurement fitted a straight line across the beat plateau, which on a board full of ringing strings is a quite different shape from the one a lone note makes, and phase 5 only found it because the same measurement started disagreeing with itself about the sustain pedal. See phase 5 for what the reading does now.
 
 #### What it costs
 
@@ -391,9 +393,108 @@ With both fixed, the worst partial of any note in the compass is between nought 
 
 ### Phase 5 — dampers and pedals
 
-Felt dampers that take time to land and take time to lift, so a note struck again before its damper has arrived behaves as it does on a piano. The sustain pedal as a continuous quantity — half-pedalling is a damper resting lightly on a string, not a switch. The soft pedal as what it physically is: the action shifted so the hammer strikes fewer strings of the choir and on a less-used part of its felt, which changes the tone and not only the level. Sostenuto if it earns its place.
+**Done.** The damper is in `PianoString`, its travel in `PianoNote`, and the keys and the three pedals in `PianoBoard`.
 
-**Done when** a chord held silently and then struck elsewhere rings sympathetically, and a pedal moved part way gives a part-way result.
+#### The damper is a three-tap symmetric filter, and that is not an implementation detail
+
+Everything else in a string's loop is fitted once, because the loop's length is worked out to a fraction of a sample from the phase delay of everything in it. A damper is the one thing in there that **changes while the note sounds** — so a filter whose phase moved as it was adjusted would detune the note every time the pedal moved, and half-pedalling would be a glissando.
+
+A symmetric filter of three taps delays every frequency by exactly one sample **whatever its coefficients**. So the damper can be pressed and lifted continuously and the tuning never hears about it; the loop accounts for that one sample once and never again. Its magnitude is its centre tap plus twice its outer pair times the cosine, which is a gentle lowpass — felt takes the top off a string faster than the bottom, which is why a damped note is a thud and not a click. And it cannot gain: its largest magnitude is at DC and is what is asked for there, which is at most one.
+
+Two numbers describe a damper, both per note: how long a fully pressed damper takes to kill the fundamental, and how long to kill the top. A quarter of a second and a tenth at the bottom of the compass, down to a twelfth and a thirtieth at the top. Longer in the bass is not a concession — the bottom strings carry pounds of moving steel, and a damper that killed them in a tenth of a second would have to be a clamp.
+
+**The top two octaves have no damper**, and not as an economy: those strings have stopped before a damper could reach them. It is why the top of a piano hangs in the air after everything below it has been stopped.
+
+#### It takes time to land, and that is a ramp rather than a smoothing
+
+A damper is a lever with a weight on the end being moved by a finger or a foot, so it travels at a roughly steady speed and **arrives**. An exponential approach would never quite land, so a note would never quite stop and the model would have a floor of mud under everything. Forty-five milliseconds to land and twenty to lift, because lifting is driven and landing is the damper's own weight falling back.
+
+| after release | damper at | the note's own fundamental | the whole instrument |
+|---|---|---|---|
+| 20 ms | 0.44 | -6.0 dB | -3.6 dB |
+| 40 ms | 0.89 | -17.5 | -11.5 |
+| 60 ms | 1.00 | -32.1 | -16.5 |
+| 100 ms | 1.00 | -63.4 | -20.7 |
+| 160 ms | 1.00 | -89.5 | -24.7 |
+
+**The two columns differ, and the difference is the point.** What is left after the damper has done its work is not this note at all: the top two octaves have no dampers and are still ringing with what it put into them.
+
+**The damper is already clear by the time the hammer arrives**, which is how the action is built — the key lifts the damper about half way down and the hammer is thrown from much further on. Letting it travel at its usual pace from the instant of the blow would put felt on the string through the whole attack.
+
+#### Half a pedal is a position, not a blend
+
+The sustain pedal is a continuous quantity because that is what it is: at nought every damper rests its whole weight, at one every damper is clear, and half way is every damper **resting lightly**. A note released under it dies at a rate in between.
+
+A4 struck and held a second; in one run the key is then let go and in the other it is not, both measured over the same stretch afterwards:
+
+| sustain | held on | released | times faster |
+|---|---|---|---|
+| 0.00 | 3.21 | 0.19 | 17.3 |
+| 0.25 | 3.22 | 0.27 | 12.1 |
+| 0.50 | 3.24 | 0.31 | 10.4 |
+| 0.75 | 3.34 | 0.58 | 5.8 |
+| 1.00 | 5.67 | 5.67 | 1.0 |
+
+**That control is the whole measurement.** Comparing the decay before the release with the decay after it compares two different parts of a curve that already has two rates in it, and reports the double decay of phase 3 as though the damper had done it: with the pedal fully down, where nothing touches the string at all, it claimed the note died three times *slower* after the release.
+
+#### The gate: a chord held silently and struck elsewhere
+
+C4, E4 and G4 pressed slowly enough that no hammer reaches a string, then C2 struck hard and let go. C4, E4 and G4 are C2's fourth, fifth and sixth partials.
+
+| note | held silently | not held | difference |
+|---|---|---|---|
+| C4 | 1.23e-02 | 2.34e-07 | 94.4 dB |
+| E4 | 1.34e-02 | 2.65e-07 | 94.1 dB |
+| G4 | 2.12e-02 | 3.32e-07 | 96.1 dB |
+
+The held strings are still sounding two seconds after the note that woke them was itself stopped. Nothing was struck but C2, and there is still no resonance code anywhere: the dampers were simply not on those three.
+
+#### The sustain pedal is not a sustain control
+
+What it does to a note already sounding — whose own damper is off either way, since its key is held — is let every other string in the instrument join in.
+
+| A3, with the rest of the board | first T60 | then T60 |
+|---|---|---|
+| damped | 2.77 | 20.71 |
+| free | 2.44 | 33.83 |
+
+A3 by itself, with no other strings at all, is 2.79 and 20.63 — which is what a board full of damped strings comes to as well, since a damped string can neither take anything nor give anything back. Lift the dampers and the aftersound is half as long again, because every string sharing a partial with A3 is holding some of it and handing it back. **The initial fall barely moves**: that part of the note is over before any of this has had time to happen. The pedal does nothing to the attack and everything to what follows it, which is exactly what it is used for.
+
+#### The soft pedal, which is not a volume control
+
+| soft | peak | contact | centroid | peak force |
+|---|---|---|---|---|
+| 0.0 | 25.58 dB | 1.875 ms | 953 Hz | 23.33 N |
+| 0.5 | 25.29 | 1.938 | 854 | 22.24 |
+| 1.0 | 22.51 | 2.312 | 717 | 18.57 |
+
+Quieter **and** darker **and** longer in contact, which is three changes a gain control cannot make.
+
+**The outer string falls off the edge of the hammer.** The action slides sideways by about the space between two strings, and a hammer for a three-string note is only just wide enough for them, so the outermost ends up outside the felt altogether. That is the una corda's name and most of its effect.
+
+**It is modelled as contact lost and not as distance gained**, which corrects a first attempt. That one gave the outer string a head start — a distance the hammer had to travel before touching it — and the distance needed to make any difference was a millimetre and more. The geometry says otherwise: a hammer crown is curved on a radius of a dozen millimetres or so, and sliding a string a millimetre and a half round that drops it by seven hundredths of one, which is nothing beside the third of a millimetre the felt compresses anyway. The string is not lowered. It is left behind. Felt with less of itself in contact is less stiff, so what the pedal takes from a string is its share of the hammer's stiffness, falling to none when it is clear of the edge.
+
+And the felt it is all struck with is softer, because the part of the hammer that comes round has not been played in and compacted. The missed string is not silent either — it is left to be driven through the bridge by its neighbours, which is much of why the una corda sounds veiled rather than merely soft.
+
+#### Sostenuto
+
+What is held when the pedal goes down stays held, and nothing played afterwards is caught — the mechanism has already moved under the dampers that were up and cannot reach the ones that were down. C4 held and the pedal pressed, then C4 released and E4 struck and released: two seconds later C4's damper is still at nought and the note is sixty decibels above E4, whose damper has landed.
+
+#### The bench grew a way to run one phase
+
+It is five phases deep and takes minutes, most of it spent building whole instruments and listening to them decay for half a minute. `make pianobench ARGS=5` runs phase 5 alone.
+
+#### And the measurement of the double decay had to be rebuilt, twice
+
+This is the third attempt and the reason is worth recording, because each failure looked like a result.
+
+**Looking for the bend lands in the hole.** Where the in-phase part has decayed to the level of the out-of-step part the two cancel, and the note drops twenty decibels and comes back within half a second. A two-line fit that puts its knee wherever it fits best puts it in that null every time, and reported the second rate as the faster one on every note.
+
+**Fitting over fixed stretches of level drags across the beat.** Between the fast fall and the null the detuned strings come back into step for a moment and the level stops falling — it rises by a decibel and sits there for a second — and a line fitted from three decibels below the peak to twenty-five below runs straight through that plateau and comes out three times too shallow. This one went unnoticed until phase 4 made the three strings of a note share one design, as they should; before that their small differences blurred the beat into something a straight line could survive. It is what produced phase 4's wrong claim about the aftersound.
+
+So each rate is now read where it plainly owns the curve, and by a crossing rather than a fit: the first rate is how long the first fifteen decibels take, which is always inside the stretch the in-phase mode owns, and the second is the time between fifty and seventy decibels down, taking the **last** crossing of each because the null and the beat can carry the trace back and forth across a level. **The control is what says the method is sound**: forced to a single string, where there is only one rate to find, the two measurements agree to the last digit on every note.
+
+The second rate is still the shakiest number in the bench and is worth distrusting by a factor of about two either way. It is read from a stretch of tail with a null in the middle of it and the beat going on either side.
 
 ### Phase 6 — the soundboard
 

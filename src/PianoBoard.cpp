@@ -73,14 +73,93 @@ void PianoBoard::hit(int midi, float metresPerSecond) {
 		setup();
 	if (!inCompass(midi))
 		return;
+	keyDown[midi - LOWEST] = true;
+	refreshDampers();
+	// THE DAMPER IS ALREADY CLEAR BY THE TIME THE HAMMER ARRIVES, which is how the action is
+	// built: the key lifts the damper when it is about half way down and the hammer is thrown
+	// from much further on. Letting the damper travel at its usual pace from the instant of the
+	// blow would put felt on the string through the whole attack and take the note's edge off.
+	notes[midi - LOWEST].settleDamper();
 	notes[midi - LOWEST].hit(metresPerSecond);
 	asleep[midi - LOWEST] = false;
+}
+
+
+void PianoBoard::hold(int midi) {
+	if (dirty)
+		setup();
+	if (!inCompass(midi))
+		return;
+	keyDown[midi - LOWEST] = true;
+	dampersStale = true;
+	// NOT WOKEN. A string with nothing on it and nothing arriving is still silent; it will wake
+	// when the bridge gives it something, which is exactly the point of holding it.
+}
+
+
+void PianoBoard::release(int midi) {
+	if (dirty)
+		setup();
+	if (!inCompass(midi))
+		return;
+	keyDown[midi - LOWEST] = false;
+	dampersStale = true;
+}
+
+
+void PianoBoard::setSustain(float amount) {
+	const double a = std::fmax(0.0, std::fmin((double) amount, 1.0));
+	if (a != sustainAt) {
+		sustainAt = a;
+		dampersStale = true;
+	}
+}
+
+
+void PianoBoard::setSostenuto(bool down) {
+	if (down == sostenutoDown)
+		return;
+	sostenutoDown = down;
+	// WHAT IS CAUGHT IS WHAT WAS HELD AT THAT MOMENT, which is the whole of the pedal. Nothing
+	// played afterwards is affected, because the mechanism has already moved under the dampers
+	// that were up and cannot reach the ones that were down.
+	for (int i = 0; i < NOTES; i++)
+		caught[i] = down && keyDown[i];
+	dampersStale = true;
+}
+
+
+void PianoBoard::setSoft(float amount) {
+	const double a = std::fmax(0.0, std::fmin((double) amount, 1.0));
+	if (a != softAt) {
+		softAt = a;
+		for (int i = 0; i < NOTES; i++)
+			notes[i].setSoftPedal((float) softAt);
+	}
+}
+
+
+/** WHAT EACH DAMPER IS BEING ASKED TO DO, which is the one place all three pedals and the keys
+meet. A damper is off its strings if the key is down, or the sustain pedal is holding every damper
+off, or the sostenuto pedal caught this one; otherwise it rests with whatever weight the sustain
+pedal is not taking. The top two octaves have no damper to ask. */
+void PianoBoard::refreshDampers() {
+	dampersStale = false;
+	for (int i = 0; i < NOTES; i++) {
+		const double want = (keyDown[i] || caught[i]) ? 0.0 : 1.0 - sustainAt;
+		notes[i].setDamperTarget((float) want);
+	}
 }
 
 
 void PianoBoard::silence() {
 	if (dirty)
 		setup();
+	for (int i = 0; i < NOTES; i++) {
+		keyDown[i] = false;
+		caught[i] = false;
+	}
+	refreshDampers();
 	for (int i = 0; i < NOTES; i++) {
 		notes[i].silence();
 		asleep[i] = true;
@@ -94,6 +173,18 @@ void PianoBoard::silence() {
 float PianoBoard::process() {
 	if (dirty)
 		setup();
+	if (dampersStale)
+		refreshDampers();
+
+	// A DAMPER ON THE MOVE KEEPS ITS NOTE AWAKE. A note that has gone quiet and is then asked for
+	// its damper has nothing to do; but a note whose damper is still travelling has to be run, or
+	// it would arrive at its new position without ever having passed through the positions
+	// between, and a note released under a half pedal would stop as if it had been released under
+	// none.
+	for (int i = 0; i < NOTES; i++) {
+		if (asleep[i] && notes[i].damperAt() != notes[i].damperGoingTo())
+			notes[i].settleDamper();
+	}
 
 	// ---- everything up to the bridge, for the notes that are doing anything ----
 	//

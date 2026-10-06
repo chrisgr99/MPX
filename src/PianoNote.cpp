@@ -44,6 +44,47 @@ void PianoNote::setBridgeImpedance(float times) {
 	}
 }
 
+/** HOW LONG A DAMPER TAKES TO ARRIVE AND TO GET OUT OF THE WAY, in seconds.
+
+A RAMP AND NOT A SMOOTHING, because a damper is a lever with a weight on the end of it being moved
+by a finger or a foot, and what that gives is a travel at a roughly steady speed with a definite
+arrival. An exponential approach would never quite land, so a note would never quite stop and the
+model would have a floor of mud under everything.
+
+SLOWER TO LAND THAN TO LIFT, which is how the mechanism is built: lifting is driven, by the key or
+the pedal, and landing is the damper's own weight falling back. */
+static const double DAMPER_LAND_SECONDS = 0.045;
+static const double DAMPER_LIFT_SECONDS = 0.020;
+
+
+void PianoNote::setDamperTarget(float pressure) {
+	if (dirty)
+		setup();
+	wanted = pianoHasDamper((float) note)
+		? std::fmax(0.0, std::fmin((double) pressure, 1.0)) : 0.0;
+}
+
+
+void PianoNote::settleDamper() {
+	if (dirty)
+		setup();
+	if (damper == wanted)
+		return;
+	damper = wanted;
+	for (int i = 0; i < count; i++)
+		strings[i].setDamperPressure((float) damper);
+}
+
+
+void PianoNote::setSoftPedal(float amount) {
+	const double a = std::fmax(0.0, std::fmin((double) amount, 1.0));
+	if (a != soft) {
+		soft = a;
+		dirty = true;
+	}
+}
+
+
 void PianoNote::setFeltStiffness(float k) {
 	feltKAsked = k;
 	dirty = true;
@@ -85,6 +126,37 @@ void PianoNote::setup() {
 	feltP = (feltPAsked > 0.0) ? feltPAsked : (double) pianoFeltPower((float) note);
 	feltK = (feltKAsked > 0.0) ? feltKAsked : (double) pianoFeltStiffness((float) note);
 
+	// THE SOFT PEDAL, WHICH IS TWO CHANGES AND NOT ONE.
+	//
+	// THE OUTER STRING FALLS OFF THE EDGE OF THE HAMMER. The action slides sideways by about the
+	// space between two strings, and a hammer for a three-string note is only just wide enough for
+	// them, so the outermost one ends up outside the felt altogether. That is the una corda's name
+	// and most of its effect.
+	//
+	// SO IT IS MODELLED AS CONTACT LOST AND NOT AS DISTANCE GAINED, which is a correction of the
+	// first attempt. That one gave the outer string a head start — a distance the hammer had to
+	// travel before touching it — and the distance needed to make any difference was a millimetre
+	// and more. The geometry says otherwise: a hammer crown is curved on a radius of a dozen
+	// millimetres or so, and sliding a string a millimetre and a half round that drops it by
+	// seven hundredths of one, which is nothing beside the third of a millimetre the felt
+	// compresses anyway. The string is not lowered. It is left behind.
+	//
+	// Felt with less of itself in contact is less stiff, so what the pedal takes from a string is
+	// its share of the hammer's stiffness, falling to none when it is clear of the edge.
+	//
+	// AND THE FELT IT IS ALL STRUCK WITH IS SOFTER, because the part of the hammer that comes
+	// round is the part that has not been played in and compacted. Softer felt stays on the string
+	// longer and puts less into the upper partials, so the note is darker as well as quieter —
+	// two different changes, which is why a gain control cannot imitate this pedal.
+	for (int i = 0; i < MAX_STRINGS; i++)
+		covered[i] = 1.0;
+	if (count >= 2) {
+		covered[count - 1] = std::fmax(0.0, 1.0 - soft);
+		if (count >= 3)
+			covered[count - 2] = std::fmax(0.0, 1.0 - 0.25 * soft);
+	}
+	feltK *= 1.0 - 0.45 * soft;
+
 	for (int i = 0; i < count; i++) {
 		const double at = (count > 1)
 			? spread * ((double) i / (double) (count - 1) - 0.5) : 0.0;
@@ -125,6 +197,9 @@ void PianoNote::silence() {
 		stringAt[i] = 0.0;
 		force[i] = 0.0;
 	}
+	damper = wanted;
+	for (int i = 0; i < count; i++)
+		strings[i].setDamperPressure((float) damper);
 	hammerOn = false;
 	lastForce = 0.0;
 	envelope = 0.0;
@@ -163,6 +238,17 @@ void PianoNote::advanceStrike() {
 	if (dirty)
 		setup();
 
+	// ---- the damper, on its way to wherever it has been asked to go ----
+	if (damper != wanted) {
+		const double seconds = (wanted > damper)
+			? DAMPER_LAND_SECONDS : DAMPER_LIFT_SECONDS;
+		const double step = 1.0 / (seconds * rate);
+		damper = (wanted > damper) ? std::fmin(damper + step, wanted)
+			: std::fmax(damper - step, wanted);
+		for (int i = 0; i < count; i++)
+			strings[i].setDamperPressure((float) damper);
+	}
+
 	// ---- what has reached each strike point ----
 	double arriving[MAX_STRINGS];
 	for (int i = 0; i < count; i++)
@@ -196,7 +282,10 @@ void PianoNote::advanceStrike() {
 			double sum = 0.0;
 			for (int i = 0; i < count; i++) {
 				const double c = dt / (2.0 * (double) strings[i].impedanceOf());
-				force[i] = solveFelt(was[i] - inertia * total, c, feltK, feltP, force[i]);
+				// Each string presses on as much of the felt as is still over it, which the soft
+				// pedal takes away.
+				force[i] = solveFelt(was[i] - inertia * total, c, feltK * covered[i], feltP,
+					force[i]);
 				sum += force[i];
 			}
 			total = sum;

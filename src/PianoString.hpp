@@ -1,5 +1,5 @@
 #pragma once
-/** ONE PIANO STRING, physically modelled. Phases 1 to 3 of docs/piano-model.md.
+/** ONE PIANO STRING, physically modelled. Phases 1 to 5 of docs/piano-model.md.
 
 THE HAMMER AND THE BRIDGE BELONG TO THE NOTE AND NOT TO THE STRING, and PianoNote has them. One
 hammer strikes all of a note's strings at once and one bridge joins them, so neither can be a
@@ -83,7 +83,20 @@ before they can decide anything:
 	`pushStrike` — the string's share of that force, which closes the junction and sends waves off
 	in both directions.
 	`arrivingAtBridge` — what has reached the bridge. The bridge needs this from every string.
-	`returnFromBridge` — what the bridge sends back, which ends the sample. */
+	`returnFromBridge` — what the bridge sends back, which ends the sample.
+
+AND A DAMPER RESTING ON IT, which is phase 5 and is the one thing in the loop that changes while
+the note sounds.
+
+	WHICH IS WHY IT IS A THREE-TAP SYMMETRIC FILTER AND NOT A POLE. Everything else in this loop
+	is fitted once, because the loop's length is worked out to a fraction of a sample from the
+	phase delay of everything in it — so a filter whose phase changes as it is adjusted would
+	detune the note every time the pedal moved, and half-pedalling would be a glissando. A
+	symmetric filter of three taps delays every frequency by exactly one sample WHATEVER ITS
+	COEFFICIENTS, so the damper can be pressed and lifted continuously and the tuning never
+	hears about it. Its magnitude is its centre tap plus twice its outer pair times the cosine,
+	which is a gentle lowpass: felt takes the top off a string faster than it takes the bottom,
+	which is why a damped note is a thud and not a click. */
 #include <vector>
 
 namespace px {
@@ -132,6 +145,17 @@ float pianoFeltStiffness(float midi);
 /** WHERE ALONG THE STRING THE HAMMER LANDS, as a fraction of the speaking length from the agraffe.
 About an eighth for most of the compass, and a smaller fraction at the top. */
 float pianoStrikeFraction(float midi);
+
+/** HOW FAST A DAMPER STOPS A STRING, in seconds to fall sixty decibels with the damper resting its
+whole weight on it: at the fundamental, and high up. Two numbers, because felt takes the top off a
+string far faster than the bottom — which is why a released key gives a thud and not a click. */
+float pianoDampedSeconds(float midi);
+float pianoDampedSecondsHigh(float midi);
+
+/** WHETHER THE NOTE HAS A DAMPER AT ALL. The top two octaves have none, and not as an economy:
+those strings have stopped before a damper could reach them. It is why the top of a piano rings on
+under everything whatever the pedal is doing. */
+bool pianoHasDamper(float midi);
 
 
 struct PianoString {
@@ -198,6 +222,16 @@ struct PianoString {
 	and it is what makes the detuning real rather than nominal. */
 	void adoptDesign(const PianoString& other);
 
+	/** HOW HARD THE DAMPER IS PRESSING, from nought for lifted clear of the string to one for
+	resting its whole weight on it. Everything between is a real position and not an interpolation
+	between two states: half-pedalling IS a damper resting lightly, and a damper on its way down
+	passes through every value on the way.
+
+	CHANGES NOTHING THAT HAS TO BE RE-FITTED, which is the point of the filter's shape. Two
+	coefficients are worked out and that is all. */
+	void setDamperPressure(float pressure);
+	float damperPressure() const { return (float) damper; }
+
 	void silence();	// ---- one sample, in four parts. See the note at the top of this file. ----
 	/** What has reached the strike point from both sides, which is what the hammer compresses
 	against. */
@@ -259,6 +293,11 @@ private:
 	int fitSplit = -1;
 
 	double impedance = 2.0;
+	// The damper: how hard it presses, and the three taps that come of it.
+	double damper = 0.0;
+	double dampedDC = 1.0, dampedTop = 1.0;
+	float damperMid = 1.f, damperSide = 0.f;
+	float damperIn[2] = {};
 
 	// ---- the three lines ----
 	// A POWER OF TWO EACH AND NO LONGER THAN THE NOTE NEEDS. Eighty-eight notes three strings deep
@@ -286,6 +325,7 @@ private:
 	float shelfIn[LOSS_SHELVES] = {}, shelfOut[LOSS_SHELVES] = {};
 
 	void tune();
+	void setDamperTaps();
 	void fitChain();
 	void solveLoss();
 	void refreshGain();

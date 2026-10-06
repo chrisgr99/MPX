@@ -51,10 +51,33 @@ struct PianoBoard {
 	soundboard's measured driving-point impedance against a string's two. */
 	void setBridgeImpedance(float timesStringImpedance);
 
-	/** Strike a note, at this many metres per second at the hammer. Out-of-compass notes are
-	ignored rather than clamped: a piano has eighty-eight keys and pretending otherwise would put
-	two notes on one set of strings. */
+	/** Strike a note: the key goes down and the hammer is thrown at it, at this many metres per
+	second. Out-of-compass notes are ignored rather than clamped — a piano has eighty-eight keys
+	and pretending otherwise would put two notes on one set of strings. */
 	void hit(int midi, float metresPerSecond);
+
+	/** THE KEY DOWN WITHOUT A BLOW, which is a thing a pianist really does: press the key slowly
+	enough that the hammer never reaches the string, and the damper lifts and the strings are left
+	free to be driven by whatever else is sounding. It is how the held-chord effect is played and
+	it is phase 5's gate. */
+	void hold(int midi);
+
+	/** The key up. Its damper comes down, unless a pedal is holding it off. */
+	void release(int midi);
+
+	/** THE SUSTAIN PEDAL, and a continuous quantity rather than a switch, because that is what it
+	is: at nought every damper rests its whole weight, at one every damper is clear of the strings,
+	and half way is every damper resting lightly. Half-pedalling is not a blend between two states,
+	it is a damper in a position, and a note released under it dies at a rate in between. */
+	void setSustain(float amount);
+
+	/** THE SOSTENUTO PEDAL: whatever is held at the moment it goes down stays undamped until it
+	comes up again, and nothing played afterwards is affected. */
+	void setSostenuto(bool down);
+
+	/** THE SOFT PEDAL, from nought to one. The action slides sideways: fewer strings of each choir
+	are struck squarely, and all of them are struck with a softer part of the felt. */
+	void setSoft(float amount);
 
 	void silence();
 
@@ -71,6 +94,8 @@ struct PianoBoard {
 	// ---- what it is doing, for the bench ----
 	/** How many notes were awake on the last sample. */
 	int awake() const { return lastAwake; }
+	float sustain() const { return (float) sustainAt; }
+	bool held(int midi) const { return inCompass(midi) && keyDown[midi - LOWEST]; }
 	/** How many of the compass's notes exist at all, which is all of them. */
 	int noteCount() const { return NOTES; }
 	bool inCompass(int midi) const { return midi >= LOWEST && midi <= HIGHEST; }
@@ -91,6 +116,14 @@ private:
 
 	PianoNote notes[NOTES];
 	bool asleep[NOTES] = {};
+	bool keyDown[NOTES] = {};
+	bool caught[NOTES] = {};      // held when the sostenuto pedal went down
+	double sustainAt = 0.0;
+	double softAt = 0.0;
+	bool sostenutoDown = false;
+	bool dampersStale = true;
+
+	void refreshDampers();
 
 	float dcIn = 0.f, dcOut = 0.f;
 

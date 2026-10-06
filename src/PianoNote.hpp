@@ -85,6 +85,34 @@ struct PianoNote {
 	what makes a note restruck before its damper has landed sound as it does on a piano. */
 	void hit(float metresPerSecond);
 
+	/** WHERE THE DAMPER IS BEING ASKED TO GO, from nought for clear of the strings to one for
+	resting its whole weight. It does not get there at once: a damper is a lever with a felt on
+	the end of it and it takes a few hundredths of a second to arrive, which is why a note struck
+	again before its damper has landed behaves as it does on a piano rather than being cut off and
+	started afresh. */
+	void setDamperTarget(float pressure);
+	/** Where it has actually got to, and where it is going. */
+	float damperAt() const { return (float) damper; }
+	float damperGoingTo() const { return (float) wanted; }
+	/** PUT THE DAMPER WHERE IT IS GOING AT ONCE, for a note that is not being run. A sleeping
+	note's damper would otherwise stand still until something woke it, and would then arrive
+	without having passed through anywhere. Nothing is sounding, so nothing is lost by its getting
+	there immediately. */
+	void settleDamper();
+	/** Whether this note has a damper at all. The top two octaves have none. */
+	bool hasDamper() const { return pianoHasDamper((float) note); }
+
+	/** THE SOFT PEDAL, from nought to one, and it is not a volume control.
+
+	WHAT IT PHYSICALLY IS: the whole action slides sideways, so the hammer no longer meets the
+	strings of a note squarely. The outermost string is caught by the edge of the felt or missed
+	altogether, and every string is struck by a part of the hammer that has not been played in and
+	is therefore softer. So the note is quieter because fewer strings are driven, and darker
+	because soft felt stays on the string longer, and those are two different changes that a gain
+	control cannot imitate. It also leaves the missed string to be driven through the bridge
+	instead, which is part of why the una corda sounds veiled rather than merely quiet. */
+	void setSoftPedal(float amount);
+
 	void silence();
 
 	/** EVERYTHING UP TO THE BRIDGE: what has reached each strike point, the hammer's force worked
@@ -130,6 +158,8 @@ private:
 	double spreadAsked = -1.0;
 	double bridgeRatio = 1000.0;
 	double feltKAsked = -1.0, feltPAsked = -1.0, massAsked = -1.0;
+	double damper = 0.0, wanted = 0.0;
+	double soft = 0.0;
 
 	int count = 3;
 	double keep = 1.0;
@@ -142,6 +172,7 @@ private:
 	double hammerAt = 0.0, hammerSpeed = 0.0;
 	double stringAt[MAX_STRINGS] = {};
 	double force[MAX_STRINGS] = {};
+	double covered[MAX_STRINGS] = {1.0, 1.0, 1.0};
 	double lastForce = 0.0;
 	bool hammerOn = false;
 	int contactSamples = 0, hammerSamples = 0;

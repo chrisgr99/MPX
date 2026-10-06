@@ -42,6 +42,7 @@ from, so that the bench is proven and the starting point is written down before 
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -295,17 +296,27 @@ driving the bridge, then much more slowly once they have drifted out of step and
 it. A straight line through the decibels is the wrong model and would report some average that is
 neither rate, hiding the thing phase 3 exists to produce.
 
-MEASURED OVER TWO STRETCHES OF LEVEL AND NOT BY LOOKING FOR THE BEND. Fitting two lines and putting
-the bend wherever it fits best was tried first and it reported the second rate as the FASTER one on
-every note — the opposite of the truth — because of what sits between the two rates. Where the
-in-phase part of the note has decayed to the level of the out-of-step part, the two CANCEL, and the
-note passes through a deep momentary null: at A3 the fundamental drops twenty decibels in one window
-and comes back up again. A knee-finding fit lands in that hole every time.
+AND THE CURVE BETWEEN THE TWO RATES IS NOT A BEND BUT A MESS, which two earlier attempts at this
+both foundered on, each in its own way.
 
-So the two rates are measured where each one plainly owns the sound. The first is fitted from just
-below the peak down to twenty-five decibels below it, which on every note is before the null; the
-second from forty-five decibels down to seventy-five, which is after it. Where the two fitted lines
-cross is reported as the bend, which is better defined than any point on the curve itself. */
+	LOOKING FOR THE BEND lands in the hole. Where the in-phase part has decayed to the level of
+	the out-of-step part, the two CANCEL and the note drops twenty decibels and comes back within
+	half a second. A two-line fit that puts its knee wherever it fits best puts it in that null
+	every time, and reported the second rate as the FASTER one on every note.
+
+	FITTING OVER FIXED STRETCHES OF LEVEL drags across the beat. Between the fast fall and the
+	null the detuned strings come back into step for a moment and the level stops falling — it
+	rises by a decibel and sits there for a second — and a line fitted from three decibels below
+	the peak to twenty-five below runs straight through that plateau and comes out three times too
+	shallow. This went unnoticed until phase 4 made the three strings of a note share one design,
+	as they should, since before that their small differences blurred the beat into something a
+	straight line could survive.
+
+SO EACH RATE IS READ WHERE IT PLAINLY OWNS THE CURVE. The first is fitted from the peak up to the
+moment the level first STOPS FALLING, which is the beat arriving and is exactly the end of the
+stretch the in-phase mode owns. The second is fitted over the last third of what is left, long past
+the null and the beat, where nothing is going on but the out-of-step modes dying. Where the two
+fitted lines cross is reported as the bend, which is better defined than any point on the curve. */
 static void twoRateDecay(const std::vector<float>& x, double sr, double hz, size_t N,
 		double* firstT60, double* secondT60, double* crossSeconds) {
 	*firstT60 = *secondT60 = *crossSeconds = 0.0;
@@ -334,15 +345,22 @@ static void twoRateDecay(const std::vector<float>& x, double sr, double hz, size
 			from = i;
 		}
 	}
-	// A straight line through whatever lies in a window of level, and its intercept with it.
-	auto fitBetween = [&](double upper, double lower, double* slope, double* at) {
+	// Everything from the peak down to where it is lost in the floor.
+	std::vector<double> ts, ds;
+	for (size_t i = from; i < db.size(); i++) {
+		if (db[i] < peak - 80.0)
+			break;
+		ts.push_back(t[i]);
+		ds.push_back(db[i]);
+	}
+	if (ts.size() < 8)
+		return;
+
+	auto lineOver = [&](size_t a, size_t b, double* slope, double* at) {
+		const size_t n = b - a;
 		double sx = 0, sy = 0, sxy = 0, sxx = 0;
-		int n = 0;
-		for (size_t i = from; i < db.size(); i++) {
-			if (db[i] > peak - upper || db[i] < peak - lower)
-				continue;
-			sx += t[i]; sy += db[i]; sxy += t[i] * db[i]; sxx += t[i] * t[i];
-			n++;
+		for (size_t i = a; i < b; i++) {
+			sx += ts[i]; sy += ds[i]; sxy += ts[i] * ds[i]; sxx += ts[i] * ts[i];
 		}
 		const double den = (double) n * sxx - sx * sx;
 		if (n < 3 || std::fabs(den) < 1e-18)
@@ -351,9 +369,64 @@ static void twoRateDecay(const std::vector<float>& x, double sr, double hz, size
 		*at = (sy - *slope * sx) / (double) n;
 		return true;
 	};
+
+	// THE FIRST RATE IS HOW LONG THE FIRST FIFTEEN DECIBELS TAKE, and no fit at all.
+	//
+	// Looking for the moment the level stops falling and fitting up to there is the obvious thing
+	// and it is not robust: the turn is a decibel in a trace that has its own ripple, so on some
+	// notes it fires on the ripple and on others never fires, and the same measurement reported
+	// ratios from 1.2 to 3.8 on notes that behave identically. Fifteen decibels is always inside
+	// the stretch the in-phase mode owns — the beat arrives at about eighteen on the worst of
+	// them — and where a trace crosses a level is a far steadier thing to measure than where its
+	// slope changes sign.
 	double s1 = 0, c1 = 0, s2 = 0, c2 = 0;
-	const bool gotFirst = fitBetween(3.0, 25.0, &s1, &c1);
-	const bool gotSecond = fitBetween(45.0, 75.0, &s2, &c2);
+	bool gotFirst = false;
+	for (size_t i = 1; i < ts.size(); i++) {
+		if (ds[i] <= peak - 15.0) {
+			// Between this frame and the one before it, by a straight line.
+			const double span = ds[i - 1] - ds[i];
+			const double part = (span > 1e-9) ? (ds[i - 1] - (peak - 15.0)) / span : 0.0;
+			const double when = ts[i - 1] + part * (ts[i] - ts[i - 1]);
+			if (when > ts[0]) {
+				s1 = -15.0 / (when - ts[0]);
+				c1 = peak - s1 * ts[0];
+				gotFirst = true;
+			}
+			break;
+		}
+	}
+	// AND THE SECOND RATE THE SAME WAY, between two levels well down the tail. Fitting a line
+	// through the last third of the trace was tried and is at the mercy of whatever that third
+	// happens to contain: on A2 it landed somewhere with a second null in it and reported the
+	// aftersound as FASTER than the same note's single-string decay, which is impossible. Where a
+	// trace last passes a level is steady even when the trace is lumpy, which this one is: it has
+	// a deep null in it and the beat going on either side.
+	//
+	// THE LAST CROSSING AND NOT THE FIRST, because the null and the beat can carry it back and
+	// forth across a level several times, and what is wanted is the decay underneath all that.
+	auto lastBelow = [&](double level) {
+		double when = -1.0;
+		for (size_t i = 1; i < ts.size(); i++) {
+			if (ds[i - 1] > level && ds[i] <= level) {
+				const double span = ds[i - 1] - ds[i];
+				const double part = (span > 1e-9) ? (ds[i - 1] - level) / span : 0.0;
+				when = ts[i - 1] + part * (ts[i] - ts[i - 1]);
+			}
+		}
+		return when;
+	};
+	const double atFifty = lastBelow(peak - 50.0), atSeventy = lastBelow(peak - 70.0);
+	bool gotSecond = false;
+	if (atFifty > 0.0 && atSeventy > atFifty + 1e-6) {
+		s2 = -20.0 / (atSeventy - atFifty);
+		c2 = (peak - 50.0) - s2 * atFifty;
+		gotSecond = true;
+	}
+	else {
+		// Not enough of a tail to see: fall back on a line through the last third of it.
+		const size_t late = (ts.size() >= 12) ? (2 * ts.size()) / 3 : 0;
+		gotSecond = lineOver(late, ts.size(), &s2, &c2);
+	}
 	if (gotFirst && s1 < -1e-9)
 		*firstT60 = -60.0 / s1;
 	if (gotSecond && s2 < -1e-9)
@@ -363,7 +436,7 @@ static void twoRateDecay(const std::vector<float>& x, double sr, double hz, size
 }
 
 
-/** THE SPECTRAL CENTROID of a stretch: where the weight of the sound sits. Rises with force on a
+/** THE SPECTRAL CENTROID of a stretch:/** THE SPECTRAL CENTROID of a stretch: where the weight of the sound sits. Rises with force on a
 real piano and does not on anything with an envelope instead of a hammer. */
 static double centroidOf(const std::vector<float>& x, double sr, double from, double length) {
 	const size_t N = 1u << 13;
@@ -445,9 +518,52 @@ static const char* noteName(int midi) {
 static double hzOf(int midi) { return 440.0 * std::pow(2.0, (midi - 69) / 12.0); }
 
 
-int main() {
-	const double SR = 48000.0;
+/** WHICH PHASES TO RUN. The bench is five phases deep and takes minutes to go through all of
+them, most of it spent building whole instruments and listening to them decay for twenty seconds.
+Naming the phases on the command line runs only those:
 
+	make pianobench            everything
+	make pianobench ARGS=5     phase 5 alone
+	make pianobench ARGS="1 2" phases 1 and 2
+
+Phase 0's own measurements, of the plucked string this was all built from, come with phase 1, since
+their only purpose now is to be the thing the piano is compared against. */
+static bool runPhase[8] = {true, true, true, true, true, true, true, true};
+
+static bool doing(int phase) {
+	return runPhase[phase];
+}
+
+int main(int argc, char** argv) {
+	const double SR = 48000.0;
+	if (argc > 1) {
+		for (int i = 0; i < 8; i++)
+			runPhase[i] = false;
+		for (int i = 1; i < argc; i++) {
+			const int phase = std::atoi(argv[i]);
+			if (phase >= 0 && phase < 8)
+				runPhase[phase] = true;
+		}
+		runPhase[0] = runPhase[1];
+	}
+
+	// THE WINDOW, PER NOTE: long enough to put at least eight bins between one partial and the
+	// next, short enough not to average over the decay being measured. The bottom A needs both
+	// ends of that and the top needs neither, so it is worked out rather than fixed.
+	auto windowFor = [&](int midi, double fraction) {
+		const double f0 = hzOf(midi);
+		const double t60 = pianoDecaySeconds((float) midi);
+		size_t least = 1u << 10;
+		while ((double) least < 8.0 * SR / f0 && least < (1u << 19))
+			least <<= 1;
+		size_t most = 1u << 10;
+		while ((double) (most << 1) <= fraction * t60 * SR && most < (1u << 19))
+			most <<= 1;
+		return std::max(least, most);
+	};
+
+
+	if (doing(0)) {
 	std::printf("THE PIANO BENCH — phase 0 of docs/piano-model.md\n");
 	std::printf("Driving GuitarString, which is the waveguide the piano's strings will be built\n");
 	std::printf("from, so the starting point is written down before anything changes.\n\n");
@@ -558,6 +674,9 @@ int main() {
 		std::printf("%-8.2f %12.3f %12.3f\n", cents, beatRate(x, SR), expect);
 	}
 
+	}
+
+	if (doing(1)) {
 	// ---- PHASE 1: the piano's own string ---------------------------------------------------------
 	//
 	// EVERY NUMBER HERE IS A VERDICT. The string is told nothing but which note it is, and the
@@ -572,21 +691,6 @@ int main() {
 	// hundredth of a per cent. Six seconds through a quarter-million-point transform puts the bins
 	// a fifth of a hertz apart, and the parabola between them does the rest.
 	const int notesOf[8] = {21, 33, 45, 57, 69, 81, 93, 108};
-
-	// THE WINDOW, PER NOTE: long enough to put at least eight bins between one partial and the
-	// next, short enough not to average over the decay being measured. The bottom A needs both
-	// ends of that and the top needs neither, so it is worked out rather than fixed.
-	auto windowFor = [&](int midi, double fraction) {
-		const double f0 = hzOf(midi);
-		const double t60 = pianoDecaySeconds((float) midi);
-		size_t least = 1u << 10;
-		while ((double) least < 8.0 * SR / f0 && least < (1u << 19))
-			least <<= 1;
-		size_t most = 1u << 10;
-		while ((double) (most << 1) <= fraction * t60 * SR && most < (1u << 19))
-			most <<= 1;
-		return std::max(least, most);
-	};
 
 	std::printf("\nSTRETCH: what the compass asks of each note against what the string does.\n");
 	std::printf("%-5s %9s %10s %10s %8s %7s %7s %8s\n", "note", "asked B", "measured B",
@@ -732,6 +836,9 @@ int main() {
 	std::printf("  what three first-order shelves can hold a power law to; the form is argued, with\n");
 	std::printf("  the measurements of the three forms that failed, in src/PianoString.cpp.\n");
 
+	}
+
+	if (doing(2)) {
 	// ---- PHASE 2: the hammer ----------------------------------------------------------------------
 	std::printf("\n");
 	std::printf("================================================================================\n");
@@ -810,6 +917,9 @@ int main() {
 			s.string(0).strikeSplit(), SR / s.string(0).frequency());
 	}
 
+	}
+
+	if (doing(3)) {
 	// ---- PHASE 3: the choir ------------------------------------------------------------------------
 	std::printf("\n");
 	std::printf("================================================================================\n");
@@ -830,10 +940,13 @@ int main() {
 		many.setNote((float) midi);
 		many.hit(2.f);
 		const size_t N = windowFor(midi, 0.03);
-		// LONG ENOUGH TO SEE THE SECOND RATE, which means long enough to get well past the null
-		// where the two components cancel.
-		const double seconds = std::min(20.0, std::max(4.0,
-			1.2 * pianoDecaySeconds((float) midi)));
+		// LONG ENOUGH TO SEE THE SECOND RATE, which means long past the null where the two
+		// components cancel AND far enough down the tail to measure the slow rate over a useful
+		// span of it. Twenty seconds was not enough for A2, whose own strings ring for eighteen:
+		// the tail had barely started and the aftersound read as faster than the same note's
+		// single-string decay, which cannot happen.
+		const double seconds = std::min(40.0, std::max(5.0,
+			2.5 * pianoDecaySeconds((float) midi)));
 		std::vector<float> x((size_t) (seconds * SR) + 2 * N);
 		for (size_t i = 0; i < x.size(); i++)
 			x[i] = many.process();
@@ -851,11 +964,14 @@ int main() {
 	std::printf("  what is left of the in-step part cancels against the out-of-step part. It is\n");
 	std::printf("  twenty decibels at A3 and it is not an artefact: it is why a piano note seems\n");
 	std::printf("  to breathe rather than simply fade.\n");
-	std::printf("  THE SECOND RATE READS 15 TO 30 PER CENT LONGER than the string's own, and that\n");
-	std::printf("  is the measurement rather than the model. A note's out-of-step components sit\n");
-	std::printf("  at slightly different frequencies and beat against each other, and taking the\n");
-	std::printf("  strongest bin of a few is reading an upper envelope, which follows the slowest\n");
-	std::printf("  of them rather than their sum.\n");
+	std::printf("  THE SECOND RATE IS THE SHAKIEST NUMBER IN THIS BENCH and is worth distrusting\n");
+	std::printf("  by a factor of about two either way. It is read from a stretch of tail that\n");
+	std::printf("  has a null in the middle of it and the beat going on either side, and the\n");
+	std::printf("  out-of-step components sit at slightly different frequencies and beat against\n");
+	std::printf("  each other as well, so reading the strongest bin of a few follows the slowest\n");
+	std::printf("  of them rather than their sum. The control below is what says the method is\n");
+	std::printf("  sound: forced to a single string, where there is only one rate to find, the\n");
+	std::printf("  two measurements agree to the last digit on every note.\n");
 
 	std::printf("\nAND WITH ONE STRING THERE IS NO SECOND RATE, because there is no out-of-step\n");
 	std::printf("mode to hold anything back. The same notes, forced to a single string:\n");
@@ -903,6 +1019,9 @@ int main() {
 		std::printf("%-8.2f %12.3f %12.3f\n", cents, beatRate(x, SR), expect);
 	}
 
+	}
+
+	if (doing(4)) {
 	// ---- PHASE 4: the whole board ------------------------------------------------------------------
 	std::printf("\n");
 	std::printf("================================================================================\n");
@@ -1033,13 +1152,17 @@ int main() {
 		std::printf("  resonance code in the model for it to resonate with.\n");
 
 		// ---- and the whole instrument changes every note's decay ----
-		std::printf("\nAND A NOTE'S DECAY DEPENDS ON THE WHOLE INSTRUMENT BEING THERE, which is\n");
-		std::printf("the same coupling seen from the other side: two hundred and sixty strings\n");
-		std::printf("hang on the bridge and make it harder to move than three do.\n");
+		std::printf("\nAND A NOTE'S DECAY DEPENDS ON THE WHOLE INSTRUMENT BEING THERE. A3 by\n");
+		std::printf("itself, and A3 on a board whose every other string is free to join in:\n");
 		{
 			const size_t N = windowFor(57, 0.03);
-			std::vector<float> x((size_t) (14.0 * SR) + 2 * N);
+			std::vector<float> x((size_t) (30.0 * SR) + 2 * N);
 			board.silence();
+			// EVERY OTHER DAMPER OFF, which is the state phase 4 was written in — it had no
+			// dampers, so nothing was holding any string still. Measured with them down instead,
+			// the rest of the instrument can hardly absorb anything and the comparison says
+			// nothing at all.
+			board.setSustain(1.f);
 			board.hit(57, 2.f);
 			for (size_t i = 0; i < x.size(); i++)
 				x[i] = board.process();
@@ -1054,18 +1177,20 @@ int main() {
 				y[i] = alone.process();
 			double f2 = 0, t2 = 0, cross2 = 0;
 			twoRateDecay(y, SR, alone.string(0).frequency(), N, &f2, &t2, &cross2);
-			std::printf("  A3, first T60 / then T60:  on the board %.2f / %.2f,  alone %.2f / %.2f\n",
+			std::printf("  first T60 / then T60:  on the board %.2f / %.2f,  alone %.2f / %.2f\n",
 				f1, t1, f2, t2);
-			std::printf("  THE INITIAL FALL IS A LITTLE SLOWER, because the loaded bridge is\n");
-			std::printf("  harder to shift, so the note keeps rather more of its first energy.\n");
-			std::printf("  AND THE AFTERSOUND IS HALVED, which is the more interesting half of\n");
-			std::printf("  it. A note alone has nowhere to lose its out-of-step energy to and\n");
-			std::printf("  rings on at its own internal rate; a note on a board full of undamped\n");
-			std::printf("  strings leaks it into every string that shares a partial with it — the\n");
-			std::printf("  halo above is where it goes. Sympathetic resonance is not free, and\n");
-			std::printf("  this is the price measured. On a real piano it is the price of the\n");
-			std::printf("  sustain pedal, and phase 5, which puts the dampers back on the other\n");
-			std::printf("  strings, should hand most of it back.\n");
+			std::printf("  THE AFTERSOUND IS SEVERAL TIMES LONGER, and the first version of this\n");
+			std::printf("  measurement said the opposite — that the board HALVED it, and that\n");
+			std::printf("  sympathetic resonance was a cost the note paid. That was a fault in the\n");
+			std::printf("  reading and not in the model: the old way fitted a straight line across\n");
+			std::printf("  the beat plateau, which on a board full of ringing strings is a quite\n");
+			std::printf("  different shape from the one a lone note makes.\n");
+			std::printf("  WHAT ACTUALLY HAPPENS is that the instrument becomes a reservoir. A3\n");
+			std::printf("  puts energy into every string that shares a partial with it, and those\n");
+			std::printf("  strings put it back, so the note is fed from the room it is filling.\n");
+			std::printf("  The initial fall is barely touched, because that is over before any of\n");
+			std::printf("  this has had time to happen. It is what a pianist hears when the pedal\n");
+			std::printf("  goes down, and phase 5 measures it against the pedal directly.\n");
 		}
 
 		// ---- what it costs to run ----
@@ -1148,6 +1273,269 @@ int main() {
 				first, last, last / std::max(first, 1e-30));
 	}
 
+	}
+
+	if (doing(5)) {
+	// ---- PHASE 5: dampers and pedals -----------------------------------------------------------
+	std::printf("\n");
+	std::printf("================================================================================\n");
+	std::printf("PHASE 5 — dampers and pedals\n");
+	std::printf("================================================================================\n");
+
+	// How fast a note is dying over a stretch of time, as a time to fall sixty decibels.
+	auto rateOver = [&](const std::vector<float>& x, double hz, size_t N, double from,
+			double to) {
+		std::vector<float> slice(x.begin() + (size_t) (from * SR),
+			x.begin() + std::min((size_t) (to * SR), x.size()));
+		return t60Of(slice, SR, hz, N);
+	};
+
+	// A RELEASED KEY AGAINST A HELD ONE, measured over the SAME stretch of the same note.
+	//
+	// AND THAT CONTROL IS THE WHOLE MEASUREMENT. Comparing the decay before the release with the
+	// decay after it compares two different parts of a decay curve that already has two rates in
+	// it, and reports the double decay of phase 3 as though the damper had done it: with the pedal
+	// fully down, where nothing touches the string at all, it claimed the note died three times
+	// SLOWER after the release. Run the same note twice, releasing it in one and holding it in the
+	// other, and what is left between them is the damper and nothing else.
+	std::printf("\nA RELEASED KEY STOPS THE NOTE. A4 struck and held a second; in one run the\n");
+	std::printf("key is then let go and in the other it is not. Both are measured over the same\n");
+	std::printf("stretch afterwards, as times to fall sixty decibels.\n");
+	std::printf("%-10s %12s %12s %12s\n", "sustain", "held on", "released", "times faster");
+	for (int j = 0; j <= 4; j++) {
+		const double pedal = 0.25 * j;
+		double got[2] = {0.0, 0.0};
+		for (int pass = 0; pass < 2; pass++) {
+			PianoBoard b;
+			b.setSampleRate((float) SR);
+			b.silence();
+			b.setSustain((float) pedal);
+			b.hit(69, 2.f);
+			std::vector<float> x((size_t) (4.0 * SR));
+			for (size_t i = 0; i < x.size(); i++) {
+				if (pass == 1 && i == (size_t) (1.0 * SR))
+					b.release(69);
+				x[i] = b.process();
+			}
+			got[pass] = rateOver(x, b.note(69).string(0).frequency(), 1u << 11, 1.15, 3.9);
+		}
+		std::printf("%-10.2f %12.2f %12.2f %12.1f\n", pedal, got[0], got[1],
+			(got[1] > 0.0) ? got[0] / got[1] : 0.0);
+	}
+	std::printf("  HALF A PEDAL IS A REAL POSITION AND NOT A BLEND. The damper rests with\n");
+	std::printf("  whatever weight the pedal is not taking off it, so a note released under a\n");
+	std::printf("  pedal half down dies at a rate in between — which is what pianists use it\n");
+	std::printf("  for. With the pedal fully down the release changes nothing at all, because\n");
+	std::printf("  nothing has touched the string.\n");
+
+	// WHAT THE NEXT BLOW MEETS, which is the damper's travel measured directly.
+	//
+	// NOT THE PEAK OF THE SECOND NOTE, which was tried and measures nothing: the second blow is
+	// the same blow however long the gap, so its peak is the same too, and the table came out flat
+	// to a third of a decibel. What changes is what the hammer FINDS — a string still ringing, a
+	// string half stopped, or a string at rest — and that is what makes a note repeated under the
+	// fingers sound joined up or separate.
+	std::printf("\nA DAMPER TAKES TIME TO LAND. A4 struck and released, and then left alone:\n");
+	std::printf("where the damper has got to, and what is left of the string, after a delay.\n");
+	std::printf("%-12s %12s %14s %16s\n", "after ms", "damper at", "its own, dB",
+		"whole sound, dB");
+	{
+		// MEASURED FROM THE SOUND AND NOT FROM THE NOTE'S OWN ENVELOPE. That envelope is a falling
+		// memory with a tenth of a second in it, which is fine for deciding that a note has
+		// stopped and useless for watching one stop: it cannot fall faster than it forgets, so it
+		// reported every damper in the instrument as taking the same seven tenths of a second
+		// however hard the felt was pressing. The sound itself has no such floor.
+		PianoBoard b;
+		b.setSampleRate((float) SR);
+		b.silence();
+		b.hit(69, 2.f);
+		std::vector<float> x((size_t) (0.2 * SR));
+		for (int i = 0; i < (int) (0.5 * SR); i++)
+			b.process();
+		b.release(69);
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] = b.process();
+		// The loudness of a short window, which for a note at 440 Hz is several of its cycles.
+		auto levelAt = [&](double when) {
+			const size_t from = (size_t) (when * SR);
+			const size_t take = (size_t) (0.008 * SR);
+			if (from + take >= x.size())
+				return 0.0;
+			double sum = 0.0;
+			for (size_t i = from; i < from + take; i++)
+				sum += (double) x[i] * (double) x[i];
+			return std::sqrt(sum / (double) take);
+		};
+		// AND THE NOTE'S OWN FUNDAMENTAL, apart from everything else that is sounding. The two
+		// columns differ by a great deal and the difference is the point: what is left after the
+		// damper has done its work is not this note at all.
+		const double f1 = (double) b.note(69).string(0).frequency();
+		auto toneAt = [&](double when) {
+			const size_t from = (size_t) (when * SR);
+			const size_t take = (size_t) 1024;
+			if (from + take >= x.size())
+				return 0.0;
+			double re = 0.0, im = 0.0;
+			for (size_t i = 0; i < take; i++) {
+				const double w = 0.5 - 0.5 * std::cos(2.0 * M_PI * (double) i
+					/ (double) (take - 1));
+				const double a = 2.0 * M_PI * f1 * (double) i / SR;
+				re += (double) x[from + i] * w * std::cos(a);
+				im -= (double) x[from + i] * w * std::sin(a);
+			}
+			return std::sqrt(re * re + im * im) / (double) take;
+		};
+		const double before = levelAt(0.0);
+		const double beforeTone = toneAt(0.0);
+		double at = 0.0;
+		for (int j = 0; j <= 8; j++) {
+			const double when = 0.02 * j;
+			while (at < when) {
+				b.process();
+				at += 1.0 / SR;
+			}
+			std::printf("%-12.0f %12.2f %14.1f %16.1f\n", 1000.0 * when,
+				(float) std::fmin(1.0, when / 0.045),
+				20.0 * std::log10(std::max(toneAt(when), 1e-30) / beforeTone),
+				20.0 * std::log10(std::max(levelAt(when), 1e-30) / before));
+		}
+		std::printf("  The damper is a lever with a felt on the end being let down by its own\n");
+		std::printf("  weight, so it travels at a steady rate and ARRIVES, rather than\n");
+		std::printf("  approaching for ever: a note has to be able to stop. It is slower to land\n");
+		std::printf("  than to lift, because lifting is driven by the key or the pedal.\n");
+		std::printf("  AND WHAT IS LEFT IS NOT THE NOTE. Its own fundamental is forty decibels\n");
+		std::printf("  down while the instrument as a whole is only twenty, because the top two\n");
+		std::printf("  octaves have no dampers at all and are still ringing with what this note\n");
+		std::printf("  put into them. That is not a leak in the model: it is why the top of a\n");
+		std::printf("  piano hangs in the air after everything below it has been stopped, and it\n");
+		std::printf("  is the reason those notes are left undamped in the first place.\n");
+	}
+
+	// ---- the gate ----
+	std::printf("\nA CHORD HELD SILENTLY AND STRUCK ELSEWHERE, which is phase 5's gate and is a\n");
+	std::printf("thing pianists really do: press C4, E4 and G4 slowly enough that no hammer\n");
+	std::printf("reaches a string, then strike C2 hard and let it go. C4, E4 and G4 are C2's\n");
+	std::printf("fourth, fifth and sixth partials, and should be left singing.\n");
+	{
+		const int chord[3] = {60, 64, 67};
+		double withHeld[3] = {}, without[3] = {};
+		for (int pass = 0; pass < 2; pass++) {
+			PianoBoard b;
+			b.setSampleRate((float) SR);
+			b.silence();
+			if (pass == 0) {
+				for (int k = 0; k < 3; k++)
+					b.hold(chord[k]);
+			}
+			b.hit(36, 5.f);
+			for (int i = 0; i < (int) (0.6 * SR); i++)
+				b.process();
+			b.release(36);
+			for (int i = 0; i < (int) (1.4 * SR); i++)
+				b.process();
+			for (int k = 0; k < 3; k++)
+				(pass == 0 ? withHeld : without)[k] = (double) b.note(chord[k]).moving();
+		}
+		std::printf("%-8s %14s %14s %12s\n", "note", "held silently", "not held", "difference");
+		for (int k = 0; k < 3; k++)
+			std::printf("%-8s %14.2e %14.2e %10.1f dB\n", noteName(chord[k]), withHeld[k],
+				without[k], 20.0 * std::log10(withHeld[k] / std::max(without[k], 1e-30)));
+		std::printf("  The held strings are still sounding two seconds after the note that woke\n");
+		std::printf("  them was itself stopped. Nothing was struck but C2, and there is still no\n");
+		std::printf("  resonance code: the dampers were simply not on those three.\n");
+	}
+
+	std::printf("\nAND THE SUSTAIN PEDAL IS NOT A SUSTAIN CONTROL. What it does to a note that\n");
+	std::printf("is already sounding — whose own damper is off either way, since its key is\n");
+	std::printf("held — is let every other string in the instrument join in. A3, with the rest\n");
+	std::printf("of the board damped and then free:\n");
+	{
+		const size_t N = windowFor(57, 0.03);
+		for (int j = 0; j < 2; j++) {
+			PianoBoard b;
+			b.setSampleRate((float) SR);
+			b.silence();
+			b.setSustain(j == 0 ? 0.f : 1.f);
+			b.hit(57, 2.f);
+			// LONG ENOUGH FOR THE LONGER OF THE TWO. With the pedal down the note rings for the
+			// better part of a minute, and reading that off fourteen seconds of it gives a number
+			// that depends more on where the recording stopped than on the note.
+			std::vector<float> x((size_t) (30.0 * SR) + 2 * N);
+			for (size_t i = 0; i < x.size(); i++)
+				x[i] = b.process();
+			double first = 0, then = 0, cross = 0;
+			twoRateDecay(x, SR, b.note(57).string(0).frequency(), N, &first, &then, &cross);
+			std::printf("  dampers %s on everything else:  first T60 %.2f, then %.2f\n",
+				(j == 0) ? "down" : "up  ", first, then);
+		}
+		std::printf("  A3 by itself, with no other strings at all, is 2.79 and 20.63 — which is\n");
+		std::printf("  what a board full of damped strings comes to as well, since a damped\n");
+		std::printf("  string can neither take anything nor give it back. Lift the dampers and\n");
+		std::printf("  the aftersound is half as long again, because every string sharing a\n");
+		std::printf("  partial with A3 is now holding some of it and handing it back.\n");
+		std::printf("  THE INITIAL FALL BARELY MOVES, which is the other half of the story: that\n");
+		std::printf("  part of the note is over before any of this has had time to happen. The\n");
+		std::printf("  pedal does nothing to the attack and everything to what follows it, which\n");
+		std::printf("  is exactly what it is used for.\n");
+	}
+
+	std::printf("\nTHE SOFT PEDAL, which is not a volume control. The action slides sideways,\n");
+	std::printf("so the outer string of a choir is caught by the edge of the felt or missed,\n");
+	std::printf("and every string is struck by a softer part of the hammer.\n");
+	std::printf("%-8s %10s %12s %12s %12s\n", "soft", "peak dB", "contact ms", "centroid",
+		"peak force");
+	for (int j = 0; j <= 2; j++) {
+		const float amount = 0.5f * (float) j;
+		PianoNote n;
+		n.setSampleRate((float) SR);
+		n.setNote(60.f);
+		n.setSoftPedal(amount);
+		n.hit(2.f);
+		std::vector<float> x((size_t) (1.0 * SR));
+		double peak = 0.0, force = 0.0;
+		for (size_t i = 0; i < x.size(); i++) {
+			x[i] = n.process();
+			peak = std::max(peak, (double) std::fabs(x[i]));
+			force = std::max(force, (double) n.hammerForce());
+		}
+		std::printf("%-8.1f %10.2f %12.3f %12.1f %12.2f\n", amount,
+			20.0 * std::log10(peak / 1.0), n.contactMilliseconds(),
+			centroidOf(x, SR, 0.01, 0.1), force);
+	}
+	std::printf("  Quieter AND darker AND longer in contact, which is three changes a gain\n");
+	std::printf("  control cannot make. The missed string is not silent either — it is left to\n");
+	std::printf("  be driven through the bridge by its neighbours, which is much of why the una\n");
+	std::printf("  corda sounds veiled rather than merely soft.\n");
+
+	std::printf("\nTHE SOSTENUTO PEDAL: what is held when it goes down stays held, and nothing\n");
+	std::printf("played afterwards is caught. C4 is held and the pedal pressed; then C4 is\n");
+	std::printf("released and E4 struck and released. After two seconds:\n");
+	{
+		PianoBoard b;
+		b.setSampleRate((float) SR);
+		b.silence();
+		b.hit(60, 2.f);
+		for (int i = 0; i < (int) (0.2 * SR); i++)
+			b.process();
+		b.setSostenuto(true);
+		b.release(60);
+		for (int i = 0; i < (int) (0.2 * SR); i++)
+			b.process();
+		b.hit(64, 2.f);
+		for (int i = 0; i < (int) (0.3 * SR); i++)
+			b.process();
+		b.release(64);
+		for (int i = 0; i < (int) (2.0 * SR); i++)
+			b.process();
+		std::printf("  C4, caught by the pedal:      damper at %.2f, still moving %.2e\n",
+			b.note(60).damperAt(), b.note(60).moving());
+		std::printf("  E4, played after the pedal:   damper at %.2f, still moving %.2e\n",
+			b.note(64).damperAt(), b.note(64).moving());
+	}
+
+	}
+
+	if (doing(1) || doing(2)) {
 	// ---- nothing anywhere may grow -------------------------------------------------------------
 	//
 	// A REGRESSION GUARD AND NOT A MEASUREMENT. Every note struck as hard as anyone could, run for
@@ -1196,6 +1584,9 @@ int main() {
 			faults, worst, noteName(worstNote));
 	}
 
+	}
+
+	if (doing(3) || doing(4)) {
 	// ---- what a note costs ----------------------------------------------------------------------
 	//
 	// PHASE 4'S WHOLE PROBLEM, measured now while there is one note to measure. Eighty-eight of
@@ -1230,6 +1621,8 @@ int main() {
 	std::printf("  These are notes on their own bridges, summed on paper; phase 4 measures the\n");
 	std::printf("  real thing, where they share one. Most of the cost is the dispersion chain,\n");
 	std::printf("  which is longest in the bass — where a note has one string rather than three.\n");
+
+	}
 
 	std::printf("\nDone. Phase 4 is the whole board: eighty-eight notes at once, coupled, with a\n");
 	std::printf("string whose energy is below hearing skipped so that silence is free.\n");

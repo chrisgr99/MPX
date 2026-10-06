@@ -246,6 +246,48 @@ float pianoFeltStiffness(float midi) {
 }
 
 
+/** HOW FAST A DAMPER STOPS A STRING, as the time to fall sixty decibels with the damper resting
+its whole weight: at the fundamental, and high up.
+
+TWO NUMBERS BECAUSE FELT IS NOT A BRAKE. It takes the top off a string far faster than it takes the
+bottom, which is why releasing a key gives a soft thud and not a click, and why a bass note goes on
+booming quietly for a moment after the damper lands while its brightness has gone at once.
+
+LONGER IN THE BASS, which is a matter of what there is to stop: the bottom strings carry pounds of
+moving steel and a damper that killed them in a tenth of a second would have to be a clamp. Real
+bass dampers are big and heavy and still let the note go on for a quarter of a second or so. */
+static const Anchor DAMPED_LOW[] = {
+	{21.f, 0.26f},
+	{45.f, 0.16f},
+	{69.f, 0.11f},
+	{108.f, 0.08f},
+};
+
+static const Anchor DAMPED_HIGH[] = {
+	{21.f, 0.09f},
+	{45.f, 0.06f},
+	{69.f, 0.04f},
+	{108.f, 0.03f},
+};
+
+float pianoDampedSeconds(float midi) {
+	return throughAnchors(DAMPED_LOW, (int) (sizeof(DAMPED_LOW) / sizeof(Anchor)), midi);
+}
+
+float pianoDampedSecondsHigh(float midi) {
+	return throughAnchors(DAMPED_HIGH, (int) (sizeof(DAMPED_HIGH) / sizeof(Anchor)), midi);
+}
+
+
+/** WHETHER THE NOTE HAS A DAMPER AT ALL. The top two octaves of a piano have none, and it is not an
+economy: those strings are so short and so heavily loaded that they have stopped before a damper
+could reach them, and there would be nothing for one to do. It is also why the top of a piano rings
+on under everything whatever the pedal is doing. */
+bool pianoHasDamper(float midi) {
+	return midi < 84.f;
+}
+
+
 /** WHERE THE HAMMER LANDS, as a fraction of the speaking length from the agraffe. About an eighth
 over most of the compass, and a smaller fraction at the top, where there is not much string to aim
 at. The choice is a compromise a maker makes: nearer the end is brighter and thinner, further along
@@ -329,6 +371,12 @@ the flat gain sets it to. Stability needs no sweeping of the band to check — i
 THE COST is three multiplies and three adds a sample, against a dispersion chain of up to
 eight-and-forty stages, so it is not where the time goes. */
 static const int LOSS_SECTIONS = 3;
+
+/** THE DAMPER'S DELAY, in samples, which is a constant of its shape and not of its setting. A
+symmetric three-tap filter delays every frequency by exactly its middle tap's position, whatever
+the taps are, so this is one sample however hard the damper is pressing — and the loop's length,
+which is worked out to a fraction of a sample, can account for it once and never again. */
+static const double DAMPER_DELAY = 1.0;
 
 typedef PianoString::Loss Loss;
 
@@ -474,6 +522,7 @@ void PianoString::resize() {
 	leftMask = outMask = backMask = n - 1;
 	writeAt = 0;
 	fromLeft = fromRight = lastJunction = 0.0;
+	damperIn[0] = damperIn[1] = 0.f;
 	for (int i = 0; i < LOSS_SECTIONS; i++)
 		shelfIn[i] = shelfOut[i] = 0.f;
 	for (int i = 0; i < MAX_STAGES; i++)
@@ -574,10 +623,11 @@ void PianoString::fitChain() {
 		const double chainAt1 = stagesN * allpassDelay(a, w1);
 		// Four samples held back, since the interpolating read is clamped to three and wants one
 		// to spare.
-		const double room = period - (double) (leftDelay + outDelay) - lossDelay(loss, w1) - 4.0;
+		const double room = period - (double) (leftDelay + outDelay) - DAMPER_DELAY
+			- lossDelay(loss, w1) - 4.0;
 		if (chainAt1 > room || chainAt1 < 0.0)
 			return false;
-		const double d = solveDelayFor(period, w1, (double) (leftDelay + outDelay), stagesN, a, loss, backMask);
+		const double d = solveDelayFor(period, w1, (double) (leftDelay + outDelay) + DAMPER_DELAY, stagesN, a, loss, backMask);
 
 		double worst = 0.0;
 		for (int n = 2; n <= want; n++) {
@@ -588,7 +638,7 @@ void PianoString::fitChain() {
 				for (int i = 0; i < 6; i++) {
 					double dr, gr;
 					readResponse(d, wn, &dr, &gr);
-					const double total = (double) (leftDelay + outDelay) + dr
+					const double total = (double) (leftDelay + outDelay) + DAMPER_DELAY + dr
 						+ lossDelay(loss, wn) + stagesN * allpassDelay(a, wn);
 					if (total <= 1.0)
 						return false;
@@ -599,8 +649,8 @@ void PianoString::fitChain() {
 			else {
 				double dr, gr;
 				readResponse(d, w, &dr, &gr);
-				const double total = (double) (leftDelay + outDelay) + dr + lossDelay(loss, w)
-					+ stagesN * allpassDelay(a, w);
+				const double total = (double) (leftDelay + outDelay) + DAMPER_DELAY + dr
+					+ lossDelay(loss, w) + stagesN * allpassDelay(a, w);
 				if (total <= 1.0)
 					return false;
 				// Turns per round trip, against the whole number it should be.
@@ -981,7 +1031,7 @@ void PianoString::solveLoss() {
 void PianoString::solveRead() {
 	const double period = rate / freq;
 	const double w1 = 2.0 * PI * freq / rate;
-	readDelay = solveDelayFor(period, w1, (double) (leftDelay + outDelay), (double) chainStages, chainA, loss, backMask);
+	readDelay = solveDelayFor(period, w1, (double) (leftDelay + outDelay) + DAMPER_DELAY, (double) chainStages, chainA, loss, backMask);
 }
 
 
@@ -1058,7 +1108,7 @@ void PianoString::tune() {
 		// nothing at all, so the fit refused every candidate and the note came out with no stretch
 		// whatever. A dozen samples held back is enough for both.
 		const double rest = period - (double) leftDelay;
-		outDelay = std::max(1, std::min((int) (0.5 * rest), (int) (rest - 12.0)));
+		outDelay = std::max(1, std::min((int) (0.5 * rest), (int) (rest - 13.0)));
 	}
 
 	const bool refit = (chainStages <= 0 || fitB != bUsed || fitRate != rate
@@ -1067,7 +1117,8 @@ void PianoString::tune() {
 
 	if (refit) {
 		// A provisional read, so that the loss has something to divide its own share out of.
-		readDelay = std::fmax(3.0, std::fmin(rate / freq - (double) leftDelay - (double) outDelay,
+		readDelay = std::fmax(3.0, std::fmin(
+			rate / freq - (double) leftDelay - (double) outDelay - DAMPER_DELAY,
 			(double) backMask - 4.0));
 		for (int round = 0; round < 2; round++) {
 			solveLoss();
@@ -1086,6 +1137,12 @@ void PianoString::tune() {
 		solveRead();
 	}
 	refreshGain();
+	// What one pass of the loop must keep if a fully damped note is to die in the time it should.
+	dampedDC = std::pow(10.0, -3.0 / (freq
+		* std::fmax((double) pianoDampedSeconds((float) note), 1e-4)));
+	dampedTop = std::fmin(dampedDC, std::pow(10.0, -3.0 / (freq
+		* std::fmax((double) pianoDampedSecondsHigh((float) note), 1e-4))));
+	setDamperTaps();
 }
 
 
@@ -1109,6 +1166,41 @@ void PianoString::refreshGain() {
 
 
 // ---- playing it ---------------------------------------------------------------------------------
+
+/** THE THREE TAPS, from how hard the damper is pressing.
+
+A symmetric three-tap filter's magnitude is its centre tap plus twice its outer pair times the
+cosine of the frequency, so it runs from (centre + two outers) at DC down to (centre - two outers)
+at the top of the band, and solving for a wanted pair at those two ends is two lines of arithmetic.
+Its delay is exactly one sample at every frequency and for every pair of values, which is what lets
+the pedal move without the note moving with it.
+
+AND IT CANNOT GAIN, which matters because it sits in a feedback loop that is already as close to
+unity as the decay times allow. Its largest magnitude is at DC and equals what is asked for there,
+which is at most one — at a damper pressure of nought it is exactly one, a filter that does nothing
+but delay by a sample. */
+void PianoString::setDamperTaps() {
+	// PRESSED PART WAY TAKES PART OF THE WAY, and the two ends it is going toward were worked out
+	// when the note was. That matters: this runs on every string of every note on every sample
+	// that a pedal is moving, and the two logarithms it would otherwise need are two hundred and
+	// sixty-odd pairs of them a sample.
+	const double dc = 1.0 - damper * (1.0 - dampedDC);
+	const double top = 1.0 - damper * (1.0 - dampedTop);
+	damperMid = (float) (0.5 * (dc + top));
+	damperSide = (float) (0.25 * (dc - top));
+}
+
+
+void PianoString::setDamperPressure(float pressure) {
+	const double p = std::fmax(0.0, std::fmin((double) pressure, 1.0));
+	if (p == damper)
+		return;
+	damper = p;
+	// NOT `dirty`. Nothing that was fitted depends on this, by construction.
+	if (!dirty)
+		setDamperTaps();
+}
+
 
 void PianoString::adoptDesign(const PianoString& other) {
 	if (dirty) {
@@ -1138,6 +1230,9 @@ void PianoString::adoptDesign(const PianoString& other) {
 	fitPower = powerAsked;
 	fitDecay = t60Used;
 	fitSplit = leftDelay;
+	dampedDC = other.dampedDC;
+	dampedTop = other.dampedTop;
+	setDamperTaps();
 }
 
 
@@ -1156,6 +1251,7 @@ void PianoString::silence() {
 	for (int i = 0; i < LOSS_SECTIONS; i++)
 		shelfIn[i] = shelfOut[i] = 0.f;
 	fromLeft = fromRight = lastJunction = 0.0;
+	damperIn[0] = damperIn[1] = 0.f;
 }
 
 
@@ -1199,7 +1295,13 @@ float PianoString::arrivingAtStrike() {
 		chainOut[i] = y;
 		back = y;
 	}
-	fromRight = (double) ((float) passGain * back);
+
+	// The damper, three symmetric taps: one sample of delay whatever it is set to.
+	const float damped = damperSide * (back + damperIn[1]) + damperMid * damperIn[0];
+	damperIn[1] = damperIn[0];
+	damperIn[0] = back;
+
+	fromRight = (double) ((float) passGain * damped);
 
 	// From the agraffe: a whole number of samples, out and back in the one line, turned over.
 	fromLeft = -(double) leftLine[(writeAt - (unsigned) leftDelay) & leftMask];
