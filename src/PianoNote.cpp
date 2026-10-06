@@ -91,7 +91,12 @@ void PianoNote::setup() {
 		strings[i].setSampleRate((float) rate);
 		strings[i].setNote((float) note);
 		strings[i].setDetuneCents((float) at);
-		strings[i].prepare();
+		// THE FIRST STRING SOLVES AND THE REST TAKE ITS ANSWER, which is a third of the work for
+		// the same instrument: two hundred and sixty-four strings become eighty-eight designs.
+		if (i == 0)
+			strings[0].prepare();
+		else
+			strings[i].adoptDesign(strings[0]);
 	}
 }
 
@@ -122,6 +127,7 @@ void PianoNote::silence() {
 	}
 	hammerOn = false;
 	lastForce = 0.0;
+	envelope = 0.0;
 	dcIn = dcOut = 0.f;
 }
 
@@ -153,7 +159,7 @@ against the string, and a hammer that never leaves is a hammer damping the note 
 static const double CONTACT_LIMIT_MS = 30.0;
 
 
-float PianoNote::process() {
+void PianoNote::advanceStrike() {
 	if (dirty)
 		setup();
 
@@ -216,12 +222,25 @@ float PianoNote::process() {
 		lastForce = 0.0;
 	}
 
+	// HOW MUCH THE NOTE IS MOVING, kept as it goes because PianoBoard needs it every sample and
+	// would otherwise have to go and ask every string. A falling memory with the largest thing
+	// seen written straight into it: it rises at once when a note is struck and takes about a
+	// tenth of a second to forget, which is slow enough that it never reports a note as finished
+	// between two cycles of its own waveform.
+	double most = std::fabs(lastForce);
 	for (int i = 0; i < count; i++) {
 		strings[i].pushStrike((float) force[i]);
 		stringAt[i] += (double) strings[i].strikeVelocity() / rate;
+		most = std::fmax(most, std::fabs((double) strings[i].strikeVelocity()));
 	}
+	envelope = std::fmax(most, envelope * (1.0 - 10.0 / rate));
+}
 
-	// ---- the bridge ----
+
+float PianoNote::process() {
+	advanceStrike();
+
+	// ---- the bridge, with nothing on it but this note ----
 	//
 	// A JUNCTION OF THE NOTE'S STRINGS AND A LOAD. Each string's impedance times twice the wave
 	// arriving along it, over the impedances of everything meeting there including the bridge's

@@ -560,10 +560,22 @@ void PianoString::fitChain() {
 	// hundredths of a cent.
 	auto errorOf = [&](int stages, double a, bool exact, double* worstOut) {
 		const double stagesN = (double) stages;
-		// Never ask the chain for more delay than the loop has to give: a chain that eats the
-		// period cannot be tuned at all.
+		// NEVER ASK THE CHAIN FOR MORE DELAY THAN THE LOOP HAS LEFT, and the test has to be what
+		// is actually left rather than a fraction of it. Phase 1 allowed the chain three fifths of
+		// the loop, which was generous when the only whole-sample section was the short one up to
+		// the agraffe. Phase 3 split the bridge section into a way out and a way back, which puts
+		// half the period into whole samples, and three fifths of what remained was no longer
+		// enough for the bass: the bottom A's forty-eight-stage chain wants seven hundred samples
+		// of a seventeen-hundred-sample period and was refused, so it settled for sixteen stages
+		// and five cents of error where it had had one and a tenth.
+		//
+		// What is really needed is that the interpolating read is left something to work with,
+		// which is a handful of samples. So that is the test.
 		const double chainAt1 = stagesN * allpassDelay(a, w1);
-		if (chainAt1 > (period - (double) (leftDelay + outDelay)) * 0.6 || chainAt1 < 0.0)
+		// Four samples held back, since the interpolating read is clamped to three and wants one
+		// to spare.
+		const double room = period - (double) (leftDelay + outDelay) - lossDelay(loss, w1) - 4.0;
+		if (chainAt1 > room || chainAt1 < 0.0)
 			return false;
 		const double d = solveDelayFor(period, w1, (double) (leftDelay + outDelay), stagesN, a, loss, backMask);
 
@@ -1039,7 +1051,14 @@ void PianoString::tune() {
 		const double frac = (double) pianoStrikeFraction((float) note);
 		leftDelay = std::max(1, std::min((int) std::lround(frac * period),
 			(int) (period * 0.5)));
-		outDelay = std::max(1, (int) (0.5 * (period - (double) leftDelay)));
+		// HALFWAY ALONG WHAT IS LEFT, BUT NEVER SO FAR THAT NOTHING IS LEFT. The two whole-sample
+		// sections and the dispersion chain all come out of the same period, and at the top of the
+		// compass there is barely a period to come out of: the top C's is eleven samples and a
+		// bridge put five and a half of them away leaves the chain and the interpolating read
+		// nothing at all, so the fit refused every candidate and the note came out with no stretch
+		// whatever. A dozen samples held back is enough for both.
+		const double rest = period - (double) leftDelay;
+		outDelay = std::max(1, std::min((int) (0.5 * rest), (int) (rest - 12.0)));
 	}
 
 	const bool refit = (chainStages <= 0 || fitB != bUsed || fitRate != rate
@@ -1090,6 +1109,37 @@ void PianoString::refreshGain() {
 
 
 // ---- playing it ---------------------------------------------------------------------------------
+
+void PianoString::adoptDesign(const PianoString& other) {
+	if (dirty) {
+		// The compass's own answers first, and the lines long enough, but not the fits.
+		freq = 440.0 * std::pow(2.0, (note - 69.0) / 12.0 + detune / 1200.0);
+		freq = std::fmax(16.0, std::fmin(freq, rate * 0.25));
+		bUsed = (bAsked >= 0.0) ? bAsked : (double) pianoInharmonicity((float) note);
+		t60Used = (decayAsked > 0.0) ? decayAsked : (double) pianoDecaySeconds((float) note);
+		impedance = (double) pianoImpedance((float) note);
+		resize();
+	}
+	chainStages = other.chainStages;
+	chainA = other.chainA;
+	fitError = other.fitError;
+	loss = other.loss;
+	powerReached = other.powerReached;
+	lossError = other.lossError;
+	leftDelay = other.leftDelay;
+	outDelay = other.outDelay;
+	// And then this string's own length and gain, for its own pitch.
+	solveRead();
+	refreshGain();
+	dirty = false;
+	fitFreq = freq;
+	fitB = bUsed;
+	fitRate = rate;
+	fitPower = powerAsked;
+	fitDecay = t60Used;
+	fitSplit = leftDelay;
+}
+
 
 void PianoString::prepare() {
 	if (dirty)

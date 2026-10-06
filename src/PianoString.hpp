@@ -185,6 +185,19 @@ struct PianoString {
 	setting its strings up, so nothing outside ever sees a stale answer. */
 	void prepare();
 
+	/** TAKE ANOTHER STRING'S DESIGN instead of solving for one.
+
+	THE THREE STRINGS OF A NOTE ARE THE SAME STRING to within a fraction of a cent, and solving
+	the dispersion chain and the loss filter three times over to three identical answers is three
+	times the work for nothing. This is not an approximation smuggled in: `tune` already holds a
+	design good across a twenty-fourth of an octave before refitting, which is a hundred times the
+	spread of a unison, so the claim being made here is one the design arithmetic makes anyway.
+
+	WHAT IS NOT COPIED is the delay line's own length and the flat gain, which depend on this
+	string's own pitch and are re-solved from it. That is the cheap part — no search and no fit —
+	and it is what makes the detuning real rather than nominal. */
+	void adoptDesign(const PianoString& other);
+
 	void silence();	// ---- one sample, in four parts. See the note at the top of this file. ----
 	/** What has reached the strike point from both sides, which is what the hammer compresses
 	against. */

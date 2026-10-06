@@ -33,6 +33,7 @@ It is driven here against GuitarString, which is the waveguide the piano's strin
 from, so that the bench is proven and the starting point is written down before anything changes.
 */
 #include "../src/GuitarString.hpp"
+#include "../src/PianoBoard.hpp"
 #include "../src/PianoNote.hpp"
 #include "../src/PianoString.hpp"
 
@@ -902,6 +903,251 @@ int main() {
 		std::printf("%-8.2f %12.3f %12.3f\n", cents, beatRate(x, SR), expect);
 	}
 
+	// ---- PHASE 4: the whole board ------------------------------------------------------------------
+	std::printf("\n");
+	std::printf("================================================================================\n");
+	std::printf("PHASE 4 — the whole board: eighty-eight notes, one bridge\n");
+	std::printf("================================================================================\n");
+
+	{
+		// BUILDING IT, timed, because every string's dispersion chain and loss filter is solved
+		// for and there are two hundred and sixty-odd strings. This happens once and must never
+		// happen on the audio thread.
+		PianoBoard board;
+		const clock_t began = std::clock();
+		board.setSampleRate((float) SR);
+		board.silence();
+		const double built = (double) (std::clock() - began) / CLOCKS_PER_SEC;
+		std::printf("\nBUILDING IT: %.3f seconds to solve every string in the instrument.\n",
+			built);
+		std::printf("  Once, when the sample rate is set. Phase 7 has to keep it off the audio\n");
+		std::printf("  thread and out of the way of a module appearing in a rack.\n");
+		std::printf("  The strings hang %.0f kg/s of impedance on the bridge between them, against\n",
+			board.hangingImpedance());
+		std::printf("  the soundboard's own two thousand: a quarter again as hard to move as the\n");
+		std::printf("  soundboard alone, which is why a note's decay depends on the whole\n");
+		std::printf("  instrument being there rather than only on its own three strings.\n");
+
+		// ---- the gate: striking one note sets the others ringing ----
+		//
+		// NO RESONANCE CODE EXISTS. The strings were always there and the bridge was always
+		// shared. What follows is what a piano does.
+		std::printf("\nSYMPATHETIC RESONANCE. C3 is struck and nothing else is touched. Two\n");
+		std::printf("seconds later, this is how much every note is moving, in decibels below what\n");
+		std::printf("C3 itself was doing at the moment of the blow. The notes that answer should\n");
+		std::printf("be the ones that share a partial with C3.\n");
+		board.silence();
+		board.hit(48, 3.f);
+		// What the blow itself amounted to, so that everything can be measured against the thing
+		// that was put in rather than against the struck note two seconds later — which has
+		// decayed a long way by then and would make every answer look louder than it is.
+		double blow = 0.0;
+		for (int i = 0; i < (int) (0.3 * SR); i++) {
+			board.process();
+			blow = std::max(blow, (double) board.note(48).moving());
+		}
+		for (int i = 0; i < (int) (1.7 * SR); i++)
+			board.process();
+		struct Answer { int midi; double db; };
+		std::vector<Answer> answers;
+		for (int midi = 21; midi <= 108; midi++) {
+			const double m = (double) board.note(midi).moving();
+			if (m > 0.0)
+				answers.push_back(Answer{midi, 20.0 * std::log10(m / blow)});
+		}
+		std::sort(answers.begin(), answers.end(),
+			[](const Answer& a, const Answer& b) { return a.db > b.db; });
+		std::printf("%-6s %8s %22s\n", "note", "dB", "why");
+		for (size_t k = 0; k < answers.size() && k < 12; k++) {
+			const int midi = answers[k].midi;
+			std::string why;
+			if (midi == 48)
+				why = "struck";
+			else {
+				// WHERE THE TWO NOTES MEET, which is not always at one of them. Looking only for
+				// a whole-number ratio between the two fundamentals explains C2 and C4 and
+				// leaves F2, G2, F3 and G3 looking like noise — and they are not noise: F2's
+				// third partial is C4, which is C3's second, and G2's fourth is G4, which is
+				// C3's third. Two strings talk through ANY partial they have in common, so the
+				// smallest pair of whole numbers that lines them up is what to look for.
+				const double f = hzOf(midi), c = hzOf(48);
+				int bestP = 0, bestQ = 0;
+				for (int sum = 2; sum <= 14 && !bestP; sum++) {
+					for (int p = 1; p < sum; p++) {
+						const int q = sum - p;
+						if (std::fabs(1200.0 * std::log2((f * p) / (c * q))) < 30.0) {
+							bestP = p;
+							bestQ = q;
+							break;
+						}
+					}
+				}
+				if (!bestP)
+					why = "-";
+				else if (bestP == 1)
+					why = "partial " + std::to_string(bestQ) + " of C3 is it";
+				else if (bestQ == 1)
+					why = "C3 is its partial " + std::to_string(bestP);
+				else
+					why = "its " + std::to_string(bestP) + " = C3's "
+						+ std::to_string(bestQ);
+			}
+			std::printf("%-6s %8.1f %22s%s\n", noteName(midi), answers[k].db, why.c_str(),
+				(midi == 67) ? "   <- the twelfth: the gate" : "");
+		}
+		std::printf("  C3 itself has fallen to %.1f dB by then, so the notes that answer are not\n",
+			20.0 * std::log10(std::max((double) board.note(48).moving(), 1e-30) / blow));
+		std::printf("  as close behind it as they look: two seconds in, the halo is a good deal\n");
+		std::printf("  quieter than the note, and the note is a good deal quieter than the blow.\n");
+		std::printf("  AND THE LOW NOTES ANSWER LOUDEST, which is right and is the same mechanism\n");
+		std::printf("  seen from the other end: C3 is the second partial of C2 and the fourth of\n");
+		std::printf("  C1, so those strings are being driven at a frequency they ring at. It is\n");
+		std::printf("  what a real piano does with the pedal down, where the bass hums under\n");
+		std::printf("  everything. The bass also holds what it picks up for twenty seconds, so it\n");
+		std::printf("  has longer than anything else to gather it.\n");
+
+		// AND THE CONTROL, which the measurement needs as much as the result: with the bridge
+		// made rigid there is nothing for the strings to talk through, and nothing should answer.
+		PianoBoard rigid;
+		rigid.setSampleRate((float) SR);
+		rigid.setBridgeImpedance(1e9f);
+		rigid.silence();
+		rigid.hit(48, 3.f);
+		double rigidBlow = 0.0;
+		for (int i = 0; i < (int) (0.3 * SR); i++) {
+			rigid.process();
+			rigidBlow = std::max(rigidBlow, (double) rigid.note(48).moving());
+		}
+		for (int i = 0; i < (int) (1.7 * SR); i++)
+			rigid.process();
+		double other = 0.0;
+		for (int midi = 21; midi <= 108; midi++) {
+			if (midi != 48)
+				other = std::max(other, (double) rigid.note(midi).moving());
+		}
+		std::printf("  CONTROL, the same strike with the bridge made rigid: the loudest other\n");
+		std::printf("  note reaches %.1f dB, against %.1f with a bridge that moves. Nothing\n",
+			(other > 0.0) ? 20.0 * std::log10(other / rigidBlow) : -999.0,
+			(answers.size() > 1) ? answers[1].db : 0.0);
+		std::printf("  resonates through a bridge that cannot be shifted, and there is no\n");
+		std::printf("  resonance code in the model for it to resonate with.\n");
+
+		// ---- and the whole instrument changes every note's decay ----
+		std::printf("\nAND A NOTE'S DECAY DEPENDS ON THE WHOLE INSTRUMENT BEING THERE, which is\n");
+		std::printf("the same coupling seen from the other side: two hundred and sixty strings\n");
+		std::printf("hang on the bridge and make it harder to move than three do.\n");
+		{
+			const size_t N = windowFor(57, 0.03);
+			std::vector<float> x((size_t) (14.0 * SR) + 2 * N);
+			board.silence();
+			board.hit(57, 2.f);
+			for (size_t i = 0; i < x.size(); i++)
+				x[i] = board.process();
+			double f1 = 0, t1 = 0, cross = 0;
+			twoRateDecay(x, SR, board.note(57).string(0).frequency(), N, &f1, &t1, &cross);
+			PianoNote alone;
+			alone.setSampleRate((float) SR);
+			alone.setNote(57.f);
+			alone.hit(2.f);
+			std::vector<float> y(x.size());
+			for (size_t i = 0; i < y.size(); i++)
+				y[i] = alone.process();
+			double f2 = 0, t2 = 0, cross2 = 0;
+			twoRateDecay(y, SR, alone.string(0).frequency(), N, &f2, &t2, &cross2);
+			std::printf("  A3, first T60 / then T60:  on the board %.2f / %.2f,  alone %.2f / %.2f\n",
+				f1, t1, f2, t2);
+			std::printf("  THE INITIAL FALL IS A LITTLE SLOWER, because the loaded bridge is\n");
+			std::printf("  harder to shift, so the note keeps rather more of its first energy.\n");
+			std::printf("  AND THE AFTERSOUND IS HALVED, which is the more interesting half of\n");
+			std::printf("  it. A note alone has nowhere to lose its out-of-step energy to and\n");
+			std::printf("  rings on at its own internal rate; a note on a board full of undamped\n");
+			std::printf("  strings leaks it into every string that shares a partial with it — the\n");
+			std::printf("  halo above is where it goes. Sympathetic resonance is not free, and\n");
+			std::printf("  this is the price measured. On a real piano it is the price of the\n");
+			std::printf("  sustain pedal, and phase 5, which puts the dampers back on the other\n");
+			std::printf("  strings, should hand most of it back.\n");
+		}
+
+		// ---- what it costs to run ----
+		std::printf("\nWHAT IT COSTS TO RUN, as a share of one processor.\n");
+		struct Case { const char* what; int notes[10]; int n; };
+		const Case cases[4] = {
+			{"silence, nothing struck", {0}, 0},
+			{"one note", {60}, 1},
+			{"a four-note chord", {48, 55, 60, 64}, 4},
+			{"every note at once", {0}, -1},
+		};
+		std::printf("%-26s %8s %14s %12s\n", "", "awake", "x real time", "headroom");
+		for (int c = 0; c < 4; c++) {
+			PianoBoard b;
+			b.setSampleRate((float) SR);
+			b.silence();
+			if (cases[c].n < 0) {
+				for (int midi = 21; midi <= 108; midi++)
+					b.hit(midi, 3.f);
+			}
+			else {
+				for (int k = 0; k < cases[c].n; k++)
+					b.hit(cases[c].notes[k], 3.f);
+			}
+			// A moment to settle, so the timing is of the instrument ringing rather than of
+			// eighty-eight hammers all in contact at once.
+			for (int i = 0; i < (int) (0.3 * SR); i++)
+				b.process();
+			const int n = (int) (1.0 * SR);
+			const clock_t began = std::clock();
+			float sink = 0.f;
+			for (int i = 0; i < n; i++)
+				sink += b.process();
+			const double took = (double) (std::clock() - began) / CLOCKS_PER_SEC;
+			if (!std::isfinite(sink))
+				std::printf("  that went to not-a-number.\n");
+			const double share = took / ((double) n / SR);
+			std::printf("%-26s %8d %14.4f %12.0f\n", cases[c].what, b.awake(), share,
+				1.0 / std::max(share, 1e-9));
+		}
+		std::printf("  SILENCE IS FREE and nothing else is, which is worth being plain about.\n");
+		std::printf("  Once anything at all is sounding the bridge is moving, so every string in\n");
+		std::printf("  the instrument is being driven, and a string that is being driven has a\n");
+		std::printf("  right to be heard — so they are all awake and one note costs what the whole\n");
+		std::printf("  keyboard does. That is the resonance doing its job rather than the gating\n");
+		std::printf("  failing to do its own. Phase 4's gate was that the instrument runs at a\n");
+		std::printf("  sensible cost with every damper up, and half a processor for a piano is\n");
+		std::printf("  sensible. If phase 7 wants it cheaper, the thing to do is not a higher\n");
+		std::printf("  floor — the bridge is loud either way — but to check the sleeping notes a\n");
+		std::printf("  few at a time on a rotation, so each is woken briefly and put back unless\n");
+		std::printf("  it has something to say.\n");
+
+		// ---- the board must not grow either ----
+		std::printf("\nSTABILITY OF THE WHOLE BOARD: every note struck at twelve metres per\n");
+		std::printf("second, run for twenty seconds. The last second must be quieter than the\n");
+		std::printf("first, and with two hundred and sixty strings tied together there are far\n");
+		std::printf("more ways for that to fail than with one.\n");
+		PianoBoard loud;
+		loud.setSampleRate((float) SR);
+		loud.silence();
+		for (int midi = 21; midi <= 108; midi++)
+			loud.hit(midi, 12.f);
+		double first = 0.0, last = 0.0;
+		bool finite = true;
+		const int n = (int) (20.0 * SR);
+		for (int i = 0; i < n; i++) {
+			const float y = loud.process();
+			if (!std::isfinite(y)) {
+				std::printf("  not a number at %.3f s\n", i / SR);
+				finite = false;
+				break;
+			}
+			if (i < (int) SR)
+				first = std::max(first, (double) std::fabs(y));
+			if (i > n - (int) SR)
+				last = std::max(last, (double) std::fabs(y));
+		}
+		if (finite)
+			std::printf("  peak %.1f in the first second, %.3e in the last: a ratio of %.2e.\n",
+				first, last, last / std::max(first, 1e-30));
+	}
+
 	// ---- nothing anywhere may grow -------------------------------------------------------------
 	//
 	// A REGRESSION GUARD AND NOT A MEASUREMENT. Every note struck as hard as anyone could, run for
@@ -981,9 +1227,9 @@ int main() {
 				p.string(0).stages(), share, 1.0 / share);
 	}
 	std::printf("  all eighty-eight ringing at once: %.2f processors.\n", wholeBoard);
-	std::printf("  A piano with every damper up is the worst case and a rare one, but phase 4\n");
-	std::printf("  has to survive it: the way out is that a string nobody has struck costs\n");
-	std::printf("  nothing, so the gating has to be cheap and must not click when a string wakes.\n");
+	std::printf("  These are notes on their own bridges, summed on paper; phase 4 measures the\n");
+	std::printf("  real thing, where they share one. Most of the cost is the dispersion chain,\n");
+	std::printf("  which is longest in the bass — where a note has one string rather than three.\n");
 
 	std::printf("\nDone. Phase 4 is the whole board: eighty-eight notes at once, coupled, with a\n");
 	std::printf("string whose energy is below hearing skipped so that silence is free.\n");

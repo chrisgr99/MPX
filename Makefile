@@ -495,6 +495,6 @@ lossprobe:
 # measured. Partials and stretch, decay per partial, brightness against force, and beating.
 pianobench:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp src/PianoString.cpp src/PianoNote.cpp \
+	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp src/PianoString.cpp src/PianoNote.cpp src/PianoBoard.cpp \
 		-o build/pianobench
 	@./build/pianobench $(ARGS)

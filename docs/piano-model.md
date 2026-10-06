@@ -2,7 +2,7 @@
 
 mpxPiano plays the Salamander sample set. This is the other thing: the instrument itself, modelled, so that what it does under the hands is a consequence rather than a setting. Sampled pianos are convincing until you ask them something the samples were not recorded doing — a key released while the pedal is half down, a note struck again before its damper has landed, a chord that rings sympathetically with one held silently. All of those are ordinary piano playing and none of them is in a sample set.
 
-**It models the whole instrument, not the notes being played.** All two hundred-odd strings exist all the time, damped or not, coupled through one bridge. Sympathetic resonance is then not a feature that was added: it happens. The sustain pedal works because the dampers lift and the strings are already there. The undamped top two octaves ring along by themselves. A string that is not moving costs nothing, and most of them are not moving most of the time.
+**It models the whole instrument, not the notes being played.** All two hundred-odd strings exist all the time, damped or not, coupled through one bridge. Sympathetic resonance is then not a feature that was added: it happens. As of phase 4 it does — strike a C and the G a twelfth above it answers, because the C's third partial is the G's first, and there is no resonance code anywhere in the model. The sustain pedal works because the dampers lift and the strings are already there. The undamped top two octaves ring along by themselves. A string that is not moving costs nothing, and most of them are not moving most of the time.
 
 **The target is Bach and Chopin**, which is a demanding pair. A fugue wants four voices that stay separate, repeated notes that speak, and dampers that actually stop the string. Chopin wants the pedal — including half-pedalling — the soft pedal, a wide dynamic range where loud is *brighter* and not merely louder, and the resonance of everything that is not being played.
 
@@ -306,9 +306,88 @@ Measured now, while there is still one note to measure.
 
 ### Phase 4 — the whole board
 
-Eighty-eight notes present at once, all coupled, with a string whose energy is below hearing skipped entirely so that silence is free.
+**Done.** `PianoBoard`: eighty-eight notes, and every string of them tied to one bridge.
 
-**Done when** the instrument runs at a sensible cost with every damper up, and striking one note measurably excites the strings a twelfth above it.
+#### One bridge, not eighty-eight
+
+Phase 3 gave each note a bridge of its own, which is enough to make the strings of one note hear each other and so to produce the double decay. It is not a piano. On a real instrument every string is tied down to the same bridge on the same soundboard, and that single fact is what makes a piano sound like a room rather than like a set of strings.
+
+**There is no resonance code.** The strings were always there and the bridge was always shared, and what follows from that is what a piano does. Striking one note moves the bridge, and every other string in the instrument is driven by that motion — strongly if it happens to be in tune with one of the struck note's partials, imperceptibly otherwise. The sustain pedal of phase 5 will work for the same reason and will need no resonance code either.
+
+**This is why it cannot be eighty-eight notes mixed together.** It is one junction, not a sum. And the same fact seen from the other side is that the other strings *load* the bridge: two hundred and sixty strings hanging on it make it harder to move than three do, so every note's decay depends on the whole instrument being there.
+
+`PianoNote` keeps a `process` of its own, which puts a private bridge on one note. That is a note on a bridge with nothing else attached, which is exactly what phases 1 to 3 were measured on, so keeping it means those measurements still mean what they said.
+
+#### The sum of the impedances is over every string, not the ringing ones
+
+A string is tied to the bridge whether or not it is moving: it is still there and still has to be shifted. Leaving a sleeping string out of that sum would make the bridge easier to move the quieter the music got, so every note's decay would creep as the texture thinned and a chord would die at a different rate from the notes composing it. The sum is therefore a constant of the instrument, fixed once. Sleeping only ever leaves a string out of the *other* sum — the one weighted by what the strings are actually doing, which a silent string contributes nothing to anyway.
+
+The strings hang 469 kg/s on the bridge between them, against the soundboard's own two thousand: a quarter again as hard to move as the soundboard alone.
+
+#### One criterion for sleeping, not two
+
+The first attempt slept a note when its own motion was under the floor and woke it when the bridge was over it, and those are different questions asked at different moments. A note woken by the bridge has not moved **yet**, so it was put straight back to sleep in the same sample, before it had been given anything to be driven by. Nothing ever resonated, and the measurement meant to prove phase 4 reported a piano with one string in it.
+
+So the bridge's motion decides both. While the bridge is moving, nothing sleeps — every string is being driven and has a right to be heard. When the bridge has gone quiet, a note that is itself quiet may sleep. The two can then never disagree.
+
+#### The gate: striking one note sets the others ringing
+
+C3 struck and nothing else touched. Two seconds later, how much every note is moving, in decibels below what C3 itself was doing at the moment of the blow:
+
+| note | dB | why |
+|---|---|---|
+| C3 | -43.5 | struck |
+| C2 | -50.4 | C3 is its partial 2 |
+| C4 | -52.5 | partial 2 of C3 |
+| F1 | -61.2 | C3 is its partial 3 |
+| C1 | -63.1 | C3 is its partial 4 |
+| F2 | -64.9 | its 3rd = C3's 2nd |
+| G2 | -67.8 | its 4th = C3's 3rd |
+| F3 | -69.1 | its 3rd = C3's 4th |
+| G3 | -74.6 | its 2nd = C3's 3rd |
+| **G4** | **-74.8** | **partial 3 of C3 — the twelfth, which is the gate** |
+| C5 | -80.5 | partial 4 of C3 |
+| B2 | -86.9 | — |
+
+Every note that answers is accounted for by a partial it shares with C3, and finding that out took fixing the explanation rather than the model: looking only for a whole-number ratio between the two **fundamentals** explains C2 and C4 and leaves F2, G2, F3 and G3 looking like noise. They are not noise. F2's third partial is C4, which is C3's second; G2's fourth is G4, which is C3's third. Two strings talk through any partial they have in common.
+
+**The low notes answer loudest, which is right**, and is the same mechanism seen from the other end: C3 is the second partial of C2 and the fourth of C1, so those strings are being driven at a frequency they ring at. It is what a real piano does with the pedal down, where the bass hums under everything. The bass also holds what it picks up for twenty seconds, so it has longer than anything else to gather it.
+
+**The control**, which the measurement needs as much as the result: the same strike with the bridge made rigid leaves the loudest other note at -79 dB instead of -50. Nothing resonates through a bridge that cannot be shifted.
+
+#### And a note's decay depends on the whole instrument being there
+
+| A3 | first T60 | then T60 |
+|---|---|---|
+| on the board | 3.62 | 6.86 |
+| alone | 3.46 | 14.18 |
+
+The initial fall is a little slower, because the loaded bridge is harder to shift, so the note keeps rather more of its first energy. **And the aftersound is halved**, which is the more interesting half of it. A note alone has nowhere to lose its out-of-step energy to and rings on at its own internal rate; a note on a board full of undamped strings leaks it into every string that shares a partial with it — the halo above is where it goes. Sympathetic resonance is not free, and this is its price measured. On a real piano it is the price of the sustain pedal, and phase 5, which puts the dampers back on the other strings, should hand most of it back.
+
+#### What it costs
+
+| | awake | share of a processor |
+|---|---|---|
+| silence, nothing struck | 0 | 0.004 |
+| one note | 88 | 0.48 |
+| a four-note chord | 88 | 0.49 |
+| every note at once | 88 | 0.48 |
+
+**Silence is free and nothing else is**, which is worth being plain about rather than dressing up. Once anything at all is sounding the bridge is moving, so every string in the instrument is being driven, and a string being driven has a right to be heard — so they are all awake, and one note costs what the whole keyboard does. That is the resonance doing its job rather than the gating failing to do its own.
+
+Phase 4's gate was that the instrument runs at a sensible cost with every damper up, and half a processor for a physically modelled piano is sensible. If phase 7 wants it cheaper, the thing to do is **not** a higher floor — the bridge is loud either way — but to check the sleeping notes a few at a time on a rotation, so each is woken briefly and put back unless it has something to say.
+
+**Building it takes half a second**, for every string's dispersion chain and loss filter. That is once, when the sample rate is set, and phase 7 has to keep it off the audio thread and out of the way of a module appearing in a rack.
+
+It was a second and a fifth until the three strings of a note stopped each solving the same design from scratch. They are the same string to within a fraction of a cent, and `tune` already holds a design good across a twenty-fourth of an octave before refitting — a hundred times the spread of a unison — so the first string solves and the rest adopt its answer, re-solving only their own delay-line length and flat gain from their own pitch. That is what makes the detuning real rather than nominal, and it costs no search.
+
+#### A regression phase 3 left behind, found here
+
+Restoring the long bass chains needed fixing something phase 3 had quietly broken. The chain-length guard allowed the dispersion chain three fifths of what the loop had left, which was generous when the only whole-sample section was the short one up to the agraffe. Phase 3 split the bridge section into a way out and a way back, putting half the period into whole samples, and three fifths of the remainder was no longer enough: the bottom A's forty-eight-stage chain wants seven hundred samples of a seventeen-hundred-sample period and was refused, so it settled for sixteen stages and five cents of error where phase 1 had had it at one and a tenth.
+
+What is really needed is that the interpolating read is left a few samples to work with, so that is now the test. And at the top of the compass the bridge has to be put nearer than halfway: the top C's period is eleven samples, and a bridge five and a half of them away leaves the chain and the read nothing at all, so the fit refused every candidate and the note came out with no stretch whatever. A dozen samples held back is enough for both.
+
+With both fixed, the worst partial of any note in the compass is between nought and two cents.
 
 ### Phase 5 — dampers and pedals
 
@@ -340,7 +419,7 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 **Tuning against dispersion.** Done, in phase 1, and it was not hard once the fit was asked the right question: rather than correcting for the chain's delay, the fit solves for where the loop will actually ring and compares that against the stiff string. Everything the implementation does to the partials is then inside the error being minimised. The loss filter's delay belongs to the same problem and is in the same solve.
 
-**Cost.** Measured in phase 3 and far smaller than feared: all eighty-eight notes ringing at once is under a third of one processor, with the heaviest note at a two-hundredth of it. Most strings being still is therefore an optimisation rather than the thing that makes the instrument possible. The gating still has to be cheap and must not click when a string wakes.
+**Cost.** Settled in phase 4: the whole instrument is half a processor, and silence is free. Most strings being still turned out to be no help at all once anything is sounding, because a shared bridge drives every string in the instrument — so the saving is in the silence between the music rather than during it, and it is an optimisation rather than the thing that makes the instrument possible.
 
 **Holding a decay law with a low-order loop filter.** Phase 1 got the measured power right and an individual partial's decay time to within about forty per cent, and that is where a three-shelf filter runs out. It is also probably the wrong target to chase further: a power law is a stand-in, and the physically grounded account of string damping — air, viscoelastic and support losses summed — gives a curve that is not a power law and may well be easier for a low-order filter to follow, because it comes from first-order physics rather than from a convenient exponent. That belongs with phase 6, where the soundboard's own frequency-dependent losses arrive in the same place.
 

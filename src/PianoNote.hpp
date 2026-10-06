@@ -87,9 +87,21 @@ struct PianoNote {
 
 	void silence();
 
-	/** One sample: the force the strings put on the bridge, which is what drives a soundboard and
-	is therefore what this instrument's sound is. Phase 6 puts a real soundboard on the end of it;
-	for now the bridge is a plain resistance and this is the sound. */
+	/** EVERYTHING UP TO THE BRIDGE: what has reached each strike point, the hammer's force worked
+	out from all of it, and each string's share pushed in. After this the strings are waiting to
+	be asked what has reached the bridge.
+
+	SEPARATE FROM THE BRIDGE because of phase 4. On a real piano every string of every note is
+	tied to the same bridge, which is how striking one note sets the others ringing, so the bridge
+	cannot belong to a note either — PianoBoard takes it over and drives this instead of
+	`process`. A note on its own is still a legitimate thing to measure, and `process` keeps that
+	working: it is a note on a bridge with nothing else attached to it, which is exactly what
+	phases 1 to 3 measured. */
+	void advanceStrike();
+
+	/** One sample of this note by itself: `advanceStrike`, then its own private bridge. The force
+	the strings put on it is what drives a soundboard and so is the sound. PianoBoard does not use
+	this — it has one bridge for the whole instrument. */
 	float process();
 
 	// ---- what it came out as, for the bench and the phases after this one ----
@@ -103,8 +115,13 @@ struct PianoNote {
 	PianoString& string(int i) { return strings[i]; }
 	const PianoString& string(int i) const { return strings[i]; }
 	/** What the bridge sends back when the strings all move together: what decides how much faster
-	the initial fall is than the aftersound. */
+	the initial fall is than the aftersound. For a note on its own; the board's bridge, with the
+	whole instrument hanging on it, keeps rather more. */
 	float bridgeReflection() const { return (float) keep; }
+
+	/** HOW MUCH THE NOTE IS MOVING, as the largest thing at any of its strike points lately. What
+	PianoBoard uses to decide that a note has stopped and can be left alone. */
+	float moving() const { return (float) envelope; }
 
 private:
 	double rate = 48000.0;
@@ -129,6 +146,7 @@ private:
 	bool hammerOn = false;
 	int contactSamples = 0, hammerSamples = 0;
 
+	double envelope = 0.0;
 	float dcIn = 0.f, dcOut = 0.f;
 
 	void setup();
