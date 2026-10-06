@@ -12,7 +12,7 @@ IT PLAYS THE SAME ARITHMETIC THE MODULE PLAYS. The mapping from level to hammer 
 output scaling are the module's own numbers, written here once more rather than shared, because
 sharing them would mean this file reaching into a Rack module and it builds without Rack. If they
 drift apart the sound here stops matching the sound there, which is a thing to watch. */
-#include "../src/PianoBoard.hpp"
+#include "../src/PianoKeys.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -24,12 +24,10 @@ using namespace px;
 
 static const double SR = 48000.0;
 
-/** The module's own mapping, and the module's own scaling. The output is the soundboard's surface
-velocity in metres per second, of the order of a hundredth, and this puts the loudest playing just
-under the ten volts a Rack module may send. */
-static float speedOf(float level) {
-	return 0.2f * std::pow(30.f, level < 0.f ? 0.f : (level > 1.f ? 1.f : level));
-}
+/** The module's own scaling. The output is the soundboard's surface velocity in metres per second,
+of the order of a hundredth, and this puts the loudest playing just under the ten volts a Rack
+module may send. The mapping from a level to a hammer speed is PianoKeys', which this plays
+directly rather than copying. */
 static const double OUT_SCALE = 100.0;
 
 
@@ -76,6 +74,16 @@ struct Press {
 	double held;
 };
 
+/** A NOTE THAT NAMES ITS OWN LENGTH AND SENDS NOTHING AFTERWARDS, which is how mpxScore and
+everything built on the chart plays: the source knows how long the note is and says so at the
+start. A receiver that waits for a note-off from one of those waits for ever. */
+struct Timed {
+	double at;
+	int midi;
+	float level;
+	double lasts;
+};
+
 /** A key pressed too slowly for the hammer to reach the string: the damper lifts and nothing
 sounds. A thing a pianist does and a sample set cannot. */
 struct Hold {
@@ -87,6 +95,7 @@ struct Hold {
 struct Piece {
 	const char* name;
 	std::vector<Press> presses;
+	std::vector<Timed> timed;
 	std::vector<Hold> holds;
 	std::vector<std::pair<double, float> > sustain;   // when, how far down
 	std::vector<std::pair<double, float> > soft;
@@ -98,22 +107,33 @@ static void render(const Piece& piece) {
 	PianoBoard board;
 	board.setSampleRate((float) SR);
 	board.silence();
+	PianoKeys keys;
+	keys.setSampleRate((float) SR);
 
 	// Everything that has to happen, in the order it happens.
-	struct Moment { double at; int what; int midi; float level; };
+	// `tag` names the key a press and its release share, so the release can go through the keys
+	// rather than round the back of them: reaching past the bookkeeping to the board leaves the
+	// bookkeeping believing the key is still down, and then the count below — which is there to
+	// catch exactly that — lies about it.
+	struct Moment { double at; int what; int midi; float level; double lasts; int64_t tag; };
 	std::vector<Moment> moments;
+	int64_t tag = 1;
 	for (const Press& p : piece.presses) {
-		moments.push_back(Moment{p.at, 0, p.midi, p.level});
-		moments.push_back(Moment{p.at + p.held, 1, p.midi, 0.f});
+		moments.push_back(Moment{p.at, 0, p.midi, p.level, 0.0, tag});
+		moments.push_back(Moment{p.at + p.held, 1, p.midi, 0.f, 0.0, tag});
+		tag++;
 	}
+	// A timed note gets one moment and nothing after it, which is the whole test.
+	for (const Timed& t : piece.timed)
+		moments.push_back(Moment{t.at, 5, t.midi, t.level, t.lasts, tag++});
 	for (const Hold& h : piece.holds) {
-		moments.push_back(Moment{h.at, 4, h.midi, 0.f});
-		moments.push_back(Moment{h.at + h.held, 1, h.midi, 0.f});
+		moments.push_back(Moment{h.at, 4, h.midi, 0.f, 0.0, 0});
+		moments.push_back(Moment{h.at + h.held, 1, h.midi, 0.f, 0.0, 0});
 	}
 	for (const auto& s : piece.sustain)
-		moments.push_back(Moment{s.first, 2, 0, s.second});
+		moments.push_back(Moment{s.first, 2, 0, s.second, 0.0, 0});
 	for (const auto& s : piece.soft)
-		moments.push_back(Moment{s.first, 3, 0, s.second});
+		moments.push_back(Moment{s.first, 3, 0, s.second, 0.0, 0});
 	std::sort(moments.begin(), moments.end(),
 		[](const Moment& a, const Moment& b) { return a.at < b.at; });
 
@@ -122,12 +142,19 @@ static void render(const Piece& piece) {
 	double peak = 0.0;
 	for (size_t i = 0; i < out.size(); i++) {
 		const double now = (double) i / SR;
+		keys.step(board);
 		while (next < moments.size() && moments[next].at <= now) {
 			const Moment& m = moments[next++];
 			if (m.what == 0)
-				board.hit(m.midi, speedOf(m.level));
-			else if (m.what == 1)
-				board.release(m.midi);
+				keys.down(board, m.tag, (float) (m.midi - 60) / 12.f, m.level, 0.f);
+			else if (m.what == 5)
+				keys.down(board, m.tag, (float) (m.midi - 60) / 12.f, m.level, (float) m.lasts);
+			else if (m.what == 1) {
+				if (m.tag != 0)
+					keys.up(board, m.tag);
+				else
+					board.release(m.midi);   // a silent hold, which the keys never took
+			}
 			else if (m.what == 2)
 				board.setSustain(m.level);
 			else if (m.what == 3)
@@ -157,8 +184,15 @@ static void render(const Piece& piece) {
 		std::printf("  could not write %s\n", path.c_str());
 		return;
 	}
-	std::printf("  %-28s %6.1f s   peak %5.2f V   offset %+.2e %s%s\n", piece.name,
-		piece.seconds, peak, offset, notNumbers ? "NOT A NUMBER " : "", path.c_str());
+	// AND WHETHER IT STOPPED. A piece whose keys have all come up should end in silence; one
+	// that holds a key holds a damper, and the last second gives it away.
+	double lastSecond = 0.0;
+	for (size_t i = (out.size() > (size_t) SR) ? out.size() - (size_t) SR : 0; i < out.size(); i++)
+		lastSecond = std::max(lastSecond, (double) std::fabs(out[i]));
+	std::printf("  %-28s %6.1f s  peak %5.2f V  last second %8.1f dB  keys still down %d %s%s\n",
+		piece.name, piece.seconds, peak,
+		20.0 * std::log10(std::max(lastSecond, 1e-12) / std::max(peak, 1e-12)), keys.holding(),
+		notNumbers ? "NOT A NUMBER " : "", path.c_str());
 }
 
 
@@ -249,6 +283,27 @@ int main() {
 		pieces.push_back(p);
 	}
 
+	// PLAYED THE WAY A SCORE PLAYS IT: every note naming its own length and sending nothing
+	// afterwards. A receiver that only listens for note-offs holds every key for ever, which is
+	// what this instrument did until the keys were given somewhere of their own to live. By the
+	// end of this the instrument should be silent.
+	{
+		Piece p;
+		p.name = "played-from-a-score";
+		const int tune[16] = {60, 64, 67, 72, 71, 67, 64, 60, 62, 65, 69, 74, 72, 69, 65, 62};
+		for (int i = 0; i < 16; i++)
+			p.timed.push_back(Timed{0.3 + 0.28 * i, tune[i], 0.6f, 0.24});
+		const int bass[8] = {36, 43, 36, 41, 38, 45, 36, 43};
+		for (int i = 0; i < 8; i++)
+			p.timed.push_back(Timed{0.3 + 0.56 * i, bass[i], 0.5f, 0.5});
+		// And a run up into the top two octaves, which have no dampers at all and are where the
+		// holding-on was loudest.
+		for (int i = 0; i < 10; i++)
+			p.timed.push_back(Timed{5.2 + 0.14 * i, 84 + 2 * i, 0.6f, 0.12});
+		p.seconds = 12.0;
+		pieces.push_back(p);
+	}
+
 	// A FEW BARS, so it can be heard as music rather than as measurements.
 	{
 		Piece p;
@@ -271,6 +326,7 @@ int main() {
 	for (const Piece& p : pieces)
 		render(p);
 
-	std::printf("\nThe level mapping and the output scaling are the module's own numbers.\n");
+	std::printf("\nThe keys are PianoKeys, which the module uses too, so what plays here is what\n");
+	std::printf("plays there. The output scaling is the module's own number.\n");
 	return 0;
 }

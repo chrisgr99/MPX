@@ -24,7 +24,7 @@ and the panel proper is phase 9. */
 #include "plugin.hpp"
 #include "NoteBus.hpp"
 #include "Layout.hpp"
-#include "PianoBoard.hpp"
+#include "PianoKeys.hpp"
 
 #include <atomic>
 #include <cmath>
@@ -32,19 +32,6 @@ and the panel proper is phase 9. */
 
 
 namespace px {
-
-
-/** TURNING A LEVEL INTO A HAMMER SPEED, which is the only thing a pianist's finger decides.
-
-EXPONENTIAL AND NOT PROPORTIONAL. The useful range is about a fifth of a metre per second, which is
-as quietly as a note can be made to speak at all, up to five or six, which is as hard as anyone can
-hit it — a factor of thirty, and the ear hears it as an even spread of loudness because loudness is
-heard in ratios. Spread proportionally instead, half the dynamic range would be crowded into the
-top quarter of the controller. */
-static float speedOf(float level) {
-	const float v = math::clamp(level, 0.f, 1.f);
-	return 0.2f * std::pow(30.f, v);
-}
 
 
 struct DreamPianoModule : Module, NoteSink {
@@ -67,15 +54,9 @@ struct DreamPianoModule : Module, NoteSink {
 
 	PianoBoard board;
 
-	/** WHICH KEY A SOUNDING NOTE IS ON. A note-off names the note by its handle and not by its
-	pitch, so the key it went down on has to be remembered to let it up again. */
-	struct Sounding {
-		int64_t handle = 0;
-		int midi = 0;
-		bool used = false;
-	};
-	static const int MAX_SOUNDING = 128;
-	Sounding sounding[MAX_SOUNDING];
+	/** THE KEYS, which is where the bookkeeping between a cable and an instrument lives. It is
+	Rack-free on purpose: see PianoKeys.hpp, and test/pianorender.cpp, which plays it. */
+	PianoKeys keys;
 
 	// ---- building the instrument, which cannot happen on the audio thread ----
 	//
@@ -157,10 +138,10 @@ struct DreamPianoModule : Module, NoteSink {
 	}
 
 	void onReset() override {
-		if (usable.load())
+		if (usable.load()) {
+			keys.allUp(board);
 			board.silence();
-		for (Sounding& s : sounding)
-			s = Sounding();
+		}
 	}
 
 	void link(const int* slots, const uint32_t* generations, int n) {
@@ -175,57 +156,6 @@ struct DreamPianoModule : Module, NoteSink {
 		}
 		wantCount = n;
 		relink = true;
-	}
-
-	/** Where on the keyboard, as a key number. A piano has keys and not a continuum, so a pitch
-	between two of them is played on the nearer — and a bend has nowhere to go, which is why the
-	update messages are read and dropped. */
-	int keyOf(float pitchV) const {
-		return (int) std::lround(60.f + 12.f * pitchV);
-	}
-
-	void noteOn(int64_t handle, float pitchV, float level) {
-		const int midi = keyOf(pitchV);
-		if (!board.inCompass(midi))
-			return;
-		for (Sounding& s : sounding) {
-			if (s.used)
-				continue;
-			s.used = true;
-			s.handle = handle;
-			s.midi = midi;
-			break;
-		}
-		board.hit(midi, speedOf(level));
-	}
-
-	void noteOff(int64_t handle) {
-		for (Sounding& s : sounding) {
-			if (!s.used || s.handle != handle)
-				continue;
-			s.used = false;
-			// ONLY IF NOTHING ELSE IS HOLDING THAT KEY. Two notes can land on one key — a
-			// doubling, or an arpeggio overtaking itself — and letting the first of them up
-			// would damp a string the second is still holding down.
-			bool stillHeld = false;
-			for (const Sounding& other : sounding)
-				if (other.used && other.midi == s.midi)
-					stillHeld = true;
-			if (!stillHeld)
-				board.release(s.midi);
-			return;
-		}
-	}
-
-	/** EVERY KEY UP, for a cable pulled out. A note ends when its note-off arrives, and a cable
-	that has gone never sends one, so whatever was sounding would ring on with its key still down.
-	Unplugging a piano is not a way to hold a chord. */
-	void allKeysUp() {
-		for (Sounding& s : sounding) {
-			if (s.used)
-				board.release(s.midi);
-			s = Sounding();
-		}
 	}
 
 	bool attachedWas = false;
@@ -255,7 +185,7 @@ struct DreamPianoModule : Module, NoteSink {
 
 		const bool attached = reader.attached();
 		if (!attached && attachedWas)
-			allKeysUp();
+			keys.allUp(board);
 		attachedWas = attached;
 
 		// The pedals: whichever is further down, the button or the cable.
@@ -265,12 +195,18 @@ struct DreamPianoModule : Module, NoteSink {
 		board.setSoft(std::max(busSoft, params[P_SOFT].getValue()));
 		board.setSostenuto(params[P_SOSTENUTO].getValue() >= 0.5f);
 
+		keys.setSampleRate(args.sampleRate);
+		keys.step(board);
+
 		Event e;
 		while (reader.next(e)) {
-			if (e.kind == Event::ON)
-				noteOn(e.handle, e.pitch, e.level);
+			if (e.kind == Event::ON) {
+				if (!keys.down(board, e.handle, e.pitch, e.level, e.duration))
+					WARN("mpxDreamPiano: more than %d keys at once; one will stay down",
+						PianoKeys::MAX_KEYS);
+			}
 			else if (e.kind == Event::OFF)
-				noteOff(e.handle);
+				keys.up(board, e.handle);
 			// UPDATE messages — bend, timbre, level — are read and dropped. A piano string
 			// cannot be bent and its tone after the blow is not under anyone's hand.
 		}
