@@ -30,6 +30,28 @@ A command-line harness that drives one string or the whole instrument and report
 
 Published figures for a real grand are the targets, gathered in this phase and written down here so that later work is measured against numbers rather than against memory.
 
+**Done.** `make pianobench` measures all of it. Two faults in the bench itself were found and fixed by its own numbers: the stretch was fitted against the pitch the string was *asked* for rather than the one it produced, which folded a fiftieth of a per cent of tuning error into every partial and grew it with n until more stiffness read as less; and the partial search used one window, which for a stiff string is wider than the gap between the low partials of a slack one, so it locked onto neighbours. It finds the low partials first, fits a rough stretch to those, and uses it to say where the high ones are.
+
+#### What the bench says about the starting point
+
+Measured on `GuitarString`, which is what the piano's strings will be built from:
+
+| | stiffness 0 | 0.25 | 0.6 | 1.0 |
+|---|---|---|---|---|
+| A1 | 0.000004 | 0.000030 | 0.000062 | 0.000099 |
+| A3 | 0.000004 | 0.000030 | 0.000065 | 0.000105 |
+| A5 | 0.000033 | 0.000057 | 0.000093 | 0.000139 |
+
+**Three things follow, and they are phase one's work.**
+
+**The range is too small and in the wrong place.** The control reaches about 0.0001 at full travel, which is a midrange piano string. The bass needs several times that.
+
+**It does not vary with pitch, and it must.** A1 and A3 give nearly the same stretch at the same setting. On a piano the coefficient is least near the middle and rises toward both ends; a single number cannot express that, so the string will have to be given its stretch per note rather than asked for an amount.
+
+**There is already stretch with the control at nought** — 0.000033 at A5, from the fractional-delay interpolation's own dispersion. It is small, it grows with pitch, and it is in the same direction as the real thing, so it has to be subtracted rather than ignored or the treble will come out doubly stretched.
+
+Beating measures true: 0.061 Hz against 0.064 expected at half a cent, 0.254 against 0.254 at two cents. Decay is clean and the damping control moves the upper partials as it should — six seconds at the fundamental against 0.71 at the eighth partial. And the centroid does not move with force at all, 571 Hz at every level, which is exactly the number phase two has to change.
+
 ### Phase 1 — one string, measured
 
 The waveguide extended for piano use: enough dispersion for the bass, a loss filter whose decay varies with frequency as a real string's does, and a tuning that accounts for the delay the dispersion itself adds.

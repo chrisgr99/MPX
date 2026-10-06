@@ -482,3 +482,10 @@ pathread:
 	@c++ -std=c++11 -O2 -Wall test/pathread.cpp src/Paths.cpp src/PictureRead.cpp \
 		-o build/pathread
 	@./build/pathread $(ARGS)
+
+# THE PIANO BENCH. Phase 0 of docs/piano-model.md: the means of measuring, before the thing
+# measured. Partials and stretch, decay per partial, brightness against force, and beating.
+pianobench:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pianobench.cpp src/GuitarString.cpp -o build/pianobench
+	@./build/pianobench $(ARGS)
