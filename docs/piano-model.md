@@ -230,9 +230,79 @@ All eighty-eight notes, struck at twelve metres per second — harder than anyon
 
 ### Phase 3 — the choir
 
-One, two or three strings a note as the scale demands, mistuned by a fraction of a cent to a cent or so, coupled through a bridge of finite impedance.
+**Done.** `PianoNote` holds a note's two or three strings, the one hammer that strikes them, and the bridge that joins them.
 
-**Done when** a single note shows the double decay, and the beat rate between unisons follows the detuning as it should.
+#### The note is the object, not the string
+
+A piano note is not a string; it is a small choir of them, slightly out of tune with each other and joined at one end. Almost everything interesting about the start and the end of a piano note comes from that, and none of it can be a string's private business, because the hammer and the bridge each need every string's state at the same instant.
+
+So `PianoString` no longer has a `process`. It has four calls, and a sample goes like this: every string says what has reached its strike point; the hammer, knowing all of that, works out its force and how it is shared; every string takes its share and sends its waves away; every string says what has reached the bridge; the bridge, knowing all of that, works out its own motion and what goes back; every string takes its returning wave.
+
+**The bridge had to become a place.** A rigid end can be a sign turned over in the middle of a delay line, which is what phase 2 had, and it costs half the memory and half the arithmetic. A bridge that **moves** cannot be, because the note's other strings are pushing on it at that same moment. So the section from the strike point to the bridge is now two one-way lines with the bridge between them. The agraffe stays as it was — an end that cannot move needs no junction.
+
+**And the strike point is now always a junction, however short the note.** Phase 2 left the top of the compass undivided, where a period is eleven samples, and had to special-case both the sign of the loop and the junction's arithmetic — getting each wrong before getting it right. A section of one whole sample is no worse a model of a very short string than none at all, and it is the same model as every other note. There are now no special cases.
+
+**The hammer no longer needs to be told how many strings there are**, which phase 2 had to fake with a count so that a lone string would resist like three. It pushes all of them and they resist it together.
+
+#### The contacts are separate but the hammer is one
+
+Each string compresses its own patch of felt by its own amount — they are a fraction of a cent apart and drift out of step — so each has its own force. But all those forces push back on one hammer, so each depends a little on all the others through how fast the hammer is slowing.
+
+Solved by going round a few times rather than as a system, and the arithmetic says why that is enough: the term through which the contacts feel each other is the hammer's inertia, a sample squared over its mass; the term by which each stands alone is a sample over its string's impedance. At a piano's numbers the second is a hundred times the first, so the coupling is a small correction to nearly independent solves and three passes settle it.
+
+#### The decomposition of the decay, which took being refused to find
+
+The bridge was first told to the strings so their loss filters could divide it out, the idea being that the compass's decay figure would then be what came out of the finished instrument. The arithmetic refused: at any bridge impedance worth having, what the bridge absorbs is **several times a note's whole decay budget**, so making up for it would need a loop gain above one. A3 asked for eleven seconds and rang for two and a fifth, which is the bridge's rate and nothing else.
+
+The refusal was pointing at the right answer. **A string's internal losses are the slow floor under everything; what the bridge takes is the sound leaving, and that is the fast one.** So the compass's curve is the string's own, and what it describes is the **aftersound** — the long tail, when the strings of a choir are out of step and barely moving the bridge at all. The initial fall is faster by whatever the bridge is good at. A note with one string has no out-of-step mode and so no aftersound, and rings for rather less than the curve says, because there is nothing to sustain it.
+
+Phase 1's decay gate is therefore measured with one string and a rigid bridge, which is what it fitted. Measuring it through the finished note would be measuring two things at once and blaming either for the other.
+
+#### The bridge impedance, and how easy it is to get wrong
+
+About a thousand times a string's, which is a soundboard's measured driving-point impedance of a thousand-odd kilograms per second against a string's two. The number decides two things at once: how much of the sound leaves at every reflection, and how strongly the strings of a choir hear one another.
+
+A hundred and forty was tried first. It is five times a midrange note's whole decay budget: every note rang for a fifth of the time it should, and the two rates came out the wrong way round, with the aftersound dying faster than the attack.
+
+#### What it does
+
+| note | strings | spread | first T60 | then T60 | ratio | lines cross at |
+|---|---|---|---|---|---|---|
+| A1 | 2 | 0.73 | 13.10 | 45.21 | 3.45 | 13.7 s |
+| A2 | 3 | 0.60 | 6.42 | 24.29 | 3.78 | 6.7 s |
+| A3 | 3 | 0.49 | 3.46 | 14.18 | 4.10 | 3.6 s |
+| A4 | 3 | 0.40 | 1.78 | 7.21 | 4.04 | 1.9 s |
+| A5 | 3 | 0.37 | 0.89 | 3.30 | 3.69 | 1.0 s |
+
+Seconds, with the spread in cents. A real grand falls two to five times faster at first than afterwards. Forced to a single string the same notes give one rate and a ratio of exactly one, which is the control the measurement needed.
+
+**Being slightly out of tune is what makes any of it audible.** Exactly tuned unisons would stay in step for ever and the aftersound would never arrive. A tuner aims at nought and nobody reaches it — a few tenths of a cent is a clean unison and about one is a tired one — and the residue is not a defect to be minimised: it is where the shimmer of a piano note comes from, and a note whose strings are exactly in tune sounds dead. The curve is a little wider in the bass, where the beats are slow enough to be heard as beats rather than as warmth, and tuners leave them so on purpose.
+
+#### The null between the two rates, which is real
+
+Where the in-phase part of the note has decayed to the level of the out-of-step part, the two **cancel**, and the note passes through a deep momentary null — twenty decibels at A3, in and out again within half a second. It is not an artefact. It is why a piano note seems to breathe rather than simply fade.
+
+It also broke the first attempt at measuring the two rates. Fitting two lines and putting the bend wherever it fitted best reported the second rate as the **faster** one on every note, the exact opposite of the truth, because a knee-finding fit lands in that hole every time. The rates are now measured over two stretches of level where each plainly owns the sound: the first from just below the peak down to twenty-five decibels below it, which on every note is before the null, and the second from forty-five down to seventy-five, which is after it. Where the two fitted lines cross is reported as the bend, which is better defined than any point on the curve.
+
+The second rate reads fifteen to thirty per cent longer than the string's own, and that is the measurement rather than the model: a note's out-of-step components sit at slightly different frequencies and beat against each other, so taking the strongest bin of a few reads an upper envelope, which follows the slowest of them rather than their sum.
+
+#### A trap closed
+
+`PianoString`'s fits are lazy, so that setting a note and then three other things about it costs one design and not four. The cost is that until the first sample has gone through, every accessor reports the **last** note's answers — so a measurement taken straight after setting the note reads a frequency of 220 Hz whatever the note is, and silently measures the wrong bin. It cost an hour of chasing a decay rate that was never wrong. There is now a `prepare`, which `PianoNote` calls as soon as it has finished setting its strings up, so nothing outside ever sees a stale answer.
+
+#### What a note costs, which is phase 4's whole problem
+
+Measured now, while there is still one note to measure.
+
+| note | strings | chain stages | share of a processor |
+|---|---|---|---|
+| A0 | 1 | 16 | 0.0014 |
+| A2 | 3 | 24 | 0.0050 |
+| A4 | 3 | 16 | 0.0034 |
+| A6 | 3 | 6 | 0.0019 |
+| C8 | 3 | 1 | 0.0013 |
+
+**All eighty-eight ringing at once comes to 0.29 of one processor**, which is a great deal better than feared when phase 1 chose to spend up to forty-eight allpass stages on a bass note. Every damper up is the worst case and a rare one; the way out was always that a string nobody has struck costs nothing, and it turns out not to be needed for the instrument merely to run. The gating still has to be cheap and must not click when a string wakes.
 
 ### Phase 4 — the whole board
 
@@ -270,7 +340,7 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 **Tuning against dispersion.** Done, in phase 1, and it was not hard once the fit was asked the right question: rather than correcting for the chain's delay, the fit solves for where the loop will actually ring and compares that against the stiff string. Everything the implementation does to the partials is then inside the error being minimised. The loss filter's delay belongs to the same problem and is in the same solve.
 
-**Cost.** Two hundred waveguides with allpass chains is affordable only because most strings are still. The gating has to be cheap and must not click when a string wakes. Phase 1 settled how much filtering each note wants: up to forty-eight allpass stages in the bass, a handful at the top, and the heavy notes are the ones with a single string.
+**Cost.** Measured in phase 3 and far smaller than feared: all eighty-eight notes ringing at once is under a third of one processor, with the heaviest note at a two-hundredth of it. Most strings being still is therefore an optimisation rather than the thing that makes the instrument possible. The gating still has to be cheap and must not click when a string wakes.
 
 **Holding a decay law with a low-order loop filter.** Phase 1 got the measured power right and an individual partial's decay time to within about forty per cent, and that is where a three-shelf filter runs out. It is also probably the wrong target to chase further: a power law is a stand-in, and the physically grounded account of string damping — air, viscoelastic and support losses summed — gives a curve that is not a power law and may well be easier for a low-order filter to follow, because it comes from first-order physics rather than from a convenient exponent. That belongs with phase 6, where the soundboard's own frequency-dependent losses arrive in the same place.
 

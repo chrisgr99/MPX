@@ -1,6 +1,11 @@
 #pragma once
-/** ONE PIANO STRING AND THE HAMMER THAT STRIKES IT, physically modelled. Phases 1 and 2 of
-docs/piano-model.md.
+/** ONE PIANO STRING, physically modelled. Phases 1 to 3 of docs/piano-model.md.
+
+THE HAMMER AND THE BRIDGE BELONG TO THE NOTE AND NOT TO THE STRING, and PianoNote has them. One
+hammer strikes all of a note's strings at once and one bridge joins them, so neither can be a
+string's private business; a string that owned its own hammer could only ever be a solo. What is
+here is the string itself, and an interface built so that a note can put a force on one end of it
+and a bridge on the other.
 
 NO RACK IN HERE, as with the guitar's string and the performer: it builds into a command-line
 bench that measures it — the frequency of every partial, the stretch fitted to them, how long each
@@ -40,36 +45,45 @@ amount of stiffness and a decay in seconds, and those are the wrong questions to
 	THE DECAY IS TWO NUMBERS, NOT ONE. How long the fundamental takes to fall sixty decibels, and
 	the power by which the partials above it die faster.
 
-AND A FELT HAMMER, WHICH IS WHAT MAKES IT A PIANO AND NOT A HARP.
+AND IT IS CUT IN THREE PIECES, so that a hammer can push one end of it and a bridge can hold the
+other.
 
-	THE STRING IS SPLIT AT THE STRIKE POINT, which is the structural price of having a hammer at
-	all. A hammer is not a shape put into a string; it is a mass in contact with it for a
-	millisecond or two, pushing while the string pushes back. To work that out there has to be a
-	PLACE on the string where the pushing happens, so the one loop of phase 1 becomes two
-	sections — strike point to the agraffe, strike point to the bridge — meeting at a junction
-	where the force goes in. The round trip is the same length through the same filters, so every
-	number phase 1 fitted still holds.
+	THE STRIKE POINT IS A PLACE AND SO IT NEEDS A JUNCTION. A hammer is not a shape put into a
+	string; it is a mass in contact with it, pushing while the string pushes back, so there has to
+	be somewhere on the string where the pushing happens. Phase 1's one loop therefore becomes a
+	section from the strike point to the agraffe and a section from the strike point to the
+	bridge.
 
 	AND THE MISSING PARTIALS THEN HAPPEN RATHER THAN BEING ARRANGED. A mode with a node at the
 	strike point cannot be moved by a force applied there, so striking an eighth of the way along
 	leaves the eighth partial and the sixteenth all but absent — which is true of a real piano,
 	and is one reason the strike point is where it is. Phase 1's placeholder faked this with the
-	corner of a triangle; now it is a consequence of where the force enters.
+	corner of a triangle.
 
-	FELT IS A NONLINEAR SPRING, and that is the whole reason for the trouble. The force it returns
-	goes as its compression raised to a power of between two and three, so a harder blow
-	compresses it further, which makes it STIFFER, which SHORTENS the contact and puts the energy
-	higher up the spectrum. It is why a piano brightens when it is played harder rather than only
-	getting louder, and no envelope or filter reproduces it.
+	AND THE BRIDGE IS A PLACE TOO, which is phase 3's price. A rigid end can be a sign turned over
+	in the middle of a delay line, and that is what phase 2 had; a bridge that MOVES cannot,
+	because the note's other strings are pushing on it at the same moment. So the section to the
+	bridge is two one-way lines with the bridge between them, and the string hands its arriving
+	wave out and takes a returning one back rather than reflecting for itself.
 
-	SOLVED IMPLICITLY, EVERY SAMPLE. The force depends on how far the felt is compressed, which
-	depends on where the string has moved to, which depends on the force, all within one sample.
-	Done explicitly — with last sample's string position — it is wrong at a whisper and unstable
-	at full force. It is instead solved as one scalar equation per sample, which has exactly one
-	root and is reached by Newton's method in a handful of steps from any start.
+	THE ROUND TRIP IS THE SAME LENGTH THROUGH THE SAME FILTERS, so every number phase 1 fitted
+	still holds — which the bench re-measures rather than assumes.
 
-WHAT IS NOT HERE YET. One string is one string: the choir of two or three coupled at a bridge is
-phase 3, the whole board phase 4, the dampers and pedals phase 5. */
+	ALWAYS CUT, EVEN AT THE TOP OF THE COMPASS. The top C's period is eleven samples and a
+	fourteenth of that is under one, so phase 2 left those notes undivided and had to special-case
+	the sign of the loop and the junction's arithmetic, getting both wrong first. A section of one
+	whole sample is no worse a model of a very short string and it is the same model as every
+	other note, so the shortest left section is one sample and there are no special cases.
+
+HOW A SAMPLE GOES, which matters because the hammer and the bridge both need the string's state
+before they can decide anything:
+
+	`arrivingAtStrike` — what has reached the strike point from both sides. The hammer needs this
+	from every string of the note before it can work out its force.
+	`pushStrike` — the string's share of that force, which closes the junction and sends waves off
+	in both directions.
+	`arrivingAtBridge` — what has reached the bridge. The bridge needs this from every string.
+	`returnFromBridge` — what the bridge sends back, which ends the sample. */
 #include <vector>
 
 namespace px {
@@ -92,9 +106,14 @@ top, where the strings are thin and short. */
 float pianoImpedance(float midi);
 
 /** HOW MANY STRINGS THE NOTE HAS: one in the bottom octave, two for a stretch above it, three from
-the bass bridge upward. The hammer needs this even when only one string is modelled, because the
-strings of a note resist it together and so decide how long the contact lasts. */
+the bass bridge upward. */
 int pianoStringsPerNote(float midi);
+
+/** HOW FAR APART A TUNER LEAVES THE STRINGS OF ONE NOTE, in cents from the lowest to the highest.
+Nought would be a tuner's ideal and nobody reaches it: a few tenths of a cent is a clean unison and
+about one is a tired one. It is not a defect to be minimised in the model either — it is where the
+shimmer of a piano note comes from, and a note whose strings are exactly in tune sounds dead. */
+float pianoUnisonSpread(float midi);
 
 /** THE HAMMER'S MASS, in kilograms: about eleven grams in the bass falling to about four at the
 top, which is most of why the treble speaks so much more quickly. */
@@ -156,41 +175,33 @@ struct PianoString {
 	loop actually settled for rather than what it was told. */
 	void setDecayExponent(float power);
 
-	/** THE HAMMER'S FELT, overriding the curves. Not positive puts the curve back. */
-	void setFeltStiffness(float newtonsPerMetreToThePower);
-	void setFeltPower(float power);
-	void setHammerMass(float kilograms);
+	/** WORK OUT THE DESIGN NOW rather than on the first sample.
 
-	/** STRUCK, by the hammer, at this many metres per second.
-	
-	A SPEED AND NOT A LEVEL, because that is the only thing a pianist's finger actually decides and
-	everything else follows from it: how loud, how bright, how long the felt stays on the string.
-	About a fifth of a metre per second is as quiet as a note can be made to speak, and five or six
-	is as hard as anyone can hit it.
-	
-	A RINGING STRING IS NOT STOPPED. The hammer meets whatever the string is already doing and
-	pushes against it, which is what makes a note restruck before its damper has landed sound as it
-	does on a piano. */
-	void hit(float metresPerSecond);
+	The fits are lazy by default, so that setting a note and then setting three other things about
+	it costs one design and not four. The cost of that is that until the first sample has gone
+	through, every accessor below is reporting the LAST note's answers — which is a quiet trap: a
+	measurement taken straight after setting the note reads a frequency of 220 Hz whatever the note
+	is, and silently measures the wrong thing. PianoNote calls this as soon as it has finished
+	setting its strings up, so nothing outside ever sees a stale answer. */
+	void prepare();
 
-	/** Whether the felt is still on the string. */
-	bool inContact() const { return hammerOn; }
-	/** How long the last blow's contact lasted, in milliseconds — the measurement phase 2 lives or
-	dies by, since it must fall from about four at a whisper toward one at full force. */
-	float contactMilliseconds() const { return (float) (1000.0 * contactSamples / rate); }
-	/** The force the felt last returned, in newtons. */
-	float hammerForce() const { return (float) lastForce; }
-	/** How many strings the note has, which the hammer pushes together even while one is modelled. */
-	int stringsPerNote() const { return strings; }
+	void silence();	// ---- one sample, in four parts. See the note at the top of this file. ----
+	/** What has reached the strike point from both sides, which is what the hammer compresses
+	against. */
+	float arrivingAtStrike();
+	/** This string's share of the hammer's force, in newtons. Closes the strike junction and sends
+	the waves away from it. */
+	void pushStrike(float newtons);
+	/** What has reached the bridge: the wave the bridge is being driven by. */
+	float arrivingAtBridge() const;
+	/** What the bridge sends back into this string, which ends the sample. */
+	void returnFromBridge(float wave);
 
-	/** Adds to what goes into the string at the bridge on the next sample: another string's
-	vibration, arriving through the bridge. */
-	void drive(float amount) { driven += amount; }
-	/** What this string is doing at the bridge, for driving the others. */
-	float bridge() const { return lastRead; }
-
-	void silence();
-	float process();
+	/** The string's own velocity at the strike point, from the last `pushStrike`: what the hammer
+	is resting against. */
+	float strikeVelocity() const { return (float) lastJunction; }
+	/** Its wave impedance, which the hammer and the bridge both need. */
+	float impedanceOf() const { return (float) impedance; }
 
 	// ---- what it came out as, for the bench and for the phases after this one ----
 	float frequency() const { return (float) freq; }
@@ -206,9 +217,7 @@ struct PianoString {
 	/** How far the fitted loss misses that law at its worst partial, as a percentage of that
 	partial's own decay time. */
 	float decayFitError() const { return (float) lossError; }
-	/** The whole samples from the strike point to the agraffe and back. Nought when the note is
-	too short to divide: at the top of the compass a period is a dozen samples, and there is no
-	room for a junction in it. */
+	/** The whole samples from the strike point to the agraffe and back. Never less than one. */
 	int strikeSplit() const { return leftDelay; }
 
 private:
@@ -231,46 +240,39 @@ private:
 	double chainA = 0.0;
 	double fitError = 0.0;
 	Loss loss;
-	double readDelay = 100.0;
 	bool dirty = true;
 	// What the chain was fitted for, so a cent of detuning does not refit it.
 	double fitFreq = 0.0, fitB = -1.0, fitRate = 0.0, fitPower = -1.0, fitDecay = -1.0;
 	int fitSplit = -1;
 
-	// ---- the hammer ----
-	double feltKAsked = -1.0, feltPAsked = -1.0, massAsked = -1.0;
-	double feltK = 1e10, feltP = 2.5, hammerMass = 0.008, impedance = 2.0;
-	int strings = 3;
-	double hammerAt = 0.0, hammerSpeed = 0.0, stringAt = 0.0;
-	double lastForce = 0.0;
-	bool hammerOn = false;
-	int contactSamples = 0, hammerSamples = 0;
+	double impedance = 2.0;
 
-	// ---- the two sections ----
+	// ---- the three lines ----
 	// A POWER OF TWO EACH AND NO LONGER THAN THE NOTE NEEDS. Eighty-eight notes three strings deep
 	// is two hundred and sixty-odd of these, and lines long enough for the bottom A would spend
 	// megabytes on strings that are four inches long.
 	//
-	// EACH LINE IS A SECTION'S WHOLE ROUND TRIP — out to the end and back — rather than a pair of
-	// one-way lines. The two are equivalent and this is half the memory and half the arithmetic;
-	// the end's reflection is applied once where the wave comes back.
-	std::vector<float> rightLine, leftLine;
-	unsigned rightMask = 0, leftMask = 0;
-	unsigned rightWrite = 0, leftWrite = 0;
-	int leftDelay = 0;        // whole samples: strike point to the agraffe and back
-	int bridgeTap = 0;        // where in the right line the wave is at the bridge
+	// THE AGRAFFE END IS ONE LINE CARRYING THE WHOLE ROUND TRIP, out and back, with the end's
+	// inversion applied once where the wave returns: an end that cannot move needs no junction, so
+	// there is nothing to intercept halfway and this is half the memory and half the arithmetic.
+	// THE BRIDGE END CANNOT BE DONE THAT WAY and is two one-way lines, because the bridge moves
+	// and the note's other strings have to be heard at the same instant.
+	std::vector<float> leftLine, outLine, backLine;
+	unsigned leftMask = 0, outMask = 0, backMask = 0;
+	unsigned writeAt = 0;
+	int leftDelay = 1;        // whole samples: strike point to the agraffe and back
+	int outDelay = 1;         // whole samples: strike point to the bridge
+	double readDelay = 100.0; // and back again, between samples: the fractional part of the loop
+	// Within a sample: what arrived from each side, kept between the four calls.
+	double fromLeft = 0.0, fromRight = 0.0, lastJunction = 0.0;
 
 	static const int MAX_STAGES = 48;
 	float chainIn[MAX_STAGES] = {}, chainOut[MAX_STAGES] = {};
 	float shelfB0[LOSS_SHELVES] = {1.f, 1.f, 1.f}, shelfB1[LOSS_SHELVES] = {};
 	float shelfA1[LOSS_SHELVES] = {};
 	float shelfIn[LOSS_SHELVES] = {}, shelfOut[LOSS_SHELVES] = {};
-	float lastRead = 0.f;
-	float driven = 0.f;
-	float dcIn = 0.f, dcOut = 0.f;
 
 	void tune();
-	void setupHammer();
 	void fitChain();
 	void solveLoss();
 	void refreshGain();
