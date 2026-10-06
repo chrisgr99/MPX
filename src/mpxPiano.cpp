@@ -481,8 +481,20 @@ struct PianoModule : Module, NoteSink {
 		configParam(P_BRIGHT, 0.f, 1.f, 1.f, "Brightness", "%", 0.f, 100.f);
 		configParam(P_DYNAMICS, 0.f, 1.f, 1.f,
 			"Dynamics", "%", 0.f, 100.f);
-		configParam(P_DAMPING, 0.f, 1.f, 0.8f,
-			"Damping", " s", 40.f, 0.05f);
+		// HOW LONG A DAMPER TAKES TO STOP THE STRING, which is about a tenth of a second on a real
+		// piano and was nearly a whole one here.
+		//
+		// THE RANGE AND THE DEFAULT WERE BOTH WRONG. It ran from a twentieth of a second to two
+		// seconds, with the default at four fifths of the travel — which is 0.95 seconds, so every
+		// note rang for most of a second after the key came up. Worse, the whole useful part of
+		// the sweep lay in the bottom half: from the middle upward it went from a third of a
+		// second to two, and every setting up there sounds like every other. It read as a knob
+		// that did nothing.
+		//
+		// A fiftieth of a second to four fifths, with the default in the middle of the travel at
+		// about an eighth of a second — a damper rather than a long fade.
+		configParam(P_DAMPING, 0.f, 1.f, 0.5f,
+			"Damping", " s", 40.f, 0.02f);
 		configSwitch(P_SUSTAIN, 0.f, 1.f, 0.f, "Sustain pedal", {"Up", "Down"});
 		configSwitch(P_SOFT, 0.f, 1.f, 0.f, "Soft pedal", {"Up", "Down"});
 		configInput(I_MPX, "MPX note");
@@ -629,7 +641,7 @@ struct PianoModule : Module, NoteSink {
 		if (v.releasing || v.undamped)
 			return;
 		const float k = params[P_DAMPING].getValue();
-		float seconds = 0.05f * std::pow(40.f, k);
+		float seconds = 0.02f * std::pow(40.f, k);
 		// Half-pedalling: a pedal part way down lets the note ring longer, fully down holds it.
 		seconds /= std::max(0.05f, 1.f - sustain);
 		v.releasing = true;
