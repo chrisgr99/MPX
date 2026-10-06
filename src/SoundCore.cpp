@@ -1,6 +1,8 @@
 /** See SoundCore.hpp. */
 #include "SoundCore.hpp"
 
+#include <cstring>
+
 namespace px {
 
 
@@ -127,11 +129,19 @@ void SoundCore::loadBank(const std::string& path) {
 }
 
 
+void SoundCore::holdOff() {
+	usable = false;
+	// Wait for the audio thread to leave, if it is in there. See the note in the header.
+	while (rendering.load()) {}
+}
+
+
 // THE SYNTH IS MADE ON THE MAIN THREAD, when the module is added and when the rate changes.
 // Making it inside process() would allocate in the audio callback, and creating a synthesiser is
 // a great deal of allocation.
 void SoundCore::startEngine(float sampleRate, bool reverb, bool chorus,
 		const std::string& preferred) {
+	holdOff();
 	if (worker.joinable())
 		worker.join();
 	rate = sampleRate;
@@ -144,6 +154,10 @@ void SoundCore::startEngine(float sampleRate, bool reverb, bool chorus,
 	reverbOn = reverb;
 	chorusOn = chorus;
 	engine.effects(reverb, chorus);
+	// THE AUDIO THREAD MAY HAVE IT NOW, and before the bank is asked for rather than after: a
+	// bank is read on a worker and the branches below return, so permission given at the end of
+	// any one of them would have to be given at the end of all of them.
+	usable = true;
 	if (!preferred.empty()) {
 		loadBank(preferred);
 		return;
@@ -164,6 +178,7 @@ void SoundCore::startEngine(float sampleRate, bool reverb, bool chorus,
 
 
 void SoundCore::stopEngine() {
+	holdOff();
 	if (worker.joinable())
 		worker.join();
 	engine.stop();
@@ -229,6 +244,24 @@ void SoundCore::followProgram(int part, const Instrument& in) {
 
 void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool reverb,
 		bool chorus) {
+	// OCCUPANCY FIRST, THEN PERMISSION. See the note in the header: the other order is the one
+	// that crashes.
+	rendering = true;
+	if (!usable.load()) {
+		// AND SILENCE, NOT THE LAST BLOCK OVER AND OVER. The modules read their audio out of
+		// these buffers a sample at a time, so leaving them as they were would make a hidden band
+		// a sixty-four sample loop played for ever at full level — which is a buzz, and a loud
+		// one. The running version of this zeroed them in its own `else`; returning before
+		// reaching it has to do the same.
+		for (int i = 0; i < MAX_GROUPS * 2; i++)
+			std::memset(dry[i], 0, sizeof(dry[i]));
+		for (int i = 0; i < 4; i++)
+			std::memset(wet[i], 0, sizeof(wet[i]));
+		blockAt = 1;
+		rendering = false;
+		return;
+	}
+
 	if (relink.exchange(false)) {
 		for (int p = 0; p < parts; p++) {
 			reader[p].clear();
@@ -362,6 +395,7 @@ void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool r
 		blockAt = 0;
 	}
 	blockAt++;
+	rendering = false;
 }
 
 

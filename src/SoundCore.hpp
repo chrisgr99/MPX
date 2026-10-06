@@ -121,6 +121,35 @@ struct SoundCore {
 	void loadBank(const std::string& path);
 	/** Makes the synthesiser and reads a bank: `preferred` if one is named, otherwise the one it
 	had, otherwise the first in the banks folder. */
+	/** WHETHER THE SYNTHESISER MAY BE TOUCHED, and whether it is being touched.
+	
+	THESE EXIST BECAUSE THE SYNTHESISER IS MADE AND UNMADE ON THE MAIN THREAD WHILE THE AUDIO
+	THREAD IS PLAYING IT. The band starts when anything can hear it and stops when nothing can,
+	and whether anything can hear it changes the moment a cable goes into a jack — so the decision
+	is taken by the widget, every frame, on the main thread. Rack holds its engine locked while it
+	calls a module's onAdd, onRemove or onSampleRateChange, so those are safe; a widget's step is
+	none of those and is not.
+	
+	WHAT HAPPENED WITHOUT THEM. Plugging a cable into mpxScore's mix output while the band was
+	sounding called stopEngine from the widget, which called delete_fluid_synth, while the audio
+	thread was inside fluid_synth_process on that same synthesiser. The audio thread then read the
+	freed object, found nothing where its event handler had been, and died reaching through it:
+	EXC_BAD_ACCESS at 0x30 in fluid_rvoice_mixer_get_bufs. It took Rack down with it.
+	
+	HOW THEY WORK. `usable` is permission and `rendering` is occupancy, and the order of the two
+	is what makes it correct. The audio thread claims occupancy FIRST and then asks permission,
+	giving the claim up again if it is refused; the main thread withdraws permission FIRST and then
+	waits for the occupancy to clear. Whichever gets there first, the other sees it: there is no
+	moment at which the main thread can believe the audio thread has let go while it is still
+	holding on. The wait is a spin, and it is microseconds — the audio thread's turn through here
+	is one sample's worth of work. */
+	std::atomic<bool> usable{false};
+	std::atomic<bool> rendering{false};
+
+	/** Takes the synthesiser out of the audio thread's hands and waits for it to let go. Main
+	thread only: it waits, and waiting is the one thing an audio callback may never do. */
+	void holdOff();
+
 	void startEngine(float sampleRate, bool reverb, bool chorus,
 		const std::string& preferred = "");
 	void stopEngine();
