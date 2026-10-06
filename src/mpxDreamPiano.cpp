@@ -1,4 +1,4 @@
-/** dreamPiano — a piano modelled rather than recorded, played from an MPX cable.
+/** mpxDreamPiano — a piano modelled rather than recorded, played from an MPX cable.
 See docs/piano-model.md.
 
 ITS OWN NAME, AND THE SAME NAME IN ITS SLUG. This was arranged the other way round first, with the
@@ -6,7 +6,7 @@ modelled piano taking the plain name on its face and carrying a different one in
 a slug is what a saved patch stores and the sampler's could not move without emptying every rack it
 is in. It worked, and it left two modules whose displayed names and stored names were different
 things, each needing a comment to explain why. A name of its own ends all of it: the sampler stays
-mpxPiano, which is what it has always been called, and this is dreamPiano in both places.
+mpxPiano, which is what it has always been called, and this is mpxDreamPiano in both places.
 
 NO SAMPLES, AND SO NO DOWNLOAD. Every string of the instrument is here, two hundred and sixty of
 them on one bridge, and what comes out is what they do. The sampled piano beside it is better at
@@ -296,10 +296,10 @@ static const float MID = PANEL_W / 2.f;
 static const float PAIR_L = MID - 5.f;
 static const float PAIR_R = MID + 5.f;
 
-static Layout dreamPianoLayout() {
+static Layout mpxDreamPianoLayout() {
 	Layout L;
 	L.hp = 6.f;
-	L.title = "dreamPiano";
+	L.title = "mpxDreamPiano";
 
 	auto label = [&](const char* key, float x, float y, const char* text,
 			Panel::Align align = Panel::CENTRE, bool heading = false, float size = 0.f,
@@ -362,8 +362,8 @@ struct DreamPianoWidget : ModuleWidget {
 
 	DreamPianoWidget(DreamPianoModule* module) {
 		setModule(module);
-		layout = dreamPianoLayout();
-		layoutApplyUser("dreamPiano", layout);
+		layout = mpxDreamPianoLayout();
+		layoutApplyUser("mpxDreamPiano", layout);
 		panel = new Panel;
 		addChild(panel);
 		layoutBuild(this, panel, layout);
@@ -403,7 +403,7 @@ struct DreamPianoWidget : ModuleWidget {
 			return;
 		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createMenuLabel("A modelled piano: every string, on one bridge"));
-		layoutAppendMenu(menu, this, panel, &layout, "dreamPiano");
+		layoutAppendMenu(menu, this, panel, &layout, "mpxDreamPiano");
 	}
 };
 
@@ -411,4 +411,4 @@ struct DreamPianoWidget : ModuleWidget {
 } // namespace px
 
 
-Model* modelDreamPiano = createModel<px::DreamPianoModule, px::DreamPianoWidget>("dreamPiano");
+Model* modelMpxDreamPiano = createModel<px::DreamPianoModule, px::DreamPianoWidget>("mpxDreamPiano");

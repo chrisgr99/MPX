@@ -532,7 +532,7 @@ They stand beside each other. The sampler is good at what it is good at, and a m
 
 **The sampler is `mpxPiano`**, which is what it has always been called and what its slug says.
 
-**The modelled one is `dreamPiano`**, in its name and in its slug alike.
+**The modelled one is `mpxDreamPiano`**, in its name and in its slug alike.
 
 This was arranged the other way round first — the modelled piano taking the plain name `mpxPiano` on its face while carrying `mpxPianoModel` in its slug, because a slug is what a saved patch stores and the sampler's could not move without emptying every rack it is in. That worked, and it meant two modules whose displayed names and stored names were different things, each needing a comment to explain why. Giving the new one a name of its own ends all of it: both names now match their slugs, nothing a person has got used to has changed, and the two comments are gone.
 

@@ -20,7 +20,7 @@ void init(Plugin* p) {
 	p->addModel(modelMpxArp);
 	p->addModel(modelMpxRand);
 	p->addModel(modelMpxPiano);
-	p->addModel(modelDreamPiano);
+	p->addModel(modelMpxDreamPiano);
 	p->addModel(modelMpxGuitarChart);
 	p->addModel(modelMpxGuitarChart6);
 	p->addModel(modelMpxScore);

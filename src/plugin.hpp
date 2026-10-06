@@ -19,7 +19,7 @@ extern Model* modelPolyToStereo;
 extern Model* modelMpxArp;
 extern Model* modelMpxRand;
 extern Model* modelMpxPiano;
-extern Model* modelDreamPiano;
+extern Model* modelMpxDreamPiano;
 extern Model* modelMpxGuitarChart;
 extern Model* modelMpxGuitarChart6;
 extern Model* modelMpxScore;
