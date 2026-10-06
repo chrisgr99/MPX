@@ -225,6 +225,14 @@ gpxmltest:
 		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
 	@./build/gpxmltest $(ARGS)
 
+# mpxPiano's RELEASE ENGINE, RUN OUTSIDE RACK. Its voice engine lives inside a Rack Module where
+# nothing but Rack can reach it, and three changes to its damping were reported as working when
+# they were not. A thing that cannot be run cannot be verified.
+#   make pianorelease ARGS="notes.txt out.wav 20 0.5"
+pianorelease:
+	@mkdir -p build
+	@python3 test/salamander-release.py $(ARGS)
+
 # THE MODEL BESIDE A RECORDING OF THE SAME NOTES, which is the only measurement that says whether
 # the thing is worth playing. Needs the Salamander samples installed, since the recording IS the
 # reference. See test/salamander-compare.py for what each figure means.
@@ -498,7 +506,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench pianorender pianoscore pianonote pianocompare lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench pianorender pianoscore pianonote pianocompare pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is

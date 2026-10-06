@@ -582,6 +582,40 @@ struct PianoModule : Module, NoteSink {
 		return quietest;
 	}
 
+/** THE LEVELS THE SET ITSELF ASKS FOR, which were lost on the way in.
+
+THE SFZ PUTS EACH KIND OF RECORDING IN A GROUP WITH ITS OWN VOLUME, and map.json kept none of
+them: every region came through at unity. The strings are unity in the SFZ too, so they were
+right by accident; everything else was not.
+
+	the key-release noise   volume=-37      and was being played at nought
+	the release resonance   volume=-4
+	the pedal               volume=-20 down, -19 up
+
+WHAT THAT SOUNDED LIKE, and it is why the DAMPING knob appeared dead through three attempts at
+it. The key-release noise is a mechanical sound with no damper to answer to, so the knob does not
+touch it and should not — and at seventy times the level the set asks for it was LOUDER THAN THE
+NOTE: measured at 73.9 decibels against the note's own 68.4, and at the same level whatever the
+knob was set to. Every released key fired one. So the loudest thing in the instrument was the one
+thing the damper could not reach, and the strings underneath it were damping correctly the whole
+time, exactly as they appeared not to be.
+
+Taken from original.sfz, which ships beside the samples, rather than tuned by ear. */
+static float partGain(int part) {
+	switch (part) {
+		case PART_HAMMER:
+			return 0.0141f;        // -37 dB
+		case PART_RESONANCE:
+			return 0.631f;         // -4 dB
+		case PART_PEDAL_DOWN:
+		case PART_PEDAL_UP:
+			return 0.1f;           // -20 dB
+		default:
+			return 1.f;
+	}
+}
+
+
 	/** `dies` is how long this one-shot is allowed to last, in seconds, or nought to let the
 	recording play out as it was recorded. */
 	void startOneShot(const PianoRegion* r, float gain, int part, int key, float sampleRate,
@@ -597,7 +631,7 @@ struct PianoModule : Module, NoteSink {
 		v->region = r;
 		v->sample = &bank->samples[r->sample];
 		v->part = part;
-		v->amp = gain * r->gain;
+		v->amp = gain * r->gain * partGain(part);
 		v->key = key;
 		// Pitched like the strings when the recording is one per zone, as the resonances are; the
 		// hammer noise is one recording per key and is played as it was recorded.
