@@ -225,6 +225,17 @@ gpxmltest:
 		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
 	@./build/gpxmltest $(ARGS)
 
+# PLAYS A REAL SCORE THROUGH THE MODELLED PIANO. Short made-up pieces show whether a mechanism
+# works; real music shows whether an instrument is worth playing, and shows it far faster.
+#   make pianoscore ARGS="~/Downloads/a-piece.mxl 20 build/first-bars.wav"
+pianoscore:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
+		test/pianoscore.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		src/PianoBoard.cpp src/PianoNote.cpp src/PianoString.cpp src/Soundboard.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/pianoscore
+	@./build/pianoscore $(ARGS)
+
 # WHAT COMES IN WHEN A SCORE IS LOADED, by whichever reader the file calls for. The module's own
 # path, without the module. See test/scoreread.cpp.
 #   make scoreread ARGS="a-score.mxl"
@@ -472,7 +483,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench pianorender lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench pianorender pianoscore lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is

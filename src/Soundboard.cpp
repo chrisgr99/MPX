@@ -45,16 +45,55 @@ static const double MODE_LIFT = 2.2;
 /** HOW WELL A MODE OF A GIVEN FREQUENCY GETS THE SOUND INTO THE AIR.
 
 A PLATE IS A POOR RADIATOR UNTIL ITS BENDING WAVES TRAVEL AS FAST AS SOUND IN AIR. Below that
-frequency — the critical frequency, a few hundred hertz for a piano soundboard — the board's
-surface pushes air back and forth between its own crests and troughs instead of pushing it away, so
-very little leaves. Above it, nearly all of the motion radiates. This rises as the frequency does
-and levels off, which is the shape of it. It is why a piano needs a board of that size at all, and
-why the bottom octave is carried by its partials rather than its fundamentals. */
-static const double CRITICAL_HZ = 420.0;
+frequency the board's surface pushes air back and forth between its own crests and troughs instead
+of pushing it away, so little leaves; above it, nearly all of the motion radiates. It is why a
+piano needs a board of that size at all, and why the bottom octave is carried by its partials
+rather than its fundamentals.
 
+AND IT FALLS AWAY AGAIN AT THE TOP, which the first version of this left out. A board does not go
+on radiating freely for ever: it becomes mass-controlled, the patch of it that moves in one
+half-wavelength shrinks, and what gets into the air falls off steeply. Leaving that out gave the
+model five decibels too much at five kilohertz and sixteen too much at eleven, which is a great
+deal of what made it sound harsh.
+
+BOTH CORNERS WERE SET AGAINST A RECORDING AND NOT AGAINST A PUBLISHED MEASUREMENT, and that is
+worth being plain about. The reference is the same few bars of Chopin played on the Salamander set
+— a recording of a real instrument, which is evidence of a kind, but one instrument in one room
+with one pair of microphones. The first attempt put the lower corner at four hundred and twenty
+hertz on the reasoning that this is where a soundboard's bending waves catch up with sound, and
+measured against the recording that is far too high: it cost sixteen decibels at forty-four hertz,
+twelve at eighty-eight and eight at a hundred and seventy-six, which is why the model's bass was
+thin and its balance wrong. A real piano radiates its bass better than coincidence alone would
+allow, because at those frequencies the board and the case move air as one thing rather than as a
+plate full of ripples. */
+static const double CRITICAL_HZ = 45.0;
+/** Where it starts falling away again, as two poles: twelve decibels an octave, which is what a
+mass-controlled plate does. */
+static const double MASS_HZ = 5000.0;
+
+/** WHAT GETS INTO THE AIR, AS A FILTER ON THE BOARD'S MOTION AND NOT AS A WEIGHT PER MODE.
+
+THE FIRST VERSION WEIGHTED EACH MODE BY ITS OWN FREQUENCY, which sounds reasonable and does almost
+nothing. The modes only cover the bottom six hundred hertz; everything above that is the smooth
+remainder, which is ONE signal and got ONE weight — so the whole treble was weighted as though it
+were all at seven hundred hertz, and a rolloff put in to tame eleven kilohertz never touched it.
+Changing the corner frequencies moved the measured balance by three decibels when it should have
+moved it by twelve.
+
+Radiation is a response from the board's velocity to the pressure in the room, which is a filter.
+So it is one. It costs three multiplies on one signal, where the per-mode weights cost one multiply
+per mode.
+
+WHAT IS LOST: real modes radiate differently from one another according to their shape and not only
+their frequency — a mode with many small cells of opposite sign cancels itself into the air far
+better than one that moves as a whole. That is a real effect and it is not here. The
+frequency-dependent part is the dominant one and the only one that can be calibrated against
+anything. */
 static double radiatesAt(double hz) {
 	const double x = hz / CRITICAL_HZ;
-	return std::sqrt(x * x / (1.0 + x * x));
+	const double rise = std::sqrt(x * x / (1.0 + x * x));
+	const double y = hz / MASS_HZ;
+	return rise / (1.0 + y * y);
 }
 
 
@@ -159,55 +198,87 @@ void Soundboard::prepare() {
 	const double corner = std::fmin(highest * REMAINDER_CORNER, rate * 0.4);
 	smoothPole = flat ? 0.0 : std::exp(-2.0 * PI * corner / rate);
 	smoothGain = flat ? smooth : smooth * (1.0 + smoothPole) * 0.5;
-	smoothRadiates = flat ? 1.0 : radiatesAt(corner);
+	// ---- THE RADIATION FILTER, which is what the board's motion sounds like in the room ----
+	//
+	// A first-order rise, so that nothing is radiated at DC and everything above the lower corner
+	// is, and two poles falling away above the upper one. Both are plain one-poles; the rise is a
+	// difference over a pole, which is nought at DC by construction.
+	{
+		const double up = std::exp(-2.0 * PI * CRITICAL_HZ / rate);
+		risePole = up;
+		riseGain = 0.5 * (1.0 + up);      // unity well above the corner
+		const double down = std::exp(-2.0 * PI * std::fmin(MASS_HZ, rate * 0.45) / rate);
+		massPole = down;
+		massGain = 1.0 - down;            // unity at DC
+	}
 
 	instant = smoothGain;
 	for (const Mode& m : modes)
 		instant += m.g;
 
-	// ---- AND THE AVERAGE IS MADE TO BE THE AVERAGE IT WAS ASKED FOR ----
+	// ---- AND THE TREND IS MADE FLAT, AT THE LEVEL IT WAS ASKED FOR ----
 	//
 	// WHY THIS IS NEEDED AT ALL. A soundboard's mobility is a measured quantity — about a
 	// two-thousandth of a metre per second per newton — and every phase before the board existed
-	// was calibrated against a plain resistance of exactly that. Modes are supposed to redistribute
-	// it, not add to it. They do add to it: near a mode each resonator contributes its peak, and
-	// twenty-eight of them across six hundred hertz overlap enough that the TREND of the sum sits
-	// well above the figure asked for. Measured, it came out at twice: 0.97 against 0.47.
+	// was calibrated against a plain resistance of exactly that. Modes are supposed to
+	// redistribute it, not to add to it and not to tilt it.
 	//
-	// WHAT THAT SOUNDED LIKE, which is how it was found. Every note in the modal region — which is
-	// the whole bass and tenor — gave up its energy to the bridge more than twice as fast as any
-	// of the earlier phases had been built for, and by a different amount each note, so the bass
-	// came out short, uneven and unpleasant. Nothing in the bench caught it: the admittance curve
-	// was printed and looked like a mobility curve, the unevenness was measured and celebrated,
-	// and nobody took the average of the thing.
+	// THEY DO BOTH IF LEFT ALONE, and each was found by a different measurement.
 	//
-	// HOW. Everything in here is linear, so scaling every mode by one number scales the whole
-	// admittance by that number — which means the average can be measured and divided out in one
-	// step. Twice over, because the smooth remainder is in the sum too and does not scale with the
-	// modes. The peak-to-dip swing is untouched by a scaling, so the unevenness the modes exist
-	// for survives it.
+	//   THEY ADD. Near a mode each resonator contributes its peak, and twenty-eight of them
+	//   across six hundred hertz overlap enough that the TREND of the sum sits well above the
+	//   figure asked for. It came out at twice: 0.97 mm/s/N against 0.47. Every note in the modal
+	//   region then gave up its energy to the bridge twice as fast as any earlier phase had been
+	//   built for, which is heard as a bass that is short, uneven and unpleasant.
+	//
+	//   AND THEY TILT. The modes are evenly spaced in HERTZ, as a plate's are, so there are more
+	//   of them per octave the higher one goes; each has a bandwidth of its frequency over its
+	//   quality factor, so the share of the axis they cover grows too. With equal peaks the sum
+	//   therefore rises with frequency — measured at 0.26 mm/s/N around ninety hertz against 1.04
+	//   around six hundred, a tilt of a factor of four. A real mobility curve has no such tilt,
+	//   and the model's bass was twelve decibels short of a recording of a real instrument.
+	//
+	// SO THE NORMALISING IS PER OCTAVE AND NOT OVERALL. The modes in each octave are scaled so
+	// that the admittance across that octave averages what was asked for; twice over, because a
+	// mode near a boundary lifts its neighbour's octave as well as its own. Scaling leaves the
+	// peak-to-dip swing within an octave untouched, so the unevenness the modes exist for — which
+	// is the whole reason to have them — survives it.
+	//
+	// AND IT IS A CALIBRATION, which is worth saying plainly. The statement being enforced is
+	// that a soundboard's mobility has no trend across its modes, which is what measured curves
+	// show. The modal sum does not do that by itself, and nothing here derives why; it is
+	// measured and divided out.
 	if (!flat && !modes.empty()) {
 		const double from = FIRST_MODE_HZ * 0.72, to = std::fmin(highest * 1.24, rate * 0.4);
-		for (int pass = 0; pass < 2; pass++) {
-			double logs = 0.0;
-			int n = 0;
-			for (double hz = from; hz < to; hz *= 1.01) {
-				logs += std::log(std::fmax((double) admittanceAt((float) hz), 1e-12));
-				n++;
-			}
-			if (n < 4)
-				break;
-			const double mean = std::exp(logs / (double) n);
-			if (mean < 1e-12)
-				break;
-			const double scale = smooth / mean;
-			instant = smoothGain;
-			for (Mode& m : modes) {
-				m.g *= scale;
-				m.peak *= scale;
-				instant += m.g;
+		for (int pass = 0; pass < 3; pass++) {
+			// One octave at a time, from the bottom of the modes to the top.
+			for (double lo = from; lo < to; lo *= 2.0) {
+				const double hi = std::fmin(lo * 2.0, to);
+				double logs = 0.0;
+				int n = 0;
+				for (double hz = lo; hz < hi; hz *= 1.012) {
+					logs += std::log(std::fmax((double) admittanceAt((float) hz), 1e-12));
+					n++;
+				}
+				if (n < 3)
+					continue;
+				const double mean = std::exp(logs / (double) n);
+				if (mean < 1e-12)
+					continue;
+				const double scale = smooth / mean;
+				// Only the modes whose own frequency is in this octave; the rest are its
+				// neighbours' business, and the extra passes let the two settle together.
+				for (Mode& m : modes) {
+					if (m.hz < lo || m.hz >= hi)
+						continue;
+					m.g *= scale;
+					m.peak *= scale;
+				}
 			}
 		}
+		instant = smoothGain;
+		for (const Mode& m : modes)
+			instant += m.g;
 	}
 	silence();
 }
@@ -220,6 +291,7 @@ void Soundboard::silence() {
 	force1 = force2 = 0.0;
 	velocity = 0.0;
 	sound = 0.0;
+	riseIn = riseOut = massOne = massTwo = 0.0;
 }
 
 
@@ -237,18 +309,23 @@ void Soundboard::drive(double newtons) {
 		: smoothGain * (newtons - force1) + smoothPole * smoothOut;
 	smoothOut = s;
 	double total = s;
-	double heard = s * smoothRadiates;
 	for (Mode& m : modes) {
 		const double y = m.g * (newtons - force2) + m.a1 * m.y1 + m.a2 * m.y2;
 		m.y2 = m.y1;
 		m.y1 = y;
 		total += y;
-		heard += y * m.radiates;
 	}
 	force2 = force1;
 	force1 = newtons;
 	velocity = total;
-	sound = heard;
+
+	// INTO THE AIR: the rise, then the two poles.
+	const double r = riseGain * (total - riseIn) + risePole * riseOut;
+	riseIn = total;
+	riseOut = r;
+	massOne += massGain * (r - massOne);
+	massTwo += massGain * (massOne - massTwo);
+	sound = massTwo;
 }
 
 

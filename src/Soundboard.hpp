@@ -105,6 +105,9 @@ private:
 	double sound = 0.0;
 	double smoothGain = 0.0, smoothPole = 0.0, smoothOut = 0.0;
 	double smoothRadiates = 1.0;
+	// The radiation filter: a rise at the bottom and two poles at the top. See the implementation.
+	double riseGain = 1.0, risePole = 0.0, riseIn = 0.0, riseOut = 0.0;
+	double massGain = 1.0, massPole = 0.0, massOne = 0.0, massTwo = 0.0;
 };
 
 
