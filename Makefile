@@ -225,6 +225,21 @@ gpxmltest:
 		test/gpxmltest.cpp src/GpMusicXML.cpp src/GuitarPro.cpp -o build/gpxmltest
 	@./build/gpxmltest $(ARGS)
 
+# THE MODEL BESIDE A RECORDING OF THE SAME NOTES, which is the only measurement that says whether
+# the thing is worth playing. Needs the Salamander samples installed, since the recording IS the
+# reference. See test/salamander-compare.py for what each figure means.
+pianocompare:
+	@mkdir -p build
+	@python3 test/salamander-compare.py $(ARGS)
+
+# ONE NOTE OF THE MODELLED PIANO TO A FILE, to be set beside a recording of the same note.
+#   make pianonote ARGS="60 0.6 4 build/c4.wav"
+pianonote:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pianonote.cpp src/PianoBoard.cpp src/PianoNote.cpp \
+		src/PianoString.cpp src/Soundboard.cpp -o build/pianonote
+	@./build/pianonote $(ARGS)
+
 # PLAYS A REAL SCORE THROUGH THE MODELLED PIANO. Short made-up pieces show whether a mechanism
 # works; real music shows whether an instrument is worth playing, and shows it far faster.
 #   make pianoscore ARGS="~/Downloads/a-piece.mxl 20 build/first-bars.wav"
@@ -483,7 +498,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench pianorender pianoscore lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench pianorender pianoscore pianonote pianocompare lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
