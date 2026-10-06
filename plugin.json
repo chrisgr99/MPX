@@ -159,8 +159,8 @@
     },
     {
       "slug": "mpxPiano",
-      "name": "mpxPiano",
-      "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable, with sustain and soft pedals and levels for its mechanical sounds. The samples are downloaded once, from the module.",
+      "name": "mpxSPiano",
+      "description": "The Salamander Grand Piano by Alexander Holm, played from an MPX cable: the sampled piano. mpxPiano is the modelled one.",
       "tags": [
         "Polyphonic",
         "Sampler"

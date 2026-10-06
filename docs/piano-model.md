@@ -110,8 +110,18 @@ Stretch tuning as a curve rather than a number. Voicing — how hard the felt is
 
 **The bass.** Wound strings are the most inharmonic, the most strongly double-decaying, and the ones where phantom partials are audible. They will be the last to sound right.
 
+## The two pianos, and their names
+
+They stand beside each other. The sampler is good at what it is good at, and a modelled instrument is a different thing rather than a better one.
+
+**The modelled piano is `mpxPiano`** — the plain name, because it is the one that will be reached for.
+
+**The sampler becomes `mpxSPiano`**, the S for sampled.
+
+**Neither slug moves.** A slug is what a saved patch stores, so the sampler keeps `mpxPiano` as its slug for ever, however it is named on the face; renaming it would empty every rack that has this piano in it. The modelled one therefore needs a slug of its own that is not the word anybody would guess, and the mismatch is invisible — a slug is never shown.
+
+So: the name a person reads and the name a patch stores are different things here, deliberately, and the comment on the panel title says why.
+
 ## Open
 
-**Whether this replaces mpxPiano or stands beside it.** The sampler is good at what it is good at, and a modelled instrument is a different thing rather than a better one.
-
-**What it is called.**
+Nothing. Phase 1 is next.
