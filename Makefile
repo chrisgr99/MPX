@@ -472,7 +472,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench pianorender lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -490,6 +490,14 @@ lossprobe:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -Wall test/lossprobe.cpp -o build/lossprobe
 	@./build/lossprobe $(ARGS)
+
+# LISTENING TO THE MODELLED PIANO. Renders a handful of short pieces to build/*.wav, playing the
+# same arithmetic the module plays, so the sound can be heard without opening a rack.
+pianorender:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/pianorender.cpp src/PianoBoard.cpp src/PianoNote.cpp \
+		src/PianoString.cpp -o build/pianorender
+	@./build/pianorender $(ARGS)
 
 # THE PIANO BENCH. Phase 0 of docs/piano-model.md: the means of measuring, before the thing
 # measured. Partials and stretch, decay per partial, brightness against force, and beating.
