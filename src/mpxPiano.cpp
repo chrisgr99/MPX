@@ -467,6 +467,8 @@ struct PianoModule : Module, NoteSink {
 	PianoVoice voices[MAX_VOICES];
 	const PianoBank* bankSeen = NULL;
 	float sustainWas = 0.f;
+	/** Whether the log has been told that keys are coming up by their own length. */
+	bool saidLifting = false;
 
 	// Menu settings, kept with the patch.
 	int curve = 1;              // 0 soft, 1 normal, 2 hard
@@ -631,8 +633,19 @@ struct PianoModule : Module, NoteSink {
 		for (PianoVoice& v : voices) {
 			if (!v.active || v.part != PART_STRINGS || !v.keyDown || v.endsIn <= 0)
 				continue;
-			if (--v.endsIn == 0)
+			if (--v.endsIn == 0) {
+				// SAID ONCE, IN THE LOG, because "it compiled" is not evidence that it runs. The
+				// first version of this read the duration into a field that was never written —
+				// a replacement that silently matched nothing — so the countdown skipped every
+				// voice and not one note was damped. It built cleanly and the fault was found by
+				// someone listening to it. One line in the log says the mechanism is alive.
+				if (!saidLifting) {
+					saidLifting = true;
+					INFO("mpxPiano: letting keys up by their own length (first at key %d, %.0f ms)",
+						v.key, 1000.0 * (double) v.endsIn / (double) sampleRate);
+				}
 				liftKey(v, sampleRate, sustain, true);
+			}
 		}
 	}
 
@@ -666,6 +679,9 @@ struct PianoModule : Module, NoteSink {
 		v->source = source;
 		v->pitchV = pitchV;
 		v->keyDown = true;
+		// A DURATION IS THE KEY'S OWN AFFAIR; nought means somebody else will say when. See
+		// liftDueKeys for why this matters and what its absence was mistaken for.
+		v->endsIn = (duration > 0.f) ? (int64_t) ((double) duration * (double) sampleRate) : 0;
 		v->undamped = r->undamped;
 		v->key = key;
 		v->vel = lv;

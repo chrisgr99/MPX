@@ -40,6 +40,10 @@ def read_wav(path):
 
 def main():
     notes_file, out_path, seconds = sys.argv[1], sys.argv[2], float(sys.argv[3])
+    # "--ignore-lengths" plays each recording out to its end, which is what the module did before
+    # it read the duration on the cable: no note was ever released. Rendering it both ways is the
+    # only way to tell a fix that is wrong from a fix that is not loaded.
+    honour = "--ignore-lengths" not in sys.argv
     with open(os.path.join(DIR, "map.json")) as f:
         regions = [r for r in json.load(f)["regions"] if r.get("part") == "strings"]
 
@@ -86,7 +90,7 @@ def main():
         x = vel / 127.0
         amp = ((1.0 - VELOCITY_TRACK) + VELOCITY_TRACK * x * x) * r.get("gain", 1.0)
         start = int(at * SR)
-        stop = int((at + lasts) * SR)
+        stop = int((at + lasts) * SR) if honour else total + 1
         fade = int(RELEASE * SR)
         pos = 0.0
         i = start
