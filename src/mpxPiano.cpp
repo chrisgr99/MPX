@@ -489,6 +489,36 @@ struct PianoModule : Module, NoteSink {
 	consecutive melody notes butt exactly end to end — so all of it has to come from here. */
 	static constexpr float LEGATO_OVERLAP = 0.04f;
 
+	/** HOW A CHORD IS SPREAD IN TIME.
+
+	A PIANIST DOES NOT STRIKE A CHORD AT ONE INSTANT, and the way they miss is not random. The
+	melody note sounds BEFORE the rest, by twenty to thirty milliseconds; it is the best documented
+	asynchrony in piano playing, and it is not untidiness — a note arriving a little early is heard
+	as a line of its own rather than as part of a block, which is how a player makes a tune stand
+	out of a chord.
+
+	AND IT FOLLOWS FROM HOW HARD EACH NOTE IS STRUCK. A key pressed harder accelerates its hammer
+	faster and reaches the string sooner: the time from key to string runs from a few tens of
+	milliseconds at a loud attack to well over a hundred at a soft one. So the notes played hardest
+	simply arrive first, whether the player means it or not, and the measured lead tracks how much
+	louder the melody is than what is under it.
+
+	WHICH MEANS THIS IS NOT A SEPARATE INVENTION. The chord is already voiced — the tune at full,
+	the bass a little under it, the inner notes held back — so the order falls out of the levels
+	themselves: the tune first, the bass just after it, the inner voices last. Fifty milliseconds
+	per unit of level puts the gap between a full melody note and an inner one at about twenty,
+	which is where the measurements sit.
+
+	NOTHING MOVES THAT IS NOT IN A CHORD. The delay is measured from the loudest note of the chord,
+	so that note falls exactly on the beat and a single note is never moved at all: the rhythm is
+	where it was written and only the inside of a chord is rearranged. */
+	static constexpr float SPREAD_PER_LEVEL = 0.05f;
+	/** No note of a chord lags further than this, however quiet it has been voiced. */
+	static constexpr float SPREAD_MOST = 0.035f;
+	/** A LITTLE MORE BETWEEN THE INNER NOTES OF A BIG CHORD, bottom to top, so that four or five
+	of them voiced alike do not land in one instant after all. Pianists spread a big chord. */
+	static constexpr float SPREAD_INNER = 0.0015f;
+
 	/** HOW LONG THE FOOT IS OFF THE FLOOR when it changes the pedal: long enough for the dampers
 	to touch and clear what was ringing, short enough that the note being played through the
 	change is not cut. The same fifty milliseconds mpxScore uses for a written pedal change. */
@@ -982,9 +1012,50 @@ static float partGain(int part) {
 		}
 	}
 
+	/** A NOTE WAITING ITS TURN IN A CHORD. See SPREAD_PER_LEVEL. */
+	struct Waiting {
+		int64_t handle = 0;
+		float pitch = 0.f, level = 0.f, duration = 0.f;
+		int64_t in = 0;         /**< Samples still to wait. */
+		bool active = false;
+	};
+	Waiting waiting[MAX_CHORD * 2];
+
+	/** Puts a note by for a moment. False where there is no room, and then it speaks at once,
+	since a note played flat with the rest of the chord is better than one not played. */
+	bool holdBack(int64_t handle, float pitch, float level, float duration, float late, float sr) {
+		for (size_t i = 0; i < sizeof(waiting) / sizeof(waiting[0]); i++) {
+			if (waiting[i].active)
+				continue;
+			waiting[i].handle = handle;
+			waiting[i].pitch = pitch;
+			waiting[i].level = level;
+			waiting[i].duration = duration;
+			waiting[i].in = (int64_t) std::lround((double) late * (double) sr);
+			waiting[i].active = waiting[i].in > 0;
+			return waiting[i].active;
+		}
+		return false;
+	}
+
+	/** Every sample: the ones whose moment has come. */
+	void speakWaiting(float sr, float soft) {
+		for (size_t i = 0; i < sizeof(waiting) / sizeof(waiting[0]); i++) {
+			if (!waiting[i].active)
+				continue;
+			if (--waiting[i].in > 0)
+				continue;
+			waiting[i].active = false;
+			noteOn(waiting[i].handle, waiting[i].pitch, waiting[i].level, sr, soft,
+				waiting[i].duration);
+		}
+	}
+
 	void silenceAll() {
 		for (PianoVoice& v : voices)
 			v.active = false;
+		for (size_t i = 0; i < sizeof(waiting) / sizeof(waiting[0]); i++)
+			waiting[i].active = false;
 	}
 
 	bool attachedWas = false;
@@ -1002,8 +1073,13 @@ static float partGain(int part) {
 		// was sounding rang on for ever with its key still down. Unplugging a piano is not a way
 		// to hold a chord.
 		const bool attached = reader.attached();
-		if (!attached && attachedWas)
+		if (!attached && attachedWas) {
 			allKeysUp(args.sampleRate);
+			// AND THE NOTES STILL WAITING THEIR TURN IN A CHORD GO WITH IT. Unplugging a piano
+			// should not be followed a moment later by two more notes.
+			for (size_t i = 0; i < sizeof(waiting) / sizeof(waiting[0]); i++)
+				waiting[i].active = false;
+		}
 		attachedWas = attached;
 
 		// A NEW SET OF SAMPLES — a different number of layers, or a fresh download — invalidates
@@ -1067,13 +1143,33 @@ static float partGain(int part) {
 						struck[b + 1] = struck[b];
 					struck[b + 1] = hold;
 				}
+				float levels[MAX_CHORD], lengths[MAX_CHORD], loudest = 0.f;
 				for (int a = 0; a < chord; a++) {
 					// WHAT THE SCORE WROTE OVER THE NOTE, turned into a hammer speed and a
 					// finger's length: see shapeByMark.
-					float level = struck[a].level, duration = struck[a].duration;
-					shapeByMark(struck[a].technique, level, duration);
-					level *= voicing(a, chord);
-					noteOn(struck[a].handle, struck[a].pitch, level, sr, soft, duration);
+					levels[a] = struck[a].level;
+					lengths[a] = struck[a].duration;
+					shapeByMark(struck[a].technique, levels[a], lengths[a]);
+					levels[a] *= voicing(a, chord);
+					loudest = std::fmax(loudest, levels[a]);
+				}
+				for (int a = 0; a < chord; a++) {
+					// WHEN EACH NOTE OF THE CHORD SPEAKS: see the constants above.
+					float late = (loudest - levels[a]) * SPREAD_PER_LEVEL;
+					if (chord >= 4 && a < chord - 1)
+						late += (float) a * SPREAD_INNER;
+					late = math::clamp(late, 0.f, SPREAD_MOST);
+					// A NOTE THAT SPEAKS LATE STILL STOPS WHEN IT WAS WRITTEN TO, so the delay
+					// comes off its length rather than pushing its end along with it.
+					float held = lengths[a];
+					if (held > 0.f)
+						held = std::fmax(0.02f, held - late);
+					if (late <= 0.f || chord < 2) {
+						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held);
+						continue;
+					}
+					if (!holdBack(struck[a].handle, struck[a].pitch, levels[a], held, late, sr))
+						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held);
 				}
 			}
 
@@ -1093,6 +1189,11 @@ static float partGain(int part) {
 			Event e;
 			while (reader.next(e)) {}
 		}
+		// The notes of a chord that were put by for a moment, and then the keys that come up by
+		// themselves — both every sample, since a damper landing a buffer late is audibly late on
+		// a sixteenth and so is a melody note.
+		if (bank)
+			speakWaiting(sr, soft);
 		// The keys that come up by themselves, every sample: a damper landing a buffer late is
 		// audibly late on a sixteenth.
 		liftDueKeys(sr, sustain);

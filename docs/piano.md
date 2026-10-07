@@ -63,7 +63,26 @@ So the top note keeps its level, the lowest keeps most of its weight since the b
 | four notes | +6.0 dB | +3.7 dB |
 | six notes | +7.8 dB | +4.9 dB |
 
-Still louder, which is right, but no longer drowning what it is answering. A chord is whatever is struck in the same sample; a rolled chord arrives spread over tens of milliseconds and is left alone, which is also right, since it is played note by note.
+Still louder, which is right, but no longer drowning what it is answering.
+
+### And spread in time
+
+A pianist does not strike a chord at one instant, and the way they miss is not random. The melody note sounds **before** the rest, by twenty to thirty milliseconds. It is the best documented asynchrony in piano playing and it is not untidiness: a note arriving a little early is heard as a line of its own rather than as part of a block, which is how a player makes a tune stand out of a chord.
+
+It also follows from how hard each note is struck. A key pressed harder accelerates its hammer faster and reaches the string sooner — the time from key to string runs from a few tens of milliseconds at a loud attack to well over a hundred at a soft one — so the notes played hardest arrive first whether the player means it or not, and the measured lead tracks how much louder the melody is than what is under it.
+
+Which means this is not a separate invention. The chord is already voiced, so the order falls out of the levels themselves:
+
+| struck together | melody | bass | inner notes |
+|---|---|---|---|
+| two notes | 0 ms | 10 ms | |
+| three notes | 0 ms | 10 ms | 20 ms |
+| four notes | 0 ms | 10 ms | 22, 23 ms |
+| six notes | 0 ms | 10 ms | 22 to 26 ms |
+
+Nothing moves that is not in a chord. The delay is measured from the loudest note, so that note falls exactly where it was written and a single note is never moved at all: the rhythm stays put and only the inside of a chord is rearranged. A note that speaks late still stops when it was written to, so the delay comes off its length rather than pushing its end along. A rolled chord arrives already spread and is left alone.
+
+Nothing here is random. If the structure alone sounds human, randomness would only be noise on top of it. A chord is whatever is struck in the same sample; a rolled chord arrives spread over tens of milliseconds and is left alone, which is also right, since it is played note by note.
 
 - **An accent is a faster hammer**, a quarter louder, and brighter with it because the recorded layers are brighter the harder they were struck. A strong accent is nearly half again.
 - **A staccato is the same hammer and an early release**, taking the note to under half its written length.
