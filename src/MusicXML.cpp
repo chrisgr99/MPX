@@ -821,7 +821,11 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						// over once as something nothing downstream could play, which was the
 						// wrong place to decide: the alternation is written out in the timeline,
 						// so what an instrument receives is notes like any others.
-						const pugi::xml_node orn = marks.child("ornaments");
+						// HELD. A fermata is not an articulation of the note but an instruction to
+					// wait, so it goes on the beat and the clock does the rest.
+					if (marks.child("fermata") && index < building.beats.size())
+						building.beats[index].fermata = true;
+					const pugi::xml_node orn = marks.child("ornaments");
 						// A WAVY LINE IS A TRILL TOO. The mark and the line are two ways of
 						// writing one, and a long trill is often only the line.
 						if (orn.child("trill-mark") || orn.child("wavy-line"))

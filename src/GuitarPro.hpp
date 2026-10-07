@@ -93,6 +93,9 @@ struct GpBeat {
 	/** Nought to one, from the file's own marks: ppp through fff. */
 	float dynamic = 0.6f;
 	bool rest = false;
+	/** HELD. A fermata stretches this beat and everything waits for it — it changes the clock
+	rather than the notes, which is why it is on the beat and not on a note. */
+	bool fermata = false;
 	/** Struck as a chord, and which way the hand went: -1 up, 1 down, 0 not brushed. */
 	int brush = 0;
 	/** How long the hand took over the brush, in milliseconds, or nought where the file does not

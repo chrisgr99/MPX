@@ -14,6 +14,10 @@ trills at much the same speed in a slow piece as in a fast one, somewhere around
 second, so this is a time and not a fraction of the note. */
 static const double TRILL_SECONDS = 0.08;
 
+/** HOW MUCH LONGER A BEAT UNDER A FERMATA IS HELD. Nothing says; players hold about half as long
+again to twice, and this is the middle of that. */
+static const double FERMATA_HELD = 1.75;
+
 namespace {
 
 
@@ -310,6 +314,36 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			for (size_t k = 0; k < list.size(); k++) {
 				bpm = quartersPerMinute(list[k]);
 				clock.add(quarters + (double) list[k].position, 60.0 / bpm);
+			}
+		}
+
+		// A FERMATA IS A PAUSE, AND EVERYTHING WAITS FOR IT.
+		//
+		// It holds one beat longer than it is written and then the music goes on at the tempo it
+		// was at, so it is a change of clock and not of notes — a rest under a fermata is held
+		// too, and a renderer that stretched only the notes would leave the silence unstretched.
+		// Written in every part at the same moment, so the first one found at a position is the
+		// pause and the others are the same pause written again.
+		//
+		// HOW LONG IS NOT WRITTEN ANYWHERE. Players hold about half as long again to twice; this
+		// takes the middle of that, which is long enough to hear as a pause and short enough not
+		// to sound like a mistake.
+		{
+			std::set<double> paused;
+			for (size_t t = 0; t < song.tracks.size(); t++) {
+				if (written >= (int) song.tracks[t].bars.size())
+					continue;
+				const GpBar& wb = song.tracks[t].bars[(size_t) written];
+				for (size_t e = 0; e < wb.beats.size(); e++) {
+					const GpBeat& beat = wb.beats[e];
+					if (!beat.fermata || beat.quarters <= 0.f)
+						continue;
+					if (!paused.insert((double) beat.start).second)
+						continue;
+					clock.add(quarters + (double) beat.start, 60.0 / bpm * FERMATA_HELD);
+					clock.add(quarters + (double) beat.start + (double) beat.quarters,
+						60.0 / bpm);
+				}
 			}
 		}
 
