@@ -65,6 +65,12 @@ arrive somewhere; this is the distance it travels, which is about one step of th
 const float HAIRPIN_REACH = 0.25f;
 
 
+/** THE QUIETEST A RAMP MAY ARRIVE AT. ppp is the quietest thing written in music, and a ramp whose
+destination nobody wrote is working from a guess: it may fade, but not to somewhere no composer
+ever asks for. A mark that really says ppp is obeyed, since that is not a guess. */
+const float QUIETEST = 0.15f;
+
+
 /** THE LOUDNESS OF THE WHOLE PART AS A LINE, built from the marks: a list of points with straight
 lines between them. A step is two points at the same moment. */
 std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events) {
@@ -86,24 +92,63 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 			curve.push_back(std::make_pair(e.at, now));     // The ramp starts from here.
 		}
 		else if (e.kind == LevelEvent::SWELL_WORD || e.kind == LevelEvent::FADE_WORD) {
-			// A WORDED RAMP RUNS UNTIL SOMETHING ELSE IS SAID. There is no bracket, so the end
-			// is the next mark of any kind, and a word with nothing after it ramps over four
-			// quarters, which is a bar of the commonest metre.
+			// A WORDED RAMP GOES WHERE THE NEXT DYNAMIC MARK SAYS, however far off that is, and
+			// several in a row are ONE journey to it rather than a step each.
+			//
+			// WHY THIS IS NOT A STEP APIECE. The Ballade reaches bar 60 at p and is marked
+			// calando, then smorz., then più dimin., and only at bar 68 does it say pp. Those are
+			// not three instructions to drop a dynamic each — between them they are one long fade
+			// from p to pp, which is a fifth quieter. Taken as a step each they take the music to
+			// a seventh of where it should be, and bars 62 to 67 came out at the floor: the
+			// composer asked for quiet and got all but silence. A written word says WHICH WAY the
+			// loudness is going; the next mark is the only thing that says HOW FAR.
 			const bool up = (e.kind == LevelEvent::SWELL_WORD);
-			double end = e.at + 4.0;
-			float target = now + (up ? HAIRPIN_REACH : -HAIRPIN_REACH);
-			for (size_t j = i + 1; j < events.size(); j++) {
+			size_t last = i;
+			size_t j = i + 1;
+			double end = -1.0;
+			float target = 0.f;
+			bool toward = false;
+			for (; j < events.size(); j++) {
 				if (events[j].at <= e.at)
 					continue;
-				end = events[j].at;
-				if (events[j].kind == LevelEvent::MARK)
+				if (events[j].kind == LevelEvent::MARK) {
+					end = events[j].at;
 					target = events[j].value;
-				break;
+					toward = true;
+					break;
+				}
+				// ANOTHER WORD THE SAME WAY carries the one fade on; anything else — a hairpin, or
+				// a word going the other way — ends it, since the music has been told something
+				// new.
+				const bool again = up ? (events[j].kind == LevelEvent::SWELL_WORD)
+					: (events[j].kind == LevelEvent::FADE_WORD);
+				if (!again)
+					break;
+				last = j;
 			}
-			target = std::max(0.05f, std::min(1.f, target));
+			// A WORD MEANS WHAT IT SAYS. Where the next mark is on the wrong side of where the
+			// music already is — a cresc. whose next mark is the dynamic it is already at, which
+			// happens when a hairpin has got there first — the mark cannot be the destination,
+			// since a crescendo that arrives no louder is not one. The word wins and it travels
+			// a step, as a ramp with no mark after it does.
+			if (toward && (up ? (target <= now) : (target >= now)))
+				toward = false;
+			if (!toward) {
+				// NOTHING SAYS WHERE IT ARRIVES, so it travels about one step of the ladder, as a
+				// hairpin with no mark after it does.
+				end = (j < events.size()) ? events[j].at : e.at + 4.0;
+				target = now + (up ? HAIRPIN_REACH : -HAIRPIN_REACH);
+			}
+			if (end <= e.at)
+				end = e.at + 4.0;
+			// NEVER QUIETER THAN THE QUIETEST THING ANYBODY WRITES. A ramp with no destination is
+			// a guess, and a guess has no business inventing a dynamic below ppp.
+			target = std::max(QUIETEST, std::min(1.f, target));
 			curve.push_back(std::make_pair(e.at, now));
 			curve.push_back(std::make_pair(end, target));
 			now = target;
+			// The words taken into this one journey are not read again.
+			i = last;
 		}
 		else {
 			// WHERE THE HAIRPIN ARRIVES: the next mark after it if there is one, and otherwise
