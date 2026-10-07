@@ -166,8 +166,6 @@ struct SongModule : Module, NoteSource {
 	};
 
 	enum InputId {
-		I_CLOCK,
-		I_RESET,
 		NUM_INPUTS
 	};
 	enum OutputId {
@@ -276,8 +274,6 @@ struct SongModule : Module, NoteSource {
 			// control voltage. When the name becomes the instrument's, it keeps the word.
 			configOutput(O_TRACK + r, string::f("MPX track %d", r + 1));
 		}
-		configInput(I_CLOCK, "Clock");
-		configInput(I_RESET, "Reset");
 
 		for (int r = 0; r < ROWS; r++) {
 			slot[r] = -1;
@@ -442,6 +438,7 @@ struct SongModule : Module, NoteSource {
 			return;
 		L.track[r] = t;
 		reseek[r] = true;
+		params[P_MUTE + r].setValue((t >= 0) ? 0.f : 1.f);
 		claimBuses(L);
 		L.partChange++;
 		nameOutputs();
@@ -464,6 +461,17 @@ struct SongModule : Module, NoteSource {
 #endif
 		if (haveSong.load())
 			claimBuses(loaded[live.load()]);
+	}
+
+	/** A ROW WITH NOTHING ON IT SHOWS AS MUTED. Main thread.
+
+	A row carrying no track is silent whatever its mute says, so the mute may as well say so: an
+	empty row then reads as empty at a glance instead of looking like a row that ought to be
+	playing. Loading a score sets them all — the rows it filled come up unmuted, the rest muted —
+	and choosing a track for a row unmutes that row, since choosing it is asking to hear it. */
+	void syncMutes(const Playing& L) {
+		for (int r = 0; r < ROWS; r++)
+			params[P_MUTE + r].setValue((L.track[r] >= 0) ? 0.f : 1.f);
 	}
 
 	/** A bus for every row that carries a track, and none for the rest. Main thread. */
@@ -563,6 +571,7 @@ struct SongModule : Module, NoteSource {
 		next.partChange = loaded[live.load()].partChange + 1;
 		loaded[spare] = next;
 		live.store(spare);
+		syncMutes(next);
 		claimBuses(next);
 		haveSong.store(!loaded[spare].line.bars.empty());
 		fileBytes.assign((const char*) bytes.data(), bytes.size());
@@ -636,6 +645,7 @@ struct SongModule : Module, NoteSource {
 			const int t = (int) json_integer_value(json_array_get(rowsJ, r));
 			L.track[r] = (t >= 0 && t < (int) L.line.tracks.size()) ? t : -1;
 		}
+		syncMutes(L);
 		claimBuses(L);
 		nameOutputs();
 	}
@@ -717,8 +727,6 @@ struct SongModule : Module, NoteSource {
 		if (L.line.bars.empty() || L.line.quarters <= 0.0)
 			return;
 
-		if (resetTrigger.process(inputs[I_RESET].getVoltage(), 0.1f, 1.f))
-			rewind();
 		if (rewindTrigger.process(params[P_REWIND].getValue(), 0.1f, 1.f))
 			rewind();
 
@@ -733,24 +741,12 @@ struct SongModule : Module, NoteSource {
 		// WHAT A QUARTER NOTE LASTS. From the song's own tempo map, or from the clock where one
 		// is patched — and then the song's tempo changes are the clock's business rather than
 		// the file's, which is what patching a clock into a player means.
-		sinceLastPulse += args.sampleTime;
-		if (inputs[I_CLOCK].isConnected()) {
-			const bool pulse = clockTrigger.process(inputs[I_CLOCK].getVoltage(), 0.1f, 1.f);
-			if (pulse) {
-				if (sinceLastPulse > 0.001f && sinceLastPulse < 10.f)
-					quarterSeconds = sinceLastPulse;
-				sinceLastPulse = 0.f;
-				if (running && awaitPulse)
-					awaitPulse = false;
-			}
-			sinceLastPulse = std::fmin(sinceLastPulse, 10.f);
-		}
-		else {
-			// THE SONG'S OWN TEMPO MAP, MOVED BY THE CONTROL. The whole map is scaled rather
-			// than replaced, so a song that speeds up or slows down still does, in proportion.
+		// THE SONG'S OWN TEMPO MAP, MOVED BY THE CONTROL. The whole map is scaled rather than
+		// replaced, so a song that speeds up or slows down still does, in proportion. There was a
+		// clock input once; it is gone, and with it the business of waiting for the first pulse.
+		{
 			const float wanted = params[P_TEMPO].getValue();
-			const float scale = (L.openingBpm > 0.f && wanted > 0.f)
-				? wanted / L.openingBpm : 1.f;
+			const float scale = (L.openingBpm > 0.f && wanted > 0.f) ? wanted / L.openingBpm : 1.f;
 			quarterSeconds = (float) gpSecondsPerQuarter(L.line, quarters) / scale;
 			awaitPulse = false;
 		}
@@ -1403,15 +1399,6 @@ static Layout songLayout(int rows) {
 			i.owner = owner;
 		L.items.push_back(i);
 	};
-	auto jack = [&](const char* key, Item::Kind kind, float x, float y, int id,
-			const char* name, NVGcolor color) {
-		Item i;
-		i.key = key; i.kind = kind; i.id = id; i.x = x; i.y = y; i.ring = color;
-		L.items.push_back(i);
-		if (name && name[0])
-			label((std::string(key) + ".label").c_str(), x, y + 7.5f, name,
-				Panel::CENTRE, false, 0.f, key);
-	};
 
 	// The song's name, which is also the way one is chosen. Clear of the band the module's own
 	// name is written in, which ends seven millimetres down: the band is seventeen PIXELS deep
@@ -1464,8 +1451,6 @@ static Layout songLayout(int rows) {
 	L.items.push_back(tempo);
 	label("p.tempo.label", 34.f, 42.f, "BPM", Panel::CENTRE, true, 0.f, "p.tempo");
 
-	jack("in.clock", Item::PORT_IN, 45.f, 35.5f, SongModule::I_CLOCK, "clock", SIG_GATE);
-	jack("in.reset", Item::PORT_IN, 54.f, 35.5f, SongModule::I_RESET, "reset", SIG_GATE);
 
 
 	Item lamp;
