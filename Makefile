@@ -234,6 +234,17 @@ gpxmltest:
 # EVERY MARK A SCORE CARRIES, AND WHETHER WE PLAY IT. Ornaments were being found one at a time by
 # ear, and a mark read and ignored sounds exactly like one that was never there.
 #   make marksused ARGS="$(HOME)/Downloads/*.mxl"
+# NOTES THAT ARE PLAYED AND CANNOT BE HEARD: buried inside the same pitch, doubled at one moment,
+# or far quieter than what surrounds them. Three faults running were notes buried rather than
+# missing, which is the hardest kind to hear.
+#   make buried ARGS="$(HOME)/Downloads/*.mxl"
+buried:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -w -I dep/include/verovio/pugi \
+		test/buried.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/buried
+	@./build/buried $(ARGS)
+
 marksused:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
