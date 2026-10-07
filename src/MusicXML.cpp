@@ -76,6 +76,24 @@ ever asks for. A mark that really says ppp is obeyed, since that is not a guess.
 const float QUIETEST = 0.15f;
 
 
+/** HOW LONG AN ORNAMENT LASTS, in quarter notes.
+
+A GRACE NOTE HAS NO DURATION IN THE FILE, because it takes none of the bar's time — the written
+lengths of a bar must add up without it. Read literally it is a note of no length, which came out
+as the shortest thing the cable can carry, a hundredth of a second: a click rather than a note.
+
+It is also written at the same position as the note it ornaments, so the two shared a beat and the
+main note was left with the grace's nought length as well.
+
+SO IT IS GIVEN A LENGTH AND THE NOTE IT LEANS ON IS MOVED ALONG BY IT. A grace in this music is
+played ON the beat, taking its moment from the note that follows rather than from the bar before —
+which is how it was played when this was written, and it keeps the ornament from having to cross a
+bar line to be heard. An eighth of a quarter is about seventy milliseconds at these tempos, which
+is a short note rather than a click; it never takes more than half of what it leans on, so a grace
+before a short note stays shorter than it. */
+const float GRACE_QUARTERS = 0.125f;
+
+
 /** HOW CLOSE A MARK HAS TO BE TO BE WHAT A HAIRPIN LEADS TO, in quarter notes. A dynamic written
 under the end of a hairpin is its destination; one two bars further on belongs to something else,
 and a hairpin that jumped to it would arrive long before the music does. */
@@ -295,6 +313,9 @@ voice reaches them. A chord is one beat with several notes. */
 struct Building {
 	std::map<long, size_t> at;    /**< Position in divisions to the beat holding it. */
 	std::vector<GpBeat> beats;
+	/** WHERE THE ORNAMENTS ARE, so the note each leans on knows how much of itself it has given
+	up. One entry per grace note, at the position of the note it ornaments. */
+	std::vector<long> graces;
 };
 
 
@@ -501,6 +522,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 			long filled = 0;      // The furthest any voice reached, which is what the bar holds.
 			long lastNoteAt = 0;
 			int lastVoice = 1;
+			/** The key the last note was filed under, so a chord note joins the same beat even
+			where that key is not the position — which an ornament's is not. */
+			long lastKey = 0;
 
 			for (pugi::xml_node node = measure.first_child(); node;
 					node = node.next_sibling()) {
@@ -688,7 +712,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				const int useVoice = isChord ? lastVoice : voice;
 
 				Building& building = voices[useVoice];
-				std::map<long, size_t>::iterator found = building.at.find(where);
+				// AN ORNAMENT IS NOT PART OF THE NOTE IT ORNAMENTS. It is written at the same
+				// position, so a map keyed by position would hand it the same beat; it is keyed
+				// apart, below nought where no real position can reach. See GRACE_QUARTERS.
+				const long key = isChord ? lastKey
+					: (isGrace ? -(where + 1) - (long) building.graces.size() * 1000000L : where);
+				std::map<long, size_t>::iterator found = building.at.find(key);
 				size_t index;
 				if (found == building.at.end()) {
 					GpBeat beat;
@@ -697,12 +726,35 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					beat.rest = isRest;
 					beat.dynamic = 0.6f;   // Replaced below, from the whole part's line.
 					beat.grace = isGrace ? 2 : 0;
+					if (isGrace) {
+						beat.quarters = GRACE_QUARTERS;
+						building.graces.push_back(where);
+					}
+					else {
+						// HOW MUCH OF THIS NOTE THE ORNAMENTS BEFORE IT HAVE TAKEN. They are
+						// played on the beat, so this one begins after them and is shorter by
+						// what they took — never by more than half of it.
+						float taken = 0.f;
+						for (size_t gi = 0; gi < building.graces.size(); gi++) {
+							if (building.graces[gi] == where)
+								taken += GRACE_QUARTERS;
+						}
+						if (taken > 0.f) {
+							const float most = beat.quarters * 0.5f;
+							if (beat.quarters > 0.f && taken > most)
+								taken = most;
+							beat.start += taken;
+							beat.quarters -= taken;
+						}
+					}
 					index = building.beats.size();
 					building.beats.push_back(beat);
-					building.at[where] = index;
+					building.at[key] = index;
+					lastKey = key;
 				}
 				else {
 					index = found->second;
+					lastKey = key;
 				}
 				GpBeat& beat = building.beats[index];
 
