@@ -114,6 +114,9 @@ struct Score {
 	/** EVERY SYSTEM, measured. Costs one render of each with nothing to draw on — a fifth of a
 	second for a long piano score — so it is done on the thread that lays the score out, once,
 	and never where the drawing happens. */
+	/** Adjusts the page width until a system holds a readable number of bars, since a file's own
+	scaling decides how much a given width holds. Called once, after loading. */
+	void fitSystems();
 	void measureSystems();
 	const std::vector<ScoreSystem>& systems() const { return allSystems; }
 	/** How tall the whole flow is, in page units. */

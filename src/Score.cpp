@@ -53,6 +53,21 @@ void Score::applyOptions() {
 	std::snprintf(buf, sizeof(buf),
 		"{\"pageWidth\": %d, \"pageHeight\": %d,"
 		" \"adjustPageHeight\": false, \"breaks\": \"auto\","
+		// ONE SYSTEM TO A PAGE, SAID OUTRIGHT. The window stacks systems itself, so it wants
+		// them one at a time — and the way to get that was a page too short to hold two, which
+		// works only while every system is shorter than the page. A score with a tall system —
+		// a wide grand staff, ledger lines, several voices — overflowed instead: Verovio gave up
+		// paginating and crammed twelve bars onto one line, with the ink starting twice the
+		// page's height down. Asking for one system a page says what is wanted and leaves the
+		// height out of it, so the page can be as tall as the tallest system needs.
+		" \"systemMaxPerPage\": 1,"
+		// AND THE NOTATION IS THE SIZE WE ASK FOR, not the size the file was engraved at. A
+		// MusicXML file may carry its own scaling — so many millimetres to so many tenths — and
+		// Verovio honours it, so the same page width holds two bars of a score that declares
+		// none and eighteen of one that declares a small staff. The Nocturne in E flat declares
+		// 7.06mm to 40 tenths and came out as two systems of eighteen bars, unreadable. Fixing
+		// the staff size makes a page width mean the same thing for every score.
+		" \"unit\": 9,"
 		" \"footer\": \"none\", \"header\": \"none\","
 		" \"font\": \"Leipzig\"}",
 		width, height);
@@ -241,7 +256,10 @@ bool Score::loadBytes(const std::string& bytes, const std::string& called, std::
 	}
 
 	// THE FIRST PART, NOT ALL OF THEM. See parts().
-	return load(onePart(chosen), reason);
+	if (!load(onePart(chosen), reason))
+		return false;
+	fitSystems();
+	return true;
 }
 
 
@@ -266,6 +284,54 @@ void Score::setPage(int w, int h) {
 
 int Score::pageCount() const {
 	return loaded ? toolkit->GetPageCount() : 0;
+}
+
+
+/** HOW MANY BARS A SYSTEM SHOULD HOLD. Two to five reads well at the sizes this window offers;
+outside that the notation is either cramped to nothing or so sparse that a page holds a phrase. */
+static const double FIT_BARS_LOW = 2.0;
+static const double FIT_BARS_HIGH = 5.0;
+
+
+void Score::fitSystems() {
+	// A PAGE WIDTH DOES NOT MEAN THE SAME THING FOR EVERY SCORE.
+	//
+	// A MusicXML file may carry its own scaling — so many millimetres to so many tenths — and its
+	// own page size, and Verovio honours them. So the width asked for here holds two bars of a
+	// score that declares none and eighteen of one that declares a small staff: the Nocturne in E
+	// flat came out as two systems of eighteen bars, which on the screen is a scribble.
+	//
+	// RATHER THAN GUESS AT WHAT THE FILE DECLARED, the layout is measured and the width adjusted
+	// until a system holds a readable number of bars. Verovio is asked for one system a page, so
+	// counting pages counts systems, and the bars are counted off the document. Three passes at
+	// a tenth of a second each, once, when a score is opened.
+	if (!loaded || !toolkit)
+		return;
+	size_t bars = 0;
+	for (size_t at = source.find("<measure "); at != std::string::npos;
+			at = source.find("<measure ", at + 1))
+		bars++;
+	if (bars < 2)
+		return;
+	for (int pass = 0; pass < 6; pass++) {
+		const int systems = pageCount();
+		if (systems < 1)
+			return;
+		const double perSystem = (double) bars / (double) systems;
+		if (perSystem >= FIT_BARS_LOW && perSystem <= FIT_BARS_HIGH)
+			return;
+		// A SYSTEM HOLDING TWICE AS MANY BARS AS IT SHOULD WANTS HALF THE WIDTH.
+		const double want = (perSystem > FIT_BARS_HIGH) ? FIT_BARS_HIGH : FIT_BARS_LOW;
+		double scale = want / perSystem;
+		if (scale < 0.2) scale = 0.2;
+		if (scale > 5.0) scale = 5.0;
+		const int wider = (int) ((double) width * scale);
+		if (wider < 60 || wider > 60000 || wider == width)
+			return;
+		width = wider;
+		applyOptions();
+		toolkit->RedoLayout();
+	}
 }
 
 

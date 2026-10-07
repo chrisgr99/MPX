@@ -292,6 +292,14 @@ int main(int argc, char** argv) {
 
 	px::Score score;
 	std::string why;
+	// THE PAGE BEFORE THE SCORE, which is the order the window uses: the options are read when a
+	// document is laid out, and some of them — how many systems a page may hold — are not revised
+	// by a later relayout.
+	{
+		const int tallFirst = (width > 0) ? (int) ((double) units * height / width) : units * 4 / 3;
+		if (units > 0)
+			score.setPage(units, tallFirst);
+	}
 	if (!score.loadFile(file, &why)) {
 		std::printf("could not read it: %s\n", why.c_str());
 		return 1;

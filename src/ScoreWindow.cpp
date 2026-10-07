@@ -118,6 +118,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 	reader who wants to look at something, and back on when the music is sent somewhere by hand. */
 	bool follow = true;
 	bool wasPlaying = false;
+	/** Set when the module hands over a new document: the worker may be busy with the old one,
+	and a request dropped because something was running is how the window came to be showing a
+	score that had been replaced. */
+	bool wantReload = false;
 	/** Which tool the pointer is over, or -1. For the tip: these are glyphs, and a glyph is only
 	obvious to whoever chose it. */
 	int hoverTool = -1;
@@ -171,11 +175,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 		worker = std::thread([this, load, units, aspect, part, staves, file, carried, doc]() {
 			std::string reason;
 			bool ok = true;
-			// ONE SYSTEM TO A PAGE. The window stacks them itself, so what Verovio calls a page
-			// is never shown as one: a page just tall enough for a single system is how a
-			// continuous view is got out of a renderer that draws pages. The height only has to
-			// be too small for two systems; Verovio does not stretch one to fill it.
-			score.setPage(units, (int) (units * 0.35f));
+			// ONE SYSTEM TO A PAGE, which Verovio is told outright: see Score::applyOptions.
+			// The page is then made generously tall rather than deliberately short, so that a
+			// score whose systems are tall has room for them instead of overflowing.
+			score.setPage(units, (int) (units * 2.f));
 			(void) aspect;
 			if (doc) {
 				// THE WRITER'S OWN DOCUMENT, cut to one part as a file opened by name is.
@@ -350,6 +353,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 			const math::Rect area = body();
 			if (area.size.x > 1.f && area.size.y > 1.f)
 				wantAspect = area.size.y / area.size.x;
+		}
+		if (wantReload && !working.load()) {
+			wantReload = false;
+			unitsNow = 0;
+			beginWork(true);
 		}
 		if (!working.load() && ready.load()
 				&& (wantUnits != unitsNow || wantPart != partNow
@@ -1153,6 +1161,24 @@ struct ScoreWindow : widget::OpaqueWidget {
 
 
 } // namespace
+
+
+void scoreWindowReplaceFor(int64_t moduleId, const std::shared_ptr<const std::string>& musicxml,
+		const std::string& title) {
+	if (!gScoreWindow || gScoreWindow->moduleId != moduleId || !musicxml || musicxml->empty())
+		return;
+	if (gScoreWindow->document == musicxml)
+		return;
+	gScoreWindow->document = musicxml;
+	gScoreWindow->song.reset();
+	gScoreWindow->path.clear();
+	gScoreWindow->name = title;
+	gScoreWindow->wantPart = 0;
+	gScoreWindow->partNow = -1;
+	gScoreWindow->flow = gScoreWindow->flowWant = 0.f;
+	gScoreWindow->loopFrom = gScoreWindow->loopTo = -1;
+	gScoreWindow->wantReload = true;
+}
 
 
 void scoreWindowCloseFor(int64_t moduleId) {

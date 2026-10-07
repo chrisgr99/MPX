@@ -47,6 +47,13 @@ else written between the staves. Taken by copy, for the reason the song is. */
 void scoreWindowShowDocument(const std::shared_ptr<const std::string>& musicxml,
 	const std::string& title, int64_t moduleId);
 
+/** GIVES AN OPEN WINDOW A NEW DOCUMENT, and does nothing where none is open for this module.
+
+A module that loads another file while its window is up was showing the old score: the window is
+told what to display when it is opened and never again. Called from the module after it loads. */
+void scoreWindowReplaceFor(int64_t moduleId, const std::shared_ptr<const std::string>& musicxml,
+	const std::string& title);
+
 /** Closes the window if it belongs to this module. Called when the module goes. */
 void scoreWindowCloseFor(int64_t moduleId);
 

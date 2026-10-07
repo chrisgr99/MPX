@@ -592,6 +592,12 @@ struct SongModule : Module, NoteSource {
 		// shows the writer's own document where there is one. See showScore.
 		fileIsMusicXML = wasMusicXML;
 		filePath = path;
+		// A WINDOW ALREADY OPEN ON THIS MODULE GETS THE NEW SCORE. It is told what to show when
+		// it is opened and was never told again, so loading another piece left it showing the
+		// one before.
+		if (wasMusicXML)
+			px::scoreWindowReplaceFor(id, std::make_shared<const std::string>(fileBytes),
+				next.title.empty() ? std::string("Score") : next.title);
 		params[P_TEMPO].setValue(math::clamp(next.openingBpm, 20.f, 400.f));
 		rewind();
 		nameOutputs();
