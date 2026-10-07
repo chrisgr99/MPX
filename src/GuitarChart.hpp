@@ -767,15 +767,19 @@ struct SongModule : Module, NoteSource {
 		if (running && !awaitPulse)
 			quarters += args.sampleTime / std::fmax(0.0001f, (double) quarterSeconds);
 
-		// THE END IS THE BEGINNING. A song that stopped dead would take the patch with it, and
-		// a loop is what anybody building on top of one wants.
+		// THE END IS THE END: it rewinds and stops, leaving the music at the beginning and ready
+		// to be played again. It used to come round to the start and carry on, which is what a
+		// drum machine does and not what a piece of music does — a score has a last bar, and
+		// after it the right thing to do is nothing. A passage worth hearing twice is a loop,
+		// which the score window sets over the bars you choose.
 		if (quarters >= L.line.quarters) {
-			quarters -= L.line.quarters;
-			epoch++;
-			barIndex = 0;
-			pedalIndex = -1;
-			for (int r = 0; r < ROWS; r++)
-				cursor[r] = 0;
+			// UNLESS A PASSAGE IS BEING LOOPED, and that passage runs to the last bar: the loop
+			// below brings the music back to its start, and stopping here would get in first.
+			int from = -1, to = -1;
+			if (!scoreFollowLoop(id, from, to, NULL)) {
+				rewind();
+				params[P_PLAY].setValue(0.f);
+			}
 		}
 
 		// Which played bar the music is in. A walk rather than a search: the position moves by
