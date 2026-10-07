@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
 					if (oEnd < end - 1e-6)
 						continue;
 					inside++;
-					if (show.size() < 6) {
+					if (show.size() < 40) {
 						char line1[160];
 						std::snprintf(line1, sizeof line1,
 							"    bar %d: note %d at %.2fs lasting %.2fs is inside one from %.2fs"

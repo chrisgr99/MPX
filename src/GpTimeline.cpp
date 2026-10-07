@@ -682,13 +682,27 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					trilled = n.lengthSeconds;   // Nothing worth stopping for.
 			}
 
+			const bool terminated = n.note.trill && trilled < n.lengthSeconds - 1e-6;
 			int pitches[8];
 			int count = 0;
 			if (n.note.trill) {
 				count = (int) std::lround(trilled / TRILL_SECONDS);
 				if (count < 3)
 					count = 3;
-				if ((count % 2) == 0)
+				// A TRILL ENDS ON THE WRITTEN NOTE — unless it is leading into a termination, and
+				// then it ends on the UPPER one.
+				//
+				// THE REASON IS THE STRING. A termination is the written note's neighbour and
+				// then the written note again, and a trill that has just played the written note
+				// leaves that string ringing: struck again a tenth of a second later it barely
+				// speaks, and the ornament vanishes into the end of the trill. Ending the
+				// alternation above it hands the termination a string that is not sounding, which
+				// is what the figure is for and why players play it that way.
+				if (terminated) {
+					if ((count % 2) != 0)
+						count++;
+				}
+				else if ((count % 2) == 0)
 					count++;
 			}
 			else if (n.note.turn) {
