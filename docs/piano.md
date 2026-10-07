@@ -118,6 +118,22 @@ Nothing here is random. If the structure alone sounds human, randomness would on
 - **A note under a slur is held forty milliseconds past its length**, which is the overlap between one finger and the next that makes a line sound joined rather than typed. An overlap of TIME and not of proportion: a pianist does not hold a minim ten times as far past the next note as a quaver, and the written notes of a score provide none of it — in the Ballade consecutive melody notes butt exactly end to end. It is capped against the note's own length so a short note cannot run past its neighbour, and mpxScore takes the slur off a note that has a real rest after it, since about silence the notes are a better authority than the engraver's phrasing.
 - **Tenuto is the written length with nothing taken off it**, which is what a note gets anyway, so it changes nothing here and is carried for the modules that will want it.
 
+### One key is one string
+
+A key struck again while it is already sounding takes over the voice it already has, rather than starting a second one beside it. There is one string per key on a piano, and a hammer meeting a string that is already moving partly re-excites and partly disturbs the motion that is there; what comes out is about another strike's worth of amplitude, not another strike added to the last eleven.
+
+What is still ringing is carried into the new strike rather than thrown away, so a repeated note under the pedal does grow, up to half again as loud as a single strike would be. A string driven over and over settles at a steady amplitude; it does not keep climbing.
+
+This matters most where it was found. The pedal holds the dampers off, so a note whose written length has run out keeps its voice and goes on ringing, and the trill in bar 23 of the Chopin Nocturne strikes two pitches twenty-three times in under two seconds. Taking a fresh voice each time left twelve copies of G5 and eleven of F5 sounding at once, thirty of the thirty-two voices gone, and the two small notes that finish the trill struck underneath all of it — inaudible, and reported as the ornament not being played at all. The copies do not even sum cleanly: one recording started at eighty-millisecond intervals combs against itself, so a trill came out as a blur rather than as a trill.
+
+The bloom that a pedalled passage should have belongs mostly to the *other* strings rather than to the one being struck. See **Left out**.
+
+### A note too new to have been heard is not taken
+
+When every voice is in use the quietest is taken, since a piano's notes decay and the one that has faded most is the one least missed. A note that has only just been struck has made no sound yet, so by that measure it is the quietest voice in the pool and the first one taken — a note was being judged on its loudness before it had produced any. Measuring a run of the Nocturne showed the melody note after the trill taken ten milliseconds after it started, by an accompaniment note at a third of its level.
+
+A voice is therefore passed over for its first fifty milliseconds, unless every voice in the pool is that new and something has to go.
+
 ### Pedalling what the score does not mark
 
 Most scores are under-marked. The Chopin Ballade marks 189 of its 262 bars and leaves the rest bare, and played literally those bars are dry: every note is stopped a fraction of a second after its written end, which is not how anybody plays a piano. The Pedalling knob fills those passages in.
@@ -210,5 +226,5 @@ For what is set once.
 ## Left out
 
 - **Microphone position.** The set was recorded with one pair.
-- **Sympathetic resonance**, the other strings ringing with the pedal down. The samples do not contain it, and it would have to be synthesized. A candidate for a later version.
+- **Sympathetic resonance**, the other strings ringing with the pedal down. The samples do not contain it, and it would have to be synthesized. This is where a pedalled passage's bloom actually comes from: every undamped string in the instrument picking up energy from the ones being played, and from their partials, which is broadband and spread across the whole instrument rather than concentrated on the pitches being struck. The deprecated piano model showed it is cheap once the strings share a bridge, so it is a known quantity rather than a research problem. The next piece of work on this module.
 - **Transpose.** V/oct already does it.

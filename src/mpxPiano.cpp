@@ -442,6 +442,11 @@ struct PianoVoice {
 	float follow = 0.f, peak = 0.f;
 	float lpL = 0.f, lpR = 0.f;
 	int key = 60, vel = 64;
+	/** HOW LONG AGO THIS WAS STRUCK, in samples. A voice is chosen to be taken by how loud it is
+	and a note that has only just been struck is the quietest thing in the pool — its envelope has
+	not climbed yet — so without this the newest note is always the first one taken. See
+	`allocate`, and PROTECT_SECONDS for the measurement that found it. */
+	int64_t struckAgo = 0;
 };
 
 
@@ -718,19 +723,46 @@ struct PianoModule : Module, NoteSink, NoteSource {
 		v.step = std::pow(2.0, (m - v.region->key) / 12.0) * SAMPLES_RATE / sampleRate;
 	}
 
-	PianoVoice* allocate(bool noise) {
+	/** HOW LONG A NOTE IS SAFE FROM BEING TAKEN, in seconds.
+
+	A VOICE IS CHOSEN BY HOW LOUD IT IS, AND A NOTE THAT HAS JUST BEEN STRUCK IS SILENT. `follow`
+	is the voice's own output, smoothed over twenty milliseconds, so for the first few hundredths
+	of a second a note that is about to be the loudest thing in the room measures as the quietest
+	voice in the pool — and is therefore the first one taken when the next note arrives.
+
+	WHAT THAT WAS MISTAKEN FOR. The two small notes finishing the Nocturne's trill were reported
+	as not being played at all. They were being played; the log showed the melody note after them
+	taken ten milliseconds after it started, by an accompaniment note at a third of its level. A
+	note cannot be judged on its loudness before it has made any. */
+	static constexpr float PROTECT_SECONDS = 0.05f;
+
+	/** HOW MUCH LOUDER A STRING CAN GET FROM BEING STRUCK AGAIN while it is still sounding, as a
+	multiple of what the new strike alone would give. A repeatedly struck string reaches a steady
+	amplitude rather than growing without limit, and a half again is about four decibels — enough
+	for a sustained trill to bloom under the pedal, not enough to swallow what follows it. */
+	static constexpr float BLOOM_MOST = 1.5f;
+
+	PianoVoice* allocate(bool noise, float sampleRate) {
 		const int lo = noise ? MAX_VOICES - NOISE_VOICES : 0;
 		const int hi = noise ? MAX_VOICES : std::min(polyphony, MAX_VOICES - NOISE_VOICES);
+		const int64_t protect = (int64_t) ((double) PROTECT_SECONDS * (double) sampleRate);
 		PianoVoice* quietest = NULL;
+		PianoVoice* anything = NULL;
 		for (int i = lo; i < hi; i++) {
 			if (!voices[i].active)
 				return &voices[i];
+			const float heard = voices[i].follow * voices[i].env;
 			// THE QUIETEST IS TAKEN when all are in use: a piano's notes decay, so the one that
-			// has faded most is the one least missed.
-			if (!quietest || voices[i].follow * voices[i].env < quietest->follow * quietest->env)
+			// has faded most is the one least missed. A note too new to have been heard yet is
+			// passed over, unless every voice is that new and something has to go.
+			if (!anything || heard < anything->follow * anything->env)
+				anything = &voices[i];
+			if (voices[i].struckAgo < protect)
+				continue;
+			if (!quietest || heard < quietest->follow * quietest->env)
 				quietest = &voices[i];
 		}
-		return quietest;
+		return quietest ? quietest : anything;
 	}
 
 /** THE LEVELS THE SET ITSELF ASKS FOR, which were lost on the way in.
@@ -774,7 +806,7 @@ static float partGain(int part) {
 		const PianoBank* bank = gLib.bank.load();
 		if (!r || !bank || gain <= 0.0001f)
 			return;
-		PianoVoice* v = allocate(true);
+		PianoVoice* v = allocate(true, sampleRate);
 		if (!v)
 			return;
 		*v = PianoVoice();
@@ -949,7 +981,41 @@ static float partGain(int part) {
 		const PianoRegion* r = bank->find(PART_STRINGS, key, lv);
 		if (!r)
 			return;
-		PianoVoice* v = allocate(false);
+		// ONE KEY IS ONE STRING, so a key struck again takes over the string it is already
+		// sounding instead of adding a second one beside it.
+		//
+		// WHAT THIS WAS BEFORE AND WHAT IT COST. Every strike took a fresh voice, and with the
+		// pedal down nothing is damped, so a trill accumulated one ringing string per strike: the
+		// log of two bars of the Nocturne showed twelve copies of G5 and eleven of F5 sounding at
+		// once, thirty of the thirty-two voices gone, and the two small notes that finish the
+		// trill struck underneath all of it. They were inaudible, and the fault was reported as
+		// the ornament not being played.
+		//
+		// IT IS ALSO NOT HOW A STRING BEHAVES. A hammer meeting a string that is already moving
+		// partly re-excites and partly disturbs the motion that is there; what comes out is about
+		// another note's worth of amplitude, not another note added to the last eleven. Nor do
+		// the copies sum cleanly — the same recording started at eighty-millisecond intervals
+		// combs against itself, which is why a trill came out as a blur rather than as a trill.
+		//
+		// THE RING IS KEPT, THOUGH, because a pedalled trill does bloom and should: what is still
+		// sounding on the string is carried into the new strike rather than thrown away. The
+		// bloom under a pedal properly belongs to the OTHER strings — every undamped string in
+		// the instrument picking up energy from this one — and that is a separate piece of work;
+		// see docs/piano.md. This keeps the growth in the one place a single string can give it.
+		PianoVoice* v = NULL;
+		float carried = 0.f;
+		for (int i = 0; i < MAX_VOICES - NOISE_VOICES; i++) {
+			if (!voices[i].active || voices[i].part != PART_STRINGS || voices[i].key != key)
+				continue;
+			v = &voices[i];
+			// HOW MUCH OF IT IS LEFT, by the voice's own output against its loudest: the same
+			// measure the release resonance is given. See damp.
+			const float left = (v->peak > 0.f) ? math::clamp(v->follow / v->peak, 0.f, 1.f) : 0.f;
+			carried = v->amp * left;
+			break;
+		}
+		if (!v)
+			v = allocate(false, sampleRate);
 		if (!v)
 			return;
 		*v = PianoVoice();
@@ -969,7 +1035,11 @@ static float partGain(int part) {
 		// The set's own velocity tracking, from its SFZ: seventy-three per cent.
 		const float vt = 0.73f;
 		const float x = lv / 127.f;
-		v->amp = ((1.f - vt) + vt * x * x) * (1.f - 0.2f * soft);
+		const float fresh = ((1.f - vt) + vt * x * x) * (1.f - 0.2f * soft);
+		// WHAT WAS STILL RINGING, ADDED TO THE NEW STRIKE, up to a ceiling: a string driven over
+		// and over settles at an amplitude a little above one strike's, it does not keep growing.
+		// Nought for a key that was not already sounding, which is almost every note.
+		v->amp = std::min(fresh * BLOOM_MOST, fresh + carried);
 		aim(*v, sampleRate);
 	}
 
@@ -1394,6 +1464,9 @@ static float partGain(int part) {
 			const float level = std::fabs(L) + std::fabs(R);
 			v.follow += (level - v.follow) * followK;
 			v.peak = std::max(v.peak, v.follow);
+			// HOW LONG THIS ONE HAS BEEN GOING, which is what keeps a note that has not been
+			// heard yet from being the one taken for the next. See PROTECT_SECONDS.
+			v.struckAgo++;
 			outL += L;
 			outR += R;
 		}
