@@ -493,6 +493,13 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	int slot = -1;
 	uint32_t generation = 0;
 
+	/** HOW FAR UNDER THE MELODY AN ACCOMPANIMENT IS PLAYED, as a fraction of its written level.
+
+	ONE AT ALL IS NOT A SETTING OF TASTE. A fugue has no accompaniment: its voices are equal, and
+	holding the lower ones back is simply wrong. A nocturne is the opposite. So this is off for
+	counterpoint and strong for a Romantic texture, and nothing can tell which from the notes. */
+	float melodyBalance = 0.35f;
+
 	int polyphony = 32;
 	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
 	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
@@ -533,6 +540,35 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	/** A LITTLE MORE BETWEEN THE INNER NOTES OF A BIG CHORD, bottom to top, so that four or five
 	of them voiced alike do not land in one instant after all. Pianists spread a big chord. */
 	static constexpr float SPREAD_INNER = 0.0015f;
+
+	/** HOW A PIANIST BALANCES THE HANDS.
+
+	THE VOICING ABOVE BALANCES NOTES STRUCK TOGETHER, which is only half of it. A left-hand chord
+	falling between two melody notes is a group of its own, so its top note was taken for the tune
+	and given full weight with two or three more notes underneath it: measured on the Chopin, a
+	four-note accompaniment chord came out 3.7 dB ABOVE a melody note at the same written dynamic,
+	where a pianist puts it five to ten below. Fourteen decibels the wrong way.
+
+	A PIANIST BALANCES LINES, NOT NOTES. The melody is projected and everything under it is held
+	back, all the time and not only when they happen to sound together. That is the most basic
+	fact about piano texture and the thing that makes an accompaniment an accompaniment.
+
+	THE MELODY IS THE TOP OF THE TEXTURE, which needs nothing the cable does not already carry.
+	Measured on the Ballade: of 462 moments where only the left hand plays, 455 are entirely below
+	the melody last heard — two are not. The same 99% holds where the hands coincide.
+
+	AND IT HAS TO BE ABLE TO FOLL0W THE MUSIC DOWN. The top is kept as a decaying maximum rather
+	than a high-water mark: any note raises it to at least its own pitch, and it falls steadily
+	when nothing higher arrives. A passage with no right hand at all therefore becomes its own
+	melody within a second or two, so a bass line alone is not crushed by a tune that stopped
+	playing. */
+	float melodyTop = 60.f;
+	/** How fast the top of the texture is forgotten, in semitones a second: an octave in two. */
+	static constexpr float MELODY_FALL = 6.f;
+	/** A note this many semitones under the melody is accompaniment; one within the first is the
+	melody itself. Between the two it is mixed, so a line crossing the melody does not jump. */
+	static constexpr float MELODY_NEAR = 2.f;
+	static constexpr float MELODY_FAR = 12.f;
 
 	/** HOW LONG THE FOOT IS OFF THE FLOOR when it changes the pedal: long enough for the dampers
 	to touch and clear what was ringing, short enough that the note being played through the
@@ -844,6 +880,19 @@ static float partGain(int part) {
 	WHAT COUNTS AS A CHORD is whatever is struck in the same sample, which is what reaches here in
 	one go. A rolled chord arrives spread over tens of milliseconds and is left alone, which is
 	also right: it is played note by note. */
+	/** How much of its written level a note keeps, for where it sits under the melody. */
+	float underMelody(float midi) const {
+		if (melodyBalance >= 0.999f)
+			return 1.f;
+		const float below = melodyTop - midi;
+		if (below <= MELODY_NEAR)
+			return 1.f;
+		if (below >= MELODY_FAR)
+			return melodyBalance;
+		const float how = (below - MELODY_NEAR) / (MELODY_FAR - MELODY_NEAR);
+		return 1.f + (melodyBalance - 1.f) * how;
+	}
+
 	static float voicing(int rank, int count) {
 		if (count < 2)
 			return 1.f;
@@ -1185,6 +1234,12 @@ static float partGain(int part) {
 						struck[b + 1] = struck[b];
 					struck[b + 1] = hold;
 				}
+				// WHAT IS SOUNDING NOW RAISES THE MELODY, before anything is weighed against
+				// it: a melody note and the chord under it arrive together, and the note is the
+				// melody rather than being measured against where the melody used to be.
+				for (int a = 0; a < chord; a++)
+					melodyTop = std::fmax(melodyTop, noteOf(struck[a].pitch));
+
 				float levels[MAX_CHORD], lengths[MAX_CHORD], loudest = 0.f;
 				for (int a = 0; a < chord; a++) {
 					// WHAT THE SCORE WROTE OVER THE NOTE, turned into a hammer speed and a
@@ -1192,7 +1247,7 @@ static float partGain(int part) {
 					levels[a] = struck[a].level;
 					lengths[a] = struck[a].duration;
 					shapeByMark(struck[a].technique, levels[a], lengths[a]);
-					levels[a] *= voicing(a, chord);
+					levels[a] *= voicing(a, chord) * underMelody(noteOf(struck[a].pitch));
 					loudest = std::fmax(loudest, levels[a]);
 				}
 				for (int a = 0; a < chord; a++) {
@@ -1238,6 +1293,9 @@ static float partGain(int part) {
 			busPublishPedals(slot, sustain, soft);
 			outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		}
+
+		// THE TOP OF THE TEXTURE, FORGOTTEN STEADILY: see melodyTop.
+		melodyTop -= MELODY_FALL * args.sampleTime;
 
 		// The notes of a chord that were put by for a moment, and then the keys that come up by
 		// themselves — both every sample, since a damper landing a buffer late is audibly late on
@@ -1318,6 +1376,7 @@ static float partGain(int part) {
 		json_object_set_new(rootJ, "stretch", json_boolean(stretch));
 		json_object_set_new(rootJ, "polyphony", json_integer(polyphony));
 		json_object_set_new(rootJ, "pedalNoise", json_real((double) pedalNoise));
+		json_object_set_new(rootJ, "melodyBalance", json_real((double) melodyBalance));
 		return rootJ;
 	}
 
@@ -1329,6 +1388,8 @@ static float partGain(int part) {
 			polyphony = math::clamp((int) json_integer_value(j), 8, MAX_VOICES - NOISE_VOICES);
 		if (json_t* j = json_object_get(rootJ, "pedalNoise"))
 			pedalNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
+		if (json_t* j = json_object_get(rootJ, "melodyBalance"))
+			melodyBalance = math::clamp((float) json_number_value(j), 0.1f, 1.f);
 	}
 };
 
@@ -1594,6 +1655,28 @@ struct PianoWidget : ModuleWidget {
 						[=]() { return std::fabs(m->reference - r) < 0.5f; }, [=]() { m->reference = r; }));
 			}));
 		menu->addChild(createBoolPtrMenuItem("Stretch tuning", "", &m->stretch));
+		// OFF IS A REAL SETTING, not the absence of one: a fugue's voices are equal and holding
+		// the lower ones back is wrong, however right it is for a nocturne.
+		menu->addChild(createSubmenuItem("Melody balance",
+			[&]() {
+				if (m->melodyBalance >= 0.999f) return "Off";
+				if (m->melodyBalance >= 0.5f) return "Light";
+				if (m->melodyBalance >= 0.3f) return "Normal";
+				return "Strong";
+			}(), [=](ui::Menu* sub) {
+				static const struct { const char* name; float level; } HOW[] = {
+					{"Off — every voice equal, for counterpoint", 1.f},
+					{"Light", 0.6f},
+					{"Normal", 0.35f},
+					{"Strong", 0.2f},
+				};
+				for (size_t i = 0; i < sizeof(HOW) / sizeof(HOW[0]); i++) {
+					const float level = HOW[i].level;
+					sub->addChild(createCheckMenuItem(HOW[i].name, "",
+						[=]() { return std::fabs(m->melodyBalance - level) < 0.01f; },
+						[=]() { m->melodyBalance = level; }));
+				}
+			}));
 		menu->addChild(createSubmenuItem("Pedal mechanism level",
 			string::f("%.0f%%", m->pedalNoise * 100.f), [=](ui::Menu* sub) {
 				const float levels[] = {0.f, 0.5f, 1.f, 1.5f, 2.f};

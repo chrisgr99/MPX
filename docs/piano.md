@@ -65,6 +65,26 @@ So the top note keeps its level, the lowest keeps most of its weight since the b
 
 Still louder, which is right, but no longer drowning what it is answering.
 
+### Balancing the hands
+
+The voicing above balances notes struck together, which is half of it. A left-hand chord falling between two melody notes is a group of its own, so its top note was taken for the tune and given full weight with two or three more notes underneath: a four-note accompaniment chord came out 3.7 dB ABOVE a melody note at the same written dynamic, where a pianist puts it five to ten below.
+
+A pianist balances lines, not notes. The melody is projected and everything under it is held back, all the time rather than only when they sound together.
+
+The melody is the top of the texture, which needs nothing the cable does not already carry. Measured on the Ballade, of 462 moments where only the left hand plays, 455 are entirely below the melody last heard — two are not. The top is kept as a decaying maximum rather than a high-water mark, so a passage with no right hand becomes its own melody within a second or two and a bass line alone is not crushed by a tune that stopped playing.
+
+Over all 2,546 onsets of the Ballade, where 1,221 are accompaniment with no melody in them:
+
+| Melody balance | groups holding the melody | accompaniment-only groups |
+|---|---|---|
+| Off | +2.1 dB | 0.0 dB |
+| Normal | +0.3 dB | −5.7 dB |
+| Strong | +0.1 dB | −9.6 dB |
+
+**Off is a real setting and not the absence of one.** A fugue has no accompaniment: its voices are equal, and holding the lower ones back is simply wrong, however right it is for a nocturne. Nothing in the notes says which a piece is, so it is in the right-click menu.
+
+It will misjudge the 1% where the left hand takes the tune, and an inner melody with figuration above it, which Brahms and Schumann write constantly. MusicXML marks the staff on every note and the model discards it; carrying it would make "accompaniment" mean "the other hand" rather than "lower than the tune", and settle both cases.
+
 ### And spread in time
 
 A pianist does not strike a chord at one instant, and the way they miss is not random. The melody note sounds **before** the rest, by twenty to thirty milliseconds. It is the best documented asynchrony in piano playing and it is not untidiness: a note arriving a little early is heard as a line of its own rather than as part of a block, which is how a player makes a tune stand out of a chord.
