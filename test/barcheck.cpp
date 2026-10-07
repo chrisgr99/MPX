@@ -11,6 +11,20 @@ int main(int argc, char** argv) {
 	GpSong s; std::string why;
 	if (!mxReadBytes(b, s, &why)) { std::printf("%s\n", why.c_str()); return 1; }
 	std::printf("master bars: %d\n", (int) s.masterBars.size());
+	{
+		int own = 0, longer = 0;
+		for (size_t i = 0; i < s.masterBars.size(); i++) {
+			if (s.masterBars[i].quarters <= 0.f)
+				continue;
+			own++;
+			const float metre = (float) s.masterBars[i].beatsPerBar * 4.f
+				/ (float) ((s.masterBars[i].beatUnit > 0) ? s.masterBars[i].beatUnit : 4);
+			if (s.masterBars[i].quarters > metre)
+				longer++;
+		}
+		std::printf("  bars with a length of their own: %d (%d of them longer than the metre)\n",
+			own, longer);
+	}
 	for (size_t i = 0; i < s.masterBars.size() && i < 5; i++)
 		std::printf("  master %d: number=%d quarters=%.2f  %d/%d\n", (int) i,
 			s.masterBars[i].number, s.masterBars[i].quarters,
@@ -28,6 +42,31 @@ int main(int argc, char** argv) {
 			}
 	std::printf("  the reader found: %d trills, %d tremolos, %d grace beats\n",
 		trills, tremolos, graces);
+
+	// WHAT THE READER MADE OF ONE BAR, given as a third argument (the number the page shows).
+	if (argc > 2) {
+		const int want = std::atoi(argv[2]);
+		for (size_t t = 0; t < s.tracks.size(); t++) {
+			for (size_t b = 0; b < s.tracks[t].bars.size(); b++) {
+				if ((int) b >= (int) s.masterBars.size())
+					break;
+				const int number = (s.masterBars[b].number >= 0) ? s.masterBars[b].number
+					: (int) b + 1;
+				if (number != want)
+					continue;
+				int notes = 0;
+				for (size_t e = 0; e < s.tracks[t].bars[b].beats.size(); e++)
+					notes += (int) s.tracks[t].bars[b].beats[e].notes.size();
+				std::printf("  track %d bar %d: %d beats, %d notes\n", (int) t, number,
+					(int) s.tracks[t].bars[b].beats.size(), notes);
+				for (size_t e = 0; e < s.tracks[t].bars[b].beats.size() && e < 12; e++) {
+					const GpBeat& beat = s.tracks[t].bars[b].beats[e];
+					std::printf("    beat at %6.3fq lasting %5.3fq: %d notes\n",
+						beat.start, beat.quarters, (int) beat.notes.size());
+				}
+			}
+		}
+	}
 
 	GpTimeline line;
 	if (!gpBuildTimeline(s, line, &why)) { std::printf("%s\n", why.c_str()); return 1; }

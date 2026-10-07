@@ -863,6 +863,20 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						m.quarters = (float) held;
 						length = held;
 					}
+					// AND A BAR MAY HOLD MORE THAN THE METRE SAYS. A cadenza is written as a run
+					// over a held chord, and where the writer gave it no backup to return the
+					// cursor with, the run simply follows the chord: bar 32 of the Nocturne in E
+					// flat is two dotted halves — a full twelve-eight bar — and then thirty-two
+					// sixteenths, fourteen quarters of music in a bar of six.
+					//
+					// COUNTED AS SIX, the run ran past the end of the bar and into the ones after
+					// it, so a passage disappeared and the bars after it played two things at
+					// once. A bar is as long as what it holds, which for a cadenza is also what
+					// a player does with it.
+					else if (first && held > length + 1e-6) {
+						m.quarters = (float) held;
+						length = held;
+					}
 				}
 				barStart += length;
 			}
