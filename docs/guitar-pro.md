@@ -100,7 +100,7 @@ The notes, with everything the file said about how they are played: the string a
 
 A step in the key, not a tone and not a semitone: the Nocturne's trill is on F in E flat major, where the step above is G; in another key the same F trills to F sharp. The key signature names seven notes and the neighbour is the next of them either way. The speed is a time and not a fraction of the note, about a dozen a second, because an ornament is fingers rather than tempo.
 
-A wavy line is a trill too — the mark and the line are two ways of writing one, and a long trill is often only the line.
+A wavy line is a trill too, where it STARTS one. The line is drawn as a pair, a start on the note the trill is on and a stop where it ends, and taking either for a trill put one on the note that merely ended it — bar 7 of the Nocturne carries a stop whose start is nowhere in the file, and a trill appeared there that nobody had written.
 
 **`make marksused` counts every mark in a pile of scores and says whether we play it.** Ornaments were being found one at a time by ear — a trill missing in one bar, a short one in another — and a mark that is read and ignored sounds exactly like a mark that was never there. Across the scores here it found 12 inverted mordents, 25 wavy lines, 3 mordents and 2 turns going unplayed, none of which anybody had noticed. It now reports only bowing marks, fingerings and tuplet brackets as unplayed — the first two meaning nothing to a piano and the third being how a rhythm is drawn rather than what it is.
 

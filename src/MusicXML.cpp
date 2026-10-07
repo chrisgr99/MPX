@@ -826,9 +826,14 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					if (marks.child("fermata") && index < building.beats.size())
 						building.beats[index].fermata = true;
 					const pugi::xml_node orn = marks.child("ornaments");
-						// A WAVY LINE IS A TRILL TOO. The mark and the line are two ways of
-						// writing one, and a long trill is often only the line.
-						if (orn.child("trill-mark") || orn.child("wavy-line"))
+						// A WAVY LINE IS A TRILL TOO, where it STARTS one. The line is drawn as a
+						// pair, a start on the note the trill is on and a stop where it ends, and
+						// taking either for a trill put one on the note that merely ended it —
+						// bar 7 of the Nocturne carries a stop whose start is nowhere in the
+						// file, and a trill appeared there that nobody had written.
+						const std::string wavy =
+							orn.child("wavy-line").attribute("type").as_string();
+						if (orn.child("trill-mark") || wavy == "start")
 							note.trill = true;
 						// AND THE SHORT ONES, which are a flick rather than an alternation.
 						if (orn.child("inverted-mordent"))
