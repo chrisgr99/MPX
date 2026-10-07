@@ -563,8 +563,23 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	melody within a second or two, so a bass line alone is not crushed by a tune that stopped
 	playing. */
 	float melodyTop = 60.f;
-	/** How fast the top of the texture is forgotten, in semitones a second: an octave in two. */
-	static constexpr float MELODY_FALL = 6.f;
+	/** HOW FAST THE TOP OF THE TEXTURE IS FORGOTTEN, in semitones per quarter note.
+
+	MEASURED IN MUSIC, NOT IN SECONDS. A second is four beats of a fast piece and less than one of
+	a slow one, so forgetting at so many semitones a second forgets a Largo's melody in the middle
+	of its first note and holds a Presto's long after it has moved on. The cable carries the
+	played position in quarter notes, so the fall is driven by how far the MUSIC has moved: it
+	follows a tempo change, and it stops when the transport stops, which is right — a melody does
+	not fade from the ear because somebody pressed pause. */
+	static constexpr float MELODY_FALL_PER_BEAT = 3.f;
+	/** WHERE NOTHING PUBLISHES A BEAT — a keyboard played by hand — there is no music to measure,
+	so the clock is all there is. Six semitones a second is an octave in two, which is what this
+	was before there was anything better. */
+	static constexpr float MELODY_FALL_CLOCK = 6.f;
+	/** The played position last looked at, to see how far the music has moved since. */
+	double beatWas = 0.0;
+	bool haveBeat = false;
+	int beatLook = 0;
 	/** A note this many semitones under the melody is accompaniment; one within the first is the
 	melody itself. Between the two it is mixed, so a line crossing the melody does not jump. */
 	static constexpr float MELODY_NEAR = 2.f;
@@ -1294,8 +1309,27 @@ static float partGain(int part) {
 			outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		}
 
-		// THE TOP OF THE TEXTURE, FORGOTTEN STEADILY: see melodyTop.
-		melodyTop -= MELODY_FALL * args.sampleTime;
+		// THE TOP OF THE TEXTURE, FORGOTTEN AS THE MUSIC MOVES ON: see MELODY_FALL_PER_BEAT.
+		// Asked of the cable every so many samples rather than every one, since the harmony is a
+		// structure read under a seqlock and the fall over thirty-two samples is a thousandth of
+		// a semitone either way.
+		if (--beatLook <= 0) {
+			beatLook = 32;
+			Harmony h;
+			if (reader.harmony(h)) {
+				// A SEEK, A LOOP OR A FRESH START moves the position by more than any music
+				// does in thirty-two samples; nothing is forgotten for it.
+				const double moved = h.beat - beatWas;
+				beatWas = h.beat;
+				if (haveBeat && moved > 0.0 && moved < 1.0)
+					melodyTop -= MELODY_FALL_PER_BEAT * (float) moved;
+				haveBeat = true;
+			}
+			else {
+				haveBeat = false;
+				melodyTop -= MELODY_FALL_CLOCK * args.sampleTime * 32.f;
+			}
+		}
 
 		// The notes of a chord that were put by for a moment, and then the keys that come up by
 		// themselves — both every sample, since a damper landing a buffer late is audibly late on

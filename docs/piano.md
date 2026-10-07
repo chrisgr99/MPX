@@ -71,7 +71,16 @@ The voicing above balances notes struck together, which is half of it. A left-ha
 
 A pianist balances lines, not notes. The melody is projected and everything under it is held back, all the time rather than only when they sound together.
 
-The melody is the top of the texture, which needs nothing the cable does not already carry. Measured on the Ballade, of 462 moments where only the left hand plays, 455 are entirely below the melody last heard — two are not. The top is kept as a decaying maximum rather than a high-water mark, so a passage with no right hand becomes its own melody within a second or two and a bass line alone is not crushed by a tune that stopped playing.
+The melody is the top of the texture, which needs nothing the cable does not already carry. Measured on the Ballade, of 462 moments where only the left hand plays, 455 are entirely below the melody last heard — two are not. The top is kept as a decaying maximum rather than a high-water mark, so a passage with no right hand becomes its own melody after a few beats and a bass line alone is not crushed by a tune that stopped playing.
+
+**It is forgotten in music, not in seconds.** A second is four beats of a fast piece and less than one of a slow one, so a fixed rate per second forgets a Largo's melody in the middle of its first note and holds a Presto's long after it has moved on. The cable carries the played position in quarter notes, so the fall follows how far the MUSIC has moved: three semitones a quarter. It tracks a tempo change, and it stops when the transport stops, which is right — a melody does not fade from the ear because somebody pressed pause. Where nothing publishes a beat, as when a keyboard is played by hand, the clock is all there is and it falls an octave in two seconds.
+
+Of the Ballade's 2,546 onsets, the number treated as carrying the melody:
+
+| | half speed | as written | double speed |
+|---|---|---|---|
+| by the clock | 1,711 | 1,325 | 862 |
+| by the beat | 1,451 | 1,451 | 1,451 |
 
 Over all 2,546 onsets of the Ballade, where 1,221 are accompaniment with no melody in them:
 
