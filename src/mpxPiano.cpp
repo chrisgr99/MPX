@@ -445,7 +445,7 @@ struct PianoVoice {
 };
 
 
-struct PianoModule : Module, NoteSink {
+struct PianoModule : Module, NoteSink, NoteSource {
 	enum ParamId {
 		P_VOLUME,
 		P_RELEASE,
@@ -459,7 +459,7 @@ struct PianoModule : Module, NoteSink {
 		NUM_PARAMS
 	};
 	enum InputId { I_MPX, NUM_INPUTS };
-	enum OutputId { O_L, O_R, NUM_OUTPUTS };
+	enum OutputId { O_L, O_R, O_MPX, NUM_OUTPUTS };
 	enum LightId { NUM_LIGHTS };
 
 	BusReader reader;
@@ -478,6 +478,21 @@ struct PianoModule : Module, NoteSink {
 	int curve = 1;              // 0 soft, 1 normal, 2 hard
 	float reference = 440.f;
 	bool stretch = true;
+	/** THE CABLE OUT. What the piano plays, as notes, so the playing can drive something else.
+
+	THIS MODULE IS A PIANIST AS WELL AS A PIANO. The voicing of a chord, the melody leading the
+	notes under it, the legato overlap and the pedalling by the metre are all decisions about
+	PLAYING, and until now they could only be heard through these samples. Published here, they
+	are notes like any others: through mpxOut they will drive an oscillator, and anything else on
+	the cable can read, watch or vary them.
+
+	WHAT GOES OUT IS WHAT IS PLAYED, not what arrived. Each note is published at the moment it
+	actually speaks, so the twenty milliseconds by which an inner note follows the melody are in
+	the timing itself and need no describing; the level is the voiced one and the length is the
+	one the legato gave it. */
+	int slot = -1;
+	uint32_t generation = 0;
+
 	int polyphony = 32;
 	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
 	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
@@ -576,6 +591,9 @@ struct PianoModule : Module, NoteSink {
 		configInput(I_MPX, "MPX note");
 		configOutput(O_L, "Left");
 		configOutput(O_R, "Right");
+		configOutput(O_MPX, "MPX note, as played");
+
+		slot = busClaim(&generation);
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i] = -1;
 			wantGenerations[i] = 0;
@@ -598,6 +616,18 @@ struct PianoModule : Module, NoteSink {
 		}
 		wantCount = n;
 		relink = true;
+	}
+
+	~PianoModule() {
+		busRelease(slot);
+	}
+
+	int busSlotFor(int outputId, uint32_t* generation) override {
+		if (outputId != O_MPX)
+			return -1;
+		if (generation)
+			*generation = this->generation;
+		return slot;
 	}
 
 	void onReset() override {
@@ -826,6 +856,18 @@ static float partGain(int part) {
 
 	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft,
 			float duration) {
+		// AND OUT ON THE CABLE, as played: see `slot`. Before anything that could return early,
+		// so that what goes out does not depend on the samples being installed or on a region
+		// being found for this key.
+		if (slot >= 0) {
+			Event out;
+			out.kind = Event::ON;
+			out.handle = source;
+			out.pitch = pitchV;
+			out.level = math::clamp(level, 0.f, 1.f);
+			out.duration = duration;
+			busPush(slot, out);
+		}
 		const PianoBank* bank = gLib.bank.load();
 		if (!bank)
 			return;
@@ -1189,6 +1231,14 @@ static float partGain(int part) {
 			Event e;
 			while (reader.next(e)) {}
 		}
+		// THE PEDALS AS THE PIANO HAS THEM, which is the button, the cable in, and whatever the
+		// PEDALLING knob is doing — so a synthesiser on the far end is pedalled the same way this
+		// piano is. Published every sample, as state, for the reason NoteBus.hpp gives.
+		if (slot >= 0) {
+			busPublishPedals(slot, sustain, soft);
+			outputs[O_MPX].setVoltage(busFlashVolts(slot));
+		}
+
 		// The notes of a chord that were put by for a moment, and then the keys that come up by
 		// themselves — both every sample, since a damper landing a buffer late is audibly late on
 		// a sixteenth and so is a melody note.
@@ -1390,6 +1440,10 @@ static const float COL_A = 12.1f;
 static const float COL_B = 28.5f;
 static const float PAIR_L = 24.f;       // Sustain over the left output
 static const float PAIR_R = 33.f;       // Soft over the right
+/** HOW FAR THE OUTER TWO JACKS SIT FROM THE EDGE OF THE PANEL. Four across eight units is close
+work: a port is 8.7mm wide, so this leaves about a millimetre and a half of panel outside each of
+the outer two. */
+static const float JACK_EDGE = 6.f;
 
 static Layout pianoLayout() {
 	Layout L;
@@ -1448,9 +1502,17 @@ static Layout pianoLayout() {
 	L.items.push_back(status);
 
 	// One cable in, a stereo pair out, the pair under the two pedals.
-	jack("in.mpx", Item::PORT_IN, 10.5f, PianoModule::I_MPX, "mpx IN", NOTE_CABLE);
-	jack("out.l", Item::PORT_OUT, PAIR_L, PianoModule::O_L, "L", SIG_AUDIO);
-	jack("out.r", Item::PORT_OUT, PAIR_R, PianoModule::O_R, "R", SIG_AUDIO);
+	// FOUR ACROSS THE FOOT OF THE PANEL, evenly spaced: the notes in, the stereo pair, and the
+	// notes out again as they were played. See PianoModule::slot.
+	for (int i = 0; i < 4; i++) {
+		const float x = JACK_EDGE + (PANEL_W - 2.f * JACK_EDGE) * (float) i / 3.f;
+		switch (i) {
+			case 0: jack("in.mpx", Item::PORT_IN, x, PianoModule::I_MPX, "mpx IN", NOTE_CABLE); break;
+			case 1: jack("out.l", Item::PORT_OUT, x, PianoModule::O_L, "L", SIG_AUDIO); break;
+			case 2: jack("out.r", Item::PORT_OUT, x, PianoModule::O_R, "R", SIG_AUDIO); break;
+			default: jack("out.mpx", Item::PORT_OUT, x, PianoModule::O_MPX, "mpx OUT", NOTE_CABLE);
+		}
+	}
 
 	L.bindOffsets();
 	return L;

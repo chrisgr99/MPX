@@ -149,8 +149,21 @@ For what is adjusted while playing.
 
 ### Jacks
 
+Four across the foot of the panel, evenly spaced.
+
 - In: MPX.
 - Out: stereo left and right.
+- **Out: MPX, what the piano played.**
+
+## The playing, out on a cable
+
+This module is a pianist as well as a piano. Voicing a chord, letting the melody lead the notes under it, the legato overlap and pedalling by the metre are all decisions about PLAYING, and until the MPX output they could only be heard through these samples.
+
+Published, they are notes like any others. Through mpxOut they drive an oscillator; mpxMonitor shows them; any processor can vary them.
+
+**What goes out is what was played, not what arrived.** Each note is published at the moment it actually speaks, so the twenty milliseconds by which an inner note follows the melody are in the timing itself rather than described, the level is the voiced one and the length is the one the legato gave it. The pedals go with them — the button, the cable in, and whatever the PEDALLING knob is doing — so an instrument on the far end is pedalled the way this one is.
+
+**The marks do not go out**, because they have already been applied. A note that arrived accented leaves louder; it does not also leave carrying the accent, which a second renderer would apply again.
 
 ### In the right-click menu
 
