@@ -175,6 +175,25 @@ struct GpChordMark {
 };
 
 
+/** A PEDAL MARK, and where the foot moves. The sustain pedal is written as a span in MusicXML —
+one mark where it goes down and another where it comes up — so the model keeps the moves rather
+than the spans, which is what a player downstream needs: it has a foot, not a list of brackets.
+
+The mark belongs to the song and not to a part, for the same reason the metre does: a piano's
+pedal is the instrument's, however many staves the writer spread the notes over. */
+struct GpPedalMark {
+	enum Kind : uint8_t {
+		DOWN,      /**< The pedal goes down and the dampers lift. */
+		UP,        /**< It comes up and every undamped string is stopped. */
+		CHANGE,    /**< Released and taken again on the spot, which clears the old sound. */
+	};
+	int bar = 0;
+	float start = 0.f;        /**< Quarter notes from the bar's first beat. */
+	Kind kind = DOWN;
+	bool sostenuto = false;   /**< The middle pedal rather than the right one. */
+};
+
+
 struct GpSong {
 	std::string title, artist, album, words, music, copyright, tabber;
 	float tempo = 120.f;      /**< The number written on the score, in its own unit. */
@@ -182,6 +201,7 @@ struct GpSong {
 	std::vector<GpMasterBar> masterBars;
 	std::vector<GpTrack> tracks;
 	std::vector<GpChordMark> chords;
+	std::vector<GpPedalMark> pedals;
 	std::vector<std::string> lyrics;
 
 	/** WHAT WAS NOT READ, counted rather than announced. For a log line, never for the panel. */

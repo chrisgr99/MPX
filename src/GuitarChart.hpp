@@ -32,6 +32,7 @@ synthesiser leaves it alone.
 #include "GpTimeline.hpp"
 #include "Layout.hpp"
 #include "NoteBus.hpp"
+#include "ScoreFollow.hpp"
 #if CHART_AUDIO
 #include "SoundCore.hpp"
 #include "MusicXML.hpp"
@@ -186,6 +187,7 @@ struct SongModule : Module, NoteSource {
 	/** The file as it arrived, kept so the patch carries the song rather than a path to it: a
 	patch that pointed at a file would open to silence on a machine that never had it. */
 	std::string fileBytes;
+	bool fileIsMusicXML = false;
 	std::string filePath;
 	/** For the panel, which reads from the main thread while the audio thread plays. */
 	std::atomic<int> playedBar{0};
@@ -196,6 +198,11 @@ struct SongModule : Module, NoteSource {
 	/** How far each row has got through its track's notes. */
 	size_t cursor[ROWS] = {};
 	int barIndex = 0;
+	/** WHICH PEDAL MARK THE MUSIC HAS PASSED, or -1 before the first one. */
+	int pedalIndex = -1;
+	/** WHETHER THE SCORE'S OWN PEDAL IS SENT. On, because a score that is marked up should be
+	played the way it is marked; off for a patch that would rather hold the pedal itself. */
+	std::atomic<bool> sendPedal{true};
 	uint32_t epoch = 0;
 	uint32_t partChange = 0;
 
@@ -382,6 +389,7 @@ struct SongModule : Module, NoteSource {
 	void rewind() {
 		quarters = 0.0;
 		barIndex = 0;
+		pedalIndex = -1;
 		for (int r = 0; r < ROWS; r++)
 			cursor[r] = 0;
 	}
@@ -467,8 +475,10 @@ struct SongModule : Module, NoteSource {
 		const std::string head((const char*) bytes.data(),
 			std::min<size_t>(bytes.size(), 2048));
 		bool ok = false;
+		bool wasMusicXML = false;
 		if (mxLooksLikeMusicXML(head)) {
 			ok = mxReadBytes(bytes, next.song, why);
+			wasMusicXML = ok;
 			// A ZIP THAT IS NOT MUSICXML IS A GUITAR PRO 7 FILE, which is also a zip. The sniff
 			// cannot tell them apart, so a failure falls back rather than giving up.
 			if (!ok)
@@ -536,6 +546,10 @@ struct SongModule : Module, NoteSource {
 		claimBuses(next);
 		haveSong.store(!loaded[spare].line.bars.empty());
 		fileBytes.assign((const char*) bytes.data(), bytes.size());
+		// WHICH READER TOOK IT, rather than which one the sniff guessed: a Guitar Pro 7 file is a
+		// zip and sniffs as MusicXML, and only the reading tells them apart. The score window
+		// shows the writer's own document where there is one. See showScore.
+		fileIsMusicXML = wasMusicXML;
 		filePath = path;
 		params[P_TEMPO].setValue(math::clamp(next.openingBpm, 20.f, 400.f));
 		rewind();
@@ -571,6 +585,7 @@ struct SongModule : Module, NoteSource {
 		for (int r = 0; r < ROWS; r++)
 			json_array_append_new(rowsJ, json_integer(L.track[r]));
 		json_object_set_new(rootJ, "rows", rowsJ);
+		json_object_set_new(rootJ, "pedal", json_boolean(sendPedal.load()));
 #if CHART_AUDIO
 		json_object_set_new(rootJ, "audio", json_boolean(showAudio.load()));
 #endif
@@ -583,6 +598,8 @@ struct SongModule : Module, NoteSource {
 		json_t* audioJ = json_object_get(rootJ, "audio");
 		showAudio = audioJ && json_is_true(audioJ);
 #endif
+		json_t* pedalJ = json_object_get(rootJ, "pedal");
+		sendPedal = !pedalJ || json_is_true(pedalJ);
 		json_t* fileJ = json_object_get(rootJ, "file");
 		if (!json_is_string(fileJ))
 			return;
@@ -639,6 +656,8 @@ struct SongModule : Module, NoteSource {
 		if (g.artificialHarmonic) t |= Event::ARTIFICIAL_HARMONIC;
 		if (g.tapped) t |= Event::TAPPED;   // From the beat: the hand does one thing at a time.
 		if (g.staccato) t |= Event::STACCATO;
+		if (g.tenuto && !g.staccato) t |= Event::TENUTO;
+		if (g.slurred) t |= Event::SLURRED;
 		if (g.tremolo) t |= Event::TREMOLO;
 		e.technique = t;
 
@@ -727,6 +746,7 @@ struct SongModule : Module, NoteSource {
 			quarters -= L.line.quarters;
 			epoch++;
 			barIndex = 0;
+			pedalIndex = -1;
 			for (int r = 0; r < ROWS; r++)
 				cursor[r] = 0;
 		}
@@ -743,6 +763,61 @@ struct SongModule : Module, NoteSource {
 		}
 		const GpPlayedBar& bar = L.line.bars[(size_t) barIndex];
 		playedBar.store(barIndex);
+
+		// WHERE THE MUSIC HAS GOT TO, for a score window to show. The bar as the FILE numbers it,
+		// since the page draws each bar once however many times it is played. See ScoreFollow.hpp.
+		scoreFollowPublish(id, bar.written,
+			(bar.quarters > 0.0) ? (float) ((quarters - bar.startQuarters) / bar.quarters) : 0.f,
+			running && !awaitPulse);
+
+		// TOLD TO GO TO A BAR, which is what clicking one in the score window means. Finding a
+		// passage is not the same as looping it: the first pass through that written bar is the
+		// place meant, as it is for a loop.
+		{
+			const int wanted = scoreFollowTakeGoTo(id);
+			if (wanted >= 0) {
+				for (size_t i = 0; i < L.line.bars.size(); i++) {
+					if (L.line.bars[i].written != wanted)
+						continue;
+					quarters = L.line.bars[i].startQuarters;
+					barIndex = (int) i;
+					pedalIndex = -1;
+					for (int r = 0; r < ROWS; r++)
+						reseek[r].store(true);
+					break;
+				}
+			}
+		}
+
+		// GOING ROUND A FEW BARS, asked for from the window so a passage can be heard over and
+		// over while it is being worked on. The window names written bars; which played bars
+		// those are is this module's business, and the FIRST pass through them is the one meant —
+		// looping a repeated section would otherwise jump between its passes.
+		{
+			int from = -1, to = -1;
+			bool seek = false;
+			if (scoreFollowLoop(id, from, to, &seek)) {
+				double at = -1.0, end = -1.0;
+				for (size_t i = 0; i < L.line.bars.size(); i++) {
+					const GpPlayedBar& b = L.line.bars[i];
+					if (at < 0.0 && b.written == from)
+						at = b.startQuarters;
+					if (at >= 0.0 && b.written == to) {
+						end = b.startQuarters + b.quarters;
+						break;
+					}
+				}
+				if (end > at && at >= 0.0) {
+					if (seek || quarters < at || quarters >= end) {
+						quarters = at;
+						barIndex = 0;
+						pedalIndex = -1;
+						for (int r = 0; r < ROWS; r++)
+							reseek[r].store(true);
+					}
+				}
+			}
+		}
 
 		// THE BEAT AND THE BAR ON EVERY CABLE, and no chords: what the harmony is comes from the
 		// notes, and that is a later phase. `valid` says so, so nothing takes silence for a
@@ -798,30 +873,19 @@ struct SongModule : Module, NoteSource {
 				busPublishHarmony(slot[r], h);
 		}
 
-		// WHAT INSTRUMENT EACH CABLE IS CARRYING, published when it changes rather than every
-		// sample: it changes when a song is loaded and at no other time.
-		if (partChange != L.partChange) {
-			partChange = L.partChange;
+		// THE PEDAL, as state and not as an event, because that is what a pedal is: a module
+		// that starts listening halfway through a pedalled bar has to know the dampers are up
+		// now, not when the foot next moves. See NoteBus.hpp.
+		//
+		// WHICH SIDE OF THE MARKS THE MUSIC IS ON, kept by walking rather than searched for: the
+		// playhead moves a fraction of a beat between samples, so the answer is nearly always
+		// the one from last time, and a seek backwards walks back.
+		{
+			const float down = (running && sendPedal.load())
+				? gpPedalAt(L.line, quarters, bar.bpm, pedalIndex) : 0.f;
 			for (int r = 0; r < ROWS; r++) {
-				const int t = L.track[r];
-				if (slot[r] < 0)
-					continue;
-				Instrument p;
-				if (t >= 0 && t < (int) L.song.tracks.size()) {
-					const GpTrack& track = L.song.tracks[(size_t) t];
-					p.valid = true;
-					p.program = track.midiProgram;
-					p.percussion = track.percussion;
-					p.pan = track.pan;
-					p.capo = track.capo;
-					p.stringCount = (uint8_t) std::min<size_t>(Instrument::MAX_STRINGS,
-						track.tuning.size());
-					for (int k = 0; k < (int) p.stringCount; k++)
-						p.tuning[k] = (uint8_t) math::clamp(track.tuning[(size_t) k], 0, 127);
-					p.setName(track.name);
-				}
-				p.change = partChange;
-				busPublishInstrument(slot[r], p);
+				if (slot[r] >= 0)
+					busPublishPedals(slot[r], down, 0.f);
 			}
 		}
 
@@ -1108,6 +1172,16 @@ struct SongTitle : widget::OpaqueWidget {
 		const Playing& L = module->loaded[module->live.load()];
 		if (L.song.tracks.empty())
 			return;
+		// A MUSICXML FILE IS SHOWN AS ITS WRITER WROTE IT. Writing the song back out is a
+		// conversion, and for a piano not a faithful one: the model has one staff per track, so
+		// the two hands become two separate parts and everything written between them — the
+		// pedalling, the octave shifts — is not in either. The module is holding the document it
+		// loaded, since a patch carries the score inside it, so the window can simply have it.
+		if (module->fileIsMusicXML && !module->fileBytes.empty()) {
+			px::scoreWindowShowDocument(std::make_shared<const std::string>(module->fileBytes),
+				L.title.empty() ? std::string("Score") : L.title, module->id);
+			return;
+		}
 		// COPIED FOR THE WINDOW: the module can load another file, or be deleted, while it is up.
 		std::shared_ptr<const GpSong> carried = std::make_shared<const GpSong>(L.song);
 		// THE INSTRUMENT THE FIRST ROW IS PLAYING, which is what the patch is already carrying.
@@ -1529,8 +1603,11 @@ struct SongWidget : ModuleWidget {
 				title = title.substr(slash + 1);
 			px::scoreWindowShow(path, title, m->id);
 		}));
-#if CHART_AUDIO
 		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createCheckMenuItem("Send the score's sustain pedal", "",
+			[=]() { return m->sendPedal.load(); },
+			[=]() { m->sendPedal = !m->sendPedal.load(); }));
+#if CHART_AUDIO
 		// NOT HIDDEN UNDER A CABLE. Rack draws a cable to wherever its jack is, and a hidden jack
 		// with a cable in it leaves the cable pointing at nothing. The stereo pair is never hidden
 		// and does not count.

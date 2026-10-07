@@ -475,6 +475,20 @@ struct PianoModule : Module, NoteSink {
 	float reference = 440.f;
 	bool stretch = true;
 	int polyphony = 32;
+	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
+	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
+	float pedalNoise = 1.f;
+
+	/** HOW LONG THE FOOT IS OFF THE FLOOR when it changes the pedal: long enough for the dampers
+	to touch and clear what was ringing, short enough that the note being played through the
+	change is not cut. The same fifty milliseconds mpxScore uses for a written pedal change. */
+	static constexpr float LIFT_SECONDS = 0.05f;
+	float autoLift = 0.f;
+	double steppedWas = -1e18;
+	/** HOW LONG THE CABLE'S OWN PEDAL HAS BEEN UP. While a score is pedalling for itself the knob
+	stays out of its way; once the score has left the pedal up for two bars it plainly is not
+	pedalling here, and the knob takes over. */
+	float cableQuiet = 0.f;
 
 	PianoModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -483,7 +497,10 @@ struct PianoModule : Module, NoteSink {
 			"%", 0.f, 100.f);
 		configParam(P_HAMMER, 0.f, 2.f, 1.f, "Hammer",
 			"%", 0.f, 100.f);
-		configParam(P_PEDAL, 0.f, 2.f, 1.f, "Pedal", "%", 0.f, 100.f);
+		// PEDALLING BY THE METRE. The positions are an axis from driest to wettest, measured
+		// against the pedal marks of two Chopin pieces: see pedalFor and docs/piano.md.
+		configSwitch(P_PEDAL, 0.f, 5.f, 0.f, "Pedalling",
+			{"Off", "Every beat", "Every half bar", "Every bar", "Every two bars", "Held down"});
 		configParam(P_BRIGHT, 0.f, 1.f, 1.f, "Brightness", "%", 0.f, 100.f);
 		configParam(P_DYNAMICS, 0.f, 1.f, 1.f,
 			"Dynamics", "%", 0.f, 100.f);
@@ -511,8 +528,11 @@ struct PianoModule : Module, NoteSink {
 		// 0.02, which is what the tooltip now reads.
 		configParam(P_DAMPING, 0.f, 1.f, 0.5f,
 			"Damping", " s", 1.f / 40.f, 0.8f);
-		configSwitch(P_SUSTAIN, 0.f, 1.f, 0.f, "Sustain pedal", {"Up", "Down"});
-		configSwitch(P_SOFT, 0.f, 1.f, 0.f, "Soft pedal", {"Up", "Down"});
+		// HELD DOWN WHILE THE BUTTON IS HELD, as a pedal is. Latching them meant a pedal left
+		// down by a click made days ago, and a foot is the one control on a piano nobody would
+		// expect to stay where it was put.
+		configButton(P_SUSTAIN, "Sustain pedal");
+		configButton(P_SOFT, "Soft pedal");
 		configInput(I_MPX, "MPX note");
 		configOutput(O_L, "Left");
 		configOutput(O_R, "Right");
@@ -700,6 +720,25 @@ static float partGain(int part) {
 		}
 	}
 
+	/** HOW AN ARTICULATION IS PLAYED ON A PIANO. There is one way to sound a piano note — a
+	hammer at a speed — so every mark a score carries reaches the instrument as some mixture of
+	how hard the key is struck and how long the finger stays on it, and nothing else. An accent
+	is a faster hammer, which is both louder and brighter because the recorded layers are. A
+	staccato is the same hammer and an early release. A note under a slur is held until the next
+	one is down, which is the overlap that makes a line sound joined rather than typed. */
+	void shapeByMark(uint32_t technique, float& level, float& duration) const {
+		if (technique & Event::HEAVY_ACCENT)
+			level = std::min(1.f, level * 1.45f);
+		else if (technique & Event::ACCENT)
+			level = std::min(1.f, level * 1.25f);
+		if (duration <= 0.f)
+			return;
+		if (technique & Event::STACCATO)
+			duration *= 0.45f;
+		else if (technique & Event::SLURRED)
+			duration *= 1.08f;
+	}
+
 	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft,
 			float duration) {
 		const PianoBank* bank = gLib.bank.load();
@@ -782,6 +821,74 @@ static float partGain(int part) {
 			sampleRate, 3.f * seconds);
 	}
 
+	/** PEDALLING THE PIECE ITSELF, where the score does not.
+
+	MOST SCORES ARE UNDER-MARKED. The Chopin Ballade marks 189 of its 262 bars and leaves the rest
+	bare, and played literally those bars are dry: every note is stopped a fraction of a second
+	after its written end, which is not how anybody plays a piano.
+
+	WHAT DECIDES WHERE THE FOOT GOES. Harmony, measured against the pedal marks of the Ballade and
+	the Nocturne, does not. A bass-note change finds 98 per cent of the real lifts but fires seven
+	times too often, because the left hand arpeggiates inside one harmony; chroma novelty, which is
+	the standard harmony-change detector, found 57 per cent of them with a quarter of its guesses
+	right, and was beaten by changing the pedal on every bar line and nothing else. The metre does
+	the work: 97 per cent of the real lifts land exactly on a beat, and they come at one every two
+	seconds in both pieces whatever the harmony is doing.
+
+	SO THE KNOB IS AN AXIS OF HOW OFTEN, from driest to wettest, and the ear picks the point. What
+	each position caught of the real lifts, over 497 seconds of the Ballade and 192 of the
+	Nocturne:
+
+	    every beat        94%, 90%     safest; four times as many lifts as a pianist makes
+	    every half bar    89%, 80%     closest to the real pedalling
+	    every bar         54%, 49%     holds through half the real changes, which smears
+
+	A missed lift is the bad error, since it holds the pedal through a harmony change. Lifting too
+	often only sounds drier than intended, so the axis is safe at one end and muddy at the other.
+
+	NO LOOKAHEAD IS NEEDED. A pianist's foot is reactive — it lifts as the new harmony sounds and
+	takes the pedal again straight after — so a rule that only ever acts at the moment a beat
+	arrives can reach the same places as the marks. The beat comes off the cable as state, so this
+	works for anything that publishes one and not only for a loaded file. */
+	float pedalFor(float sampleTime) {
+		const int how = (int) std::lround(params[P_PEDAL].getValue());
+		if (how <= 0)
+			return 0.f;
+		if (how >= 5)
+			return 1.f;
+		Harmony h;
+		// NOTHING PUBLISHING A BEAT means there is no metre to pedal against. Holding the pedal
+		// down would be a guess at what the music is doing; doing nothing is not.
+		if (!reader.harmony(h) || h.barBeats < 1)
+			return 0.f;
+		if (h.holding) {
+			autoLift = 0.f;
+			return 0.f;
+		}
+		// WHICH UNIT THIS POSITION LIFTS ON, in beats.
+		const float unit = (how == 1) ? 1.f
+			: (how == 2) ? std::max(1.f, (float) h.barBeats / 2.f)
+			: (how == 3) ? (float) h.barBeats
+			: 2.f * (float) h.barBeats;
+		// A LIFT WHEN THE MUSIC CROSSES ONE. The cable counts the place in the bar in QUARTER
+		// notes, because a count that changed its unit with the signature would jump; the time
+		// signature counts beats. In six-eight those are not the same number, so the position is
+		// put into beats before it is measured against a unit that is also in beats.
+		const double beatsIn = (double) h.beatInBar * (double) h.barUnit / 4.0;
+		const double place = (double) h.bar * (double) h.barBeats + beatsIn;
+		const double step = std::floor(place / (double) unit);
+		if (steppedWas != step) {
+			if (steppedWas != -1e18)
+				autoLift = LIFT_SECONDS;
+			steppedWas = step;
+		}
+		if (autoLift > 0.f) {
+			autoLift -= sampleTime;
+			return 0.f;
+		}
+		return 1.f;
+	}
+
 	/** Every key up at once, as though each had been released: the pedal still decides how long
 	the strings ring. */
 	void allKeysUp(float sampleRate) {
@@ -855,15 +962,33 @@ static float partGain(int part) {
 		// The pedals: whichever is further down, the button or the cable.
 		float busSustain = 0.f, busSoft = 0.f;
 		reader.pedals(busSustain, busSoft);
-		const float sustain = std::max(busSustain, params[P_SUSTAIN].getValue());
+		// THE KNOB STAYS OUT OF A PEDALLED SCORE'S WAY. While the cable's pedal is moving, the
+		// score is pedalling for itself and knows better than any rule here; once it has left the
+		// pedal up for a couple of bars it is plainly not pedalling this passage, and the knob
+		// takes over. The Ballade needs exactly this: Chopin's own marks from bar 32, and
+		// pedalling of our own through bars 9 to 25, with nothing to set either way.
+		if (busSustain > 0.5f)
+			cableQuiet = 0.f;
+		else
+			cableQuiet = std::min(cableQuiet + args.sampleTime, 100.f);
+		// TWO BARS OF SILENCE FROM THE CABLE, measured in time rather than in bars, since a bar
+		// is only known when something publishes one. Four seconds is two bars of most things.
+		const float selfPedal = (cableQuiet >= 4.f) ? pedalFor(args.sampleTime) : 0.f;
+		const float sustain = std::max(std::max(busSustain, selfPedal),
+			params[P_SUSTAIN].getValue());
 		const float soft = std::max(busSoft, params[P_SOFT].getValue());
 		const float sr = args.sampleRate;
 
 		if (bank) {
 			Event e;
 			while (reader.next(e)) {
-				if (e.kind == Event::ON)
-					noteOn(e.handle, e.pitch, e.level, sr, soft, e.duration);
+				if (e.kind == Event::ON) {
+					// WHAT THE SCORE WROTE OVER THE NOTE, turned into a hammer speed and a
+					// finger's length: see shapeByMark.
+					float level = e.level, duration = e.duration;
+					shapeByMark(e.technique, level, duration);
+					noteOn(e.handle, e.pitch, level, sr, soft, duration);
+				}
 				else if (e.kind == Event::OFF)
 					noteOff(e.handle, sr, sustain);
 				else
@@ -875,7 +1000,7 @@ static float partGain(int part) {
 			const bool wasDown = sustainWas >= 0.5f, isDown = sustain >= 0.5f;
 			if (isDown != wasDown) {
 				startOneShot(bank->pedal(isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, random::uniform()),
-					params[P_PEDAL].getValue(), isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, 60, sr);
+					pedalNoise, isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, 60, sr);
 				if (!isDown)
 					for (PianoVoice& v : voices)
 						if (v.active && v.part == PART_STRINGS && !v.keyDown)
@@ -959,6 +1084,7 @@ static float partGain(int part) {
 		json_object_set_new(rootJ, "reference", json_real(reference));
 		json_object_set_new(rootJ, "stretch", json_boolean(stretch));
 		json_object_set_new(rootJ, "polyphony", json_integer(polyphony));
+		json_object_set_new(rootJ, "pedalNoise", json_real((double) pedalNoise));
 		return rootJ;
 	}
 
@@ -968,6 +1094,8 @@ static float partGain(int part) {
 		if (json_t* j = json_object_get(rootJ, "stretch")) stretch = json_is_true(j);
 		if (json_t* j = json_object_get(rootJ, "polyphony"))
 			polyphony = math::clamp((int) json_integer_value(j), 8, MAX_VOICES - NOISE_VOICES);
+		if (json_t* j = json_object_get(rootJ, "pedalNoise"))
+			pedalNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
 	}
 };
 
@@ -1100,9 +1228,9 @@ static Layout pianoLayout() {
 		L.items.push_back(i);
 		label((std::string(key) + ".label").c_str(), x, y + 8.f, name, Panel::CENTRE, true, 0.f, key);
 	};
-	auto latch = [&](const char* key, float x, float y, int id, const char* name) {
+	auto press = [&](const char* key, float x, float y, int id, const char* name) {
 		Item i;
-		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = "latch";
+		i.key = key; i.kind = Item::PARAM; i.id = id; i.x = x; i.y = y; i.style = "button";
 		i.diameter = 6.6f;
 		L.items.push_back(i);
 		label((std::string(key) + ".label").c_str(), x, y + 7.f, name, Panel::CENTRE, true, 8.f, key);
@@ -1124,11 +1252,11 @@ static Layout pianoLayout() {
 	label("h.mechanism", PANEL_W / 2.f, 54.5f, "MECHANICAL SOUNDS", Panel::CENTRE, true);
 	knob("p.release", COL_A, 64.5f, PianoModule::P_RELEASE, "RELEASE", 0.f);
 	knob("p.hammer", COL_B, 64.5f, PianoModule::P_HAMMER, "HAMMER", 0.f);
-	knob("p.pedal", COL_A, 82.f, PianoModule::P_PEDAL, "PEDAL", 0.f);
+	knob("p.pedal", COL_A, 82.f, PianoModule::P_PEDAL, "PEDALLING", 0.f);
 
 	// The pedals by hand, beside the pedal noise they set off.
-	latch("p.sustain", PAIR_L, 82.f, PianoModule::P_SUSTAIN, "SUST");
-	latch("p.soft", PAIR_R, 82.f, PianoModule::P_SOFT, "SOFT");
+	press("p.sustain", PAIR_L, 82.f, PianoModule::P_SUSTAIN, "SUST");
+	press("p.soft", PAIR_R, 82.f, PianoModule::P_SOFT, "SOFT");
 
 	// THE SAMPLES: a Download button until they are installed, then the credit. See PianoStatus.
 	Item status;
@@ -1221,6 +1349,14 @@ struct PianoWidget : ModuleWidget {
 						[=]() { return std::fabs(m->reference - r) < 0.5f; }, [=]() { m->reference = r; }));
 			}));
 		menu->addChild(createBoolPtrMenuItem("Stretch tuning", "", &m->stretch));
+		menu->addChild(createSubmenuItem("Pedal mechanism level",
+			string::f("%.0f%%", m->pedalNoise * 100.f), [=](ui::Menu* sub) {
+				const float levels[] = {0.f, 0.5f, 1.f, 1.5f, 2.f};
+				for (float v : levels)
+					sub->addChild(createCheckMenuItem(string::f("%.0f%%", v * 100.f), "",
+						[=]() { return std::fabs(m->pedalNoise - v) < 0.01f; },
+						[=]() { m->pedalNoise = v; }));
+			}));
 		menu->addChild(createSubmenuItem("Polyphony", string::f("%d", m->polyphony), [=](ui::Menu* sub) {
 			const int counts[] = {16, 32, 48, 64, 72};
 			for (int c : counts)

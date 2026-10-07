@@ -149,6 +149,12 @@ struct Event {
 		TAPPED = 1u << 16,
 		STACCATO = 1u << 17,
 		TREMOLO = 1u << 18,        /**< Picked repeatedly for the note's length. */
+		TENUTO = 1u << 19,         /**< Held for every bit of its written length, and a little
+		                           weight with it. The opposite of STACCATO, and the two never
+		                           arrive together. */
+		SLURRED = 1u << 20,        /**< Runs into the note after it without a fresh attack. On a
+		                           fretboard that is a hammer-on or a slide; on a keyboard it is
+		                           a note the finger holds until the next one sounds. */
 	};
 	uint32_t technique = 0;
 

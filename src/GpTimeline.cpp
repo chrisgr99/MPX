@@ -316,6 +316,60 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 	out.quarters = quarters;
 	out.seconds = clock.secondsAt(quarters);
 
+	// ---- the pedal -------------------------------------------------------------------------------
+	//
+	// EVERY PASS PEDALS AGAIN. A pedal mark is written on a bar, and a bar inside a repeat is
+	// played more than once, so the marks are laid out against the played bars rather than the
+	// written ones — the same expansion the notes get, and for the same reason.
+	if (!song.pedals.empty()) {
+		std::map<int, std::vector<const GpPedalMark*> > byWritten;
+		for (size_t i = 0; i < song.pedals.size(); i++)
+			byWritten[song.pedals[i].bar].push_back(&song.pedals[i]);
+		for (size_t i = 0; i < out.bars.size(); i++) {
+			const std::map<int, std::vector<const GpPedalMark*> >::const_iterator found =
+				byWritten.find(out.bars[i].written);
+			if (found == byWritten.end())
+				continue;
+			for (size_t k = 0; k < found->second.size(); k++) {
+				const GpPedalMark& m = *found->second[k];
+				GpPlayedPedal p;
+				p.startQuarters = out.bars[i].startQuarters + (double) m.start;
+				p.startSeconds = clock.secondsAt(p.startQuarters);
+				p.kind = m.kind;
+				p.sostenuto = m.sostenuto;
+				out.pedals.push_back(p);
+			}
+		}
+		std::stable_sort(out.pedals.begin(), out.pedals.end(),
+			[](const GpPlayedPedal& a, const GpPlayedPedal& b) {
+				return a.startQuarters < b.startQuarters;
+			});
+		// LIFTED AND TAKEN AGAIN ON THE SPOT IS A CHANGE, whatever the writer called it. A
+		// pedalled piece is usually written as a row of brackets that touch — each one stops
+		// where the next begins — and read literally that is a foot that never leaves the floor,
+		// so the whole piece rings into one chord. The place where two brackets meet is the
+		// moment the pianist clears the sound, which is the opposite of what it reads as, and it
+		// is the single most audible thing in a pedal mark. The Chopin Ballade is 250 brackets
+		// and 159 of these joins.
+		std::vector<GpPlayedPedal> merged;
+		merged.reserve(out.pedals.size());
+		for (size_t i = 0; i < out.pedals.size(); i++) {
+			const bool joins = i + 1 < out.pedals.size()
+				&& out.pedals[i].kind == GpPedalMark::UP
+				&& out.pedals[i + 1].kind == GpPedalMark::DOWN
+				&& out.pedals[i].sostenuto == out.pedals[i + 1].sostenuto
+				&& out.pedals[i + 1].startQuarters - out.pedals[i].startQuarters < 1e-6;
+			if (joins) {
+				GpPlayedPedal p = out.pedals[i];
+				p.kind = GpPedalMark::CHANGE;
+				merged.push_back(p);
+				i++;
+			} else
+				merged.push_back(out.pedals[i]);
+		}
+		out.pedals.swap(merged);
+	}
+
 	// ---- the notes -------------------------------------------------------------------------------
 	//
 	// TIED NOTES BECOME ONE. A tie is not a note; it is the one before it going on sounding, so
@@ -533,3 +587,40 @@ float gpHarmonyWeight(const GpTimeline& line, const GpSong& song, const GpPlayed
 }
 
 } // namespace px
+
+
+namespace px {
+
+float gpPedalAt(const GpTimeline& line, double quarters, float bpm, int& index) {
+	if (line.pedals.empty()) {
+		index = -1;
+		return 0.f;
+	}
+	const int last = (int) line.pedals.size() - 1;
+	if (index > last)
+		index = last;
+	if (index < -1)
+		index = -1;
+	while (index < last && line.pedals[(size_t) index + 1].startQuarters <= quarters)
+		index++;
+	while (index >= 0 && line.pedals[(size_t) index].startQuarters > quarters)
+		index--;
+	if (index < 0)
+		return 0.f;
+	const GpPlayedPedal& p = line.pedals[(size_t) index];
+	// THE MIDDLE PEDAL IS NOT THE RIGHT ONE. Sostenuto holds the keys that are already down and
+	// nothing struck after them, which nothing downstream can do, so it is carried in the model
+	// and never answered here as a sustain it is not.
+	if (p.sostenuto)
+		return 0.f;
+	// A CHANGE IS A RELEASE AND A RETAKE on the spot: the foot comes up for the moment it takes
+	// to clear the old sound and goes straight back down under the new note.
+	if (p.kind == GpPedalMark::CHANGE) {
+		const double lift = 0.05 * (double) std::max(1.f, bpm) / 60.0;   // In quarters.
+		if (quarters - p.startQuarters < lift)
+			return 0.f;
+	}
+	return (p.kind == GpPedalMark::UP) ? 0.f : 1.f;
+}
+
+}  // namespace px

@@ -52,7 +52,10 @@ the notes are being read: the marks are collected as they pass, and the loudness
 worked out afterwards from the whole part at once. */
 struct LevelEvent {
 	double at = 0.0;            /**< Quarters from the start of the part. */
-	enum Kind { MARK, SWELL, FADE, STOP } kind = MARK;
+	/** SWELL and FADE open a hairpin, which STOP closes. SWELL_WORD and FADE_WORD are the same
+	instruction written as a word — "cresc.", "calando" — and a word has no bracket to close it,
+	so it runs to whatever is marked next. */
+	enum Kind { MARK, SWELL, FADE, STOP, SWELL_WORD, FADE_WORD } kind = MARK;
 	float value = 0.6f;         /**< For a mark. */
 };
 
@@ -81,6 +84,26 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 		}
 		else if (e.kind == LevelEvent::SWELL || e.kind == LevelEvent::FADE) {
 			curve.push_back(std::make_pair(e.at, now));     // The ramp starts from here.
+		}
+		else if (e.kind == LevelEvent::SWELL_WORD || e.kind == LevelEvent::FADE_WORD) {
+			// A WORDED RAMP RUNS UNTIL SOMETHING ELSE IS SAID. There is no bracket, so the end
+			// is the next mark of any kind, and a word with nothing after it ramps over four
+			// quarters, which is a bar of the commonest metre.
+			const bool up = (e.kind == LevelEvent::SWELL_WORD);
+			double end = e.at + 4.0;
+			float target = now + (up ? HAIRPIN_REACH : -HAIRPIN_REACH);
+			for (size_t j = i + 1; j < events.size(); j++) {
+				if (events[j].at <= e.at)
+					continue;
+				end = events[j].at;
+				if (events[j].kind == LevelEvent::MARK)
+					target = events[j].value;
+				break;
+			}
+			target = std::max(0.05f, std::min(1.f, target));
+			curve.push_back(std::make_pair(e.at, now));
+			curve.push_back(std::make_pair(end, target));
+			now = target;
 		}
 		else {
 			// WHERE THE HAIRPIN ARRIVES: the next mark after it if there is one, and otherwise
@@ -112,6 +135,12 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 			now = target;
 		}
 	}
+	// IN TIME ORDER, because a worded ramp puts its far end on the line before the marks that
+	// come between are reached, and the line is read by walking it.
+	std::stable_sort(curve.begin(), curve.end(),
+		[](const std::pair<double, float>& a, const std::pair<double, float>& b) {
+			return a.first < b.first;
+		});
 	return curve;
 }
 
@@ -299,6 +328,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 		// WHETHER A SLUR IS OPEN, one per voice: a slur is a span and the notes inside it are
 		// joined, so each voice has to remember whether it is in one.
 		std::map<int, bool> inSlur;
+		// WHETHER THE OPEN PEDAL BRACKET IS THE MIDDLE PEDAL'S, since the mark that closes it
+		// does not say which pedal it releases.
+		bool sostenutoOpen = false;
 
 		for (pugi::xml_node measure = part.child("measure"); measure;
 				measure = measure.next_sibling("measure"), barNumber++) {
@@ -419,6 +451,62 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							e.kind = LevelEvent::STOP;
 						levels.push_back(e);
 					}
+					// A CRESCENDO WRITTEN AS A WORD. Not every one is a hairpin: "cresc." and
+					// "calando" are the same instruction in letters, and this score carries
+					// fifteen of them that no wedge covers. Only the words that say which way
+					// the loudness goes are read — "dolce" and "agitato" say how to play, not
+					// how loud, and guessing a level for them would be inventing one.
+					{
+						std::string w = node.child("direction-type").child_value("words");
+						for (size_t i = 0; i < w.size(); i++)
+							w[i] = (char) std::tolower((unsigned char) w[i]);
+						const bool up = w.find("cresc") != std::string::npos;
+						const bool down = w.find("dim") != std::string::npos
+							|| w.find("decresc") != std::string::npos
+							|| w.find("calando") != std::string::npos
+							|| w.find("smorz") != std::string::npos
+							|| w.find("morendo") != std::string::npos
+							|| w.find("perdendo") != std::string::npos;
+						if (up || down) {
+							LevelEvent e;
+							e.at = here;
+							e.kind = up ? LevelEvent::SWELL_WORD : LevelEvent::FADE_WORD;
+							levels.push_back(e);
+						}
+					}
+					// THE SUSTAIN PEDAL. Written as a bracket — a start and a stop — and kept as
+					// the two moves of the foot that the bracket stands for. `continue` and
+					// `sostenuto` are the two the standard allows that are not moves: the first
+					// says a bracket carries on past a line break and is nothing to act on, and
+					// the second is the middle pedal, kept apart so a player can tell them.
+					// Read from the first part only, like the metre: the pedal is the piano's.
+					const pugi::xml_node ped = node.child("direction-type").child("pedal");
+					if (ped && first) {
+						const std::string kind = ped.attribute("type").as_string();
+						GpPedalMark m;
+						m.bar = barNumber;
+						m.start = (float) cursor / (float) divisions;
+						bool move = true;
+						if (kind == "start") {
+							m.kind = GpPedalMark::DOWN;
+							sostenutoOpen = false;
+						} else if (kind == "sostenuto") {
+							m.kind = GpPedalMark::DOWN;
+							m.sostenuto = true;
+							sostenutoOpen = true;
+						} else if (kind == "stop") {
+							// A STOP SAYS NOTHING ABOUT WHICH FOOT, so it releases whichever
+							// pedal the bracket it closes took.
+							m.kind = GpPedalMark::UP;
+							m.sostenuto = sostenutoOpen;
+							sostenutoOpen = false;
+						} else if (kind == "change")
+							m.kind = GpPedalMark::CHANGE;
+						else
+							move = false;   // "continue", and anything a writer invents.
+						if (move)
+							out.pedals.push_back(m);
+					}
 					continue;
 				}
 
@@ -508,6 +596,25 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							note.accent = (bool) arts.child("accent");
 							note.heavyAccent = (bool) arts.child("strong-accent");
 							note.tenuto = (bool) arts.child("tenuto");
+							// A STACCATISSIMO IS A SHORTER STACCATO and there is nothing
+							// downstream that tells the two apart, so it is read as the staccato
+							// it is a degree of rather than dropped.
+							if (arts.child("staccatissimo"))
+								note.staccato = true;
+						}
+						// A NOTE SOUNDED REPEATEDLY FOR ITS LENGTH. A trill is not this — it
+						// alternates with the note above, which nothing downstream can do — so
+						// only a written tremolo is read.
+						if (marks.child("ornaments").child("tremolo"))
+							note.tremolo = true;
+						// A ROLLED CHORD. The notes are written together and played one after
+						// another from the bottom, which is a brush — the same thing a guitar's
+						// is, and carried by the same field.
+						if (marks.child("arpeggiate")) {
+							const std::string way =
+								marks.child("arpeggiate").attribute("direction").as_string();
+							beat.brush = (way == "down") ? -1 : 1;
+							beat.brushMs = 45;
 						}
 						for (pugi::xml_node sl = marks.child("slur"); sl;
 								sl = sl.next_sibling("slur")) {

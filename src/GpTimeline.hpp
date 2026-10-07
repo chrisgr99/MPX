@@ -69,8 +69,19 @@ struct GpSegment {
 };
 
 
+/** A PEDAL MOVE ON THE PLAYED CLOCK. One of the song's marks, placed at the second it happens on
+whichever pass through the bar this is, so a repeated section pedals again rather than once. */
+struct GpPlayedPedal {
+	double startQuarters = 0.0;
+	double startSeconds = 0.0;
+	GpPedalMark::Kind kind = GpPedalMark::DOWN;
+	bool sostenuto = false;
+};
+
+
 struct GpTimeline {
 	std::vector<GpPlayedBar> bars;
+	std::vector<GpPlayedPedal> pedals;   /**< In time order. */
 	std::vector<GpSegment> clock;
 	/** One list per track of the song, in the song's own track order, each in time order. */
 	std::vector<std::vector<GpPlayedNote> > tracks;
@@ -101,6 +112,15 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why);
 /** The second a position falls on, and how long a quarter note lasts there. Both are a search
 over the tempo segments and neither allocates, so either may be called from the audio thread. */
 double gpSecondsAt(const GpTimeline& line, double quarters);
+
+
+/** HOW FAR THE SUSTAIN PEDAL IS DOWN at a moment, nought or one, from the marks the score
+carries. `index` is where the last answer was found and is kept by the caller: the playhead moves
+a fraction of a beat between samples, so the walk is almost always no steps at all, and a seek
+backwards walks back. Start it at -1.
+
+Here rather than in the module that calls it because a module cannot be tested. */
+float gpPedalAt(const GpTimeline& line, double quarters, float bpm, int& index);
 double gpSecondsPerQuarter(const GpTimeline& line, double quarters);
 
 
