@@ -8,6 +8,8 @@
 
 #include "GuitarPro.hpp"
 #include "Score.hpp"
+
+#include <cstdlib>
 #include "ScoreDraw.hpp"
 
 #include <cstdio>
@@ -52,7 +54,7 @@ void Score::applyOptions() {
 	char buf[512];
 	std::snprintf(buf, sizeof(buf),
 		"{\"pageWidth\": %d, \"pageHeight\": %d,"
-		" \"adjustPageHeight\": false, \"breaks\": \"auto\","
+		" \"adjustPageHeight\": false, \"breaks\": \"%s\","
 		// ONE SYSTEM TO A PAGE, SAID OUTRIGHT. The window stacks systems itself, so it wants
 		// them one at a time — and the way to get that was a page too short to hold two, which
 		// works only while every system is shorter than the page. A score with a tall system —
@@ -61,16 +63,11 @@ void Score::applyOptions() {
 		// page's height down. Asking for one system a page says what is wanted and leaves the
 		// height out of it, so the page can be as tall as the tallest system needs.
 		" \"systemMaxPerPage\": 1,"
-		// AND THE NOTATION IS THE SIZE WE ASK FOR, not the size the file was engraved at. A
-		// MusicXML file may carry its own scaling — so many millimetres to so many tenths — and
-		// Verovio honours it, so the same page width holds two bars of a score that declares
-		// none and eighteen of one that declares a small staff. The Nocturne in E flat declares
-		// 7.06mm to 40 tenths and came out as two systems of eighteen bars, unreadable. Fixing
-		// the staff size makes a page width mean the same thing for every score.
-		" \"unit\": 9,"
+
 		" \"footer\": \"none\", \"header\": \"none\","
 		" \"font\": \"Leipzig\"}",
-		width, height);
+		width, height,
+		std::getenv("MPX_BREAKS") ? std::getenv("MPX_BREAKS") : "auto");
 	toolkit->SetOptions(buf);
 }
 
