@@ -800,6 +800,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						// only a written tremolo is read.
 						if (marks.child("ornaments").child("tremolo"))
 							note.tremolo = true;
+						// A TRILL IS THE NOTE AND THE ONE ABOVE IT, ALTERNATING. It was passed
+						// over once as something nothing downstream could play, which was the
+						// wrong place to decide: the alternation is written out in the timeline,
+						// so what an instrument receives is notes like any others.
+						if (marks.child("ornaments").child("trill-mark"))
+							note.trill = true;
 						// A ROLLED CHORD. The notes are written together and played one after
 						// another from the bottom, which is a brush — the same thing a guitar's
 						// is, and carried by the same field.

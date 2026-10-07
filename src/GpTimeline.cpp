@@ -9,6 +9,11 @@
 
 namespace px {
 
+/** HOW LONG ONE NOTE OF A TRILL LASTS, in seconds. A trill is fingers rather than tempo: a player
+trills at much the same speed in a slow piece as in a fast one, somewhere around a dozen notes a
+second, so this is a time and not a fraction of the note. */
+static const double TRILL_SECONDS = 0.08;
+
 namespace {
 
 
@@ -553,6 +558,80 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			[](const GpPlayedNote& a, const GpPlayedNote& b) {
 				return a.startQuarters < b.startQuarters;
 			});
+	}
+
+	// ---- trills -----------------------------------------------------------------------------
+	//
+	// A TRILL IS WRITTEN OUT AS THE NOTES IT STANDS FOR: the written note and the one a step
+	// above it in the key, alternating for the note's whole length. Done here rather than left
+	// to an instrument, so that every instrument plays it and none has to know what the sign
+	// means — the same reason a rolled chord becomes an order of notes rather than a flag.
+	//
+	// A STEP IN THE KEY, not a tone and not a semitone. The Nocturne's trill is on F in E flat
+	// major, where the step above is G; in another key the same F trills to F sharp. The key
+	// signature gives the seven notes and the one above is the next of them.
+	//
+	// IT STARTS AND ENDS ON THE WRITTEN NOTE, which is what the ear expects of it and what makes
+	// the trill sound like an ornament of that note rather than of the pair. So the count of
+	// alternations is odd.
+	for (size_t t = 0; t < out.tracks.size(); t++) {
+		std::vector<GpPlayedNote>& played = out.tracks[t];
+		std::vector<GpPlayedNote> grown;
+		bool any = false;
+		for (size_t i = 0; i < played.size(); i++) {
+			const GpPlayedNote& n = played[i];
+			if (!n.note.trill || n.lengthSeconds < 2.0 * TRILL_SECONDS || n.note.midi <= 0) {
+				grown.push_back(n);
+				continue;
+			}
+			any = true;
+			// THE KEY THIS BAR IS IN. The signature's sharps or flats name a major key, and its
+			// seven notes are the same seven whatever mode is being played in.
+			int fifths = 0;
+			if (n.bar >= 0 && n.bar < (int) out.bars.size()) {
+				const int written = out.bars[(size_t) n.bar].written;
+				if (written >= 0 && written < (int) song.masterBars.size())
+					fifths = song.masterBars[(size_t) written].keyAccidentals;
+			}
+			const int tonic = ((fifths * 7) % 12 + 12) % 12;
+			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
+			int above = n.note.midi + 1;
+			for (int step = 1; step <= 3; step++) {
+				const int pc = ((n.note.midi + step) % 12 + 12) % 12;
+				bool inKey = false;
+				for (int d = 0; d < 7; d++) {
+					if (pc == (tonic + MAJOR[d]) % 12)
+						inKey = true;
+				}
+				if (inKey) {
+					above = n.note.midi + step;
+					break;
+				}
+			}
+			int count = (int) std::lround(n.lengthSeconds / TRILL_SECONDS);
+			if (count < 3)
+				count = 3;
+			if ((count % 2) == 0)
+				count++;
+			for (int k = 0; k < count; k++) {
+				GpPlayedNote one = n;
+				one.note.trill = false;
+				one.note.midi = (k % 2) ? above : n.note.midi;
+				one.note.tied = false;
+				one.startQuarters = n.startQuarters + n.lengthQuarters * (double) k / count;
+				one.lengthQuarters = n.lengthQuarters / (double) count;
+				one.startSeconds = n.startSeconds + n.lengthSeconds * (double) k / count;
+				one.lengthSeconds = n.lengthSeconds / (double) count;
+				grown.push_back(one);
+			}
+		}
+		if (any) {
+			std::stable_sort(grown.begin(), grown.end(),
+				[](const GpPlayedNote& a, const GpPlayedNote& b) {
+					return a.startQuarters < b.startQuarters;
+				});
+			played.swap(grown);
+		}
 	}
 
 	return true;
