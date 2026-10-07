@@ -647,10 +647,45 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			}
 			// THE NOTES THE SIGN STANDS FOR, and how many of them are the ornament rather than
 			// the note it is on.
+			// A TRILL ENDS WHERE ITS TERMINATION BEGINS.
+			//
+			// A trill is often finished by two small notes written under the end of it — the
+			// turn out of the trill, which a player trills up to and then plays. They are
+			// written in a voice of their own at the end of the trilled note's span, so a trill
+			// spread over the whole of that span goes on alternating while they sound, and the
+			// two run over each other.
+			//
+			// So the alternation stops where the next note near it begins. Near in pitch as well
+			// as in time: an accompaniment plays all the way through a trill and is an octave or
+			// more below it, while a termination is a step or two away.
+			double trilled = n.lengthSeconds;
+			if (n.note.trill) {
+				for (size_t j = 0; j < played.size(); j++) {
+					if (j == i)
+						continue;
+					const GpPlayedNote& other = played[j];
+					if (other.startSeconds <= n.startSeconds
+							|| other.startSeconds >= n.startSeconds + n.lengthSeconds)
+						continue;
+					if (std::abs(other.note.midi - n.note.midi) > 12)
+						continue;
+					// AND SHORT, as a termination is. A melody or an accompaniment note may pass
+					// close to a trill in pitch and is no reason to stop one; two small notes
+					// written under the end of it are.
+					if (other.lengthSeconds > TRILL_SECONDS * 3.0)
+						continue;
+					const double upTo = other.startSeconds - n.startSeconds;
+					if (upTo < trilled)
+						trilled = upTo;
+				}
+				if (trilled < 2.0 * TRILL_SECONDS)
+					trilled = n.lengthSeconds;   // Nothing worth stopping for.
+			}
+
 			int pitches[8];
 			int count = 0;
 			if (n.note.trill) {
-				count = (int) std::lround(n.lengthSeconds / TRILL_SECONDS);
+				count = (int) std::lround(trilled / TRILL_SECONDS);
 				if (count < 3)
 					count = 3;
 				if ((count % 2) == 0)
@@ -668,15 +703,18 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 				count = 3;
 			}
 			if (n.note.trill) {
+				const double perQ = (n.lengthSeconds > 0.0)
+					? n.lengthQuarters / n.lengthSeconds : 0.0;
 				for (int k = 0; k < count; k++) {
 					GpPlayedNote one = n;
 					one.note.trill = false;
 					one.note.midi = (k % 2) ? above : n.note.midi;
 					one.note.tied = false;
-					one.startQuarters = n.startQuarters + n.lengthQuarters * (double) k / count;
-					one.lengthQuarters = n.lengthQuarters / (double) count;
-					one.startSeconds = n.startSeconds + n.lengthSeconds * (double) k / count;
-					one.lengthSeconds = n.lengthSeconds / (double) count;
+					one.startSeconds = n.startSeconds + trilled * (double) k / count;
+					one.lengthSeconds = trilled / (double) count;
+					one.startQuarters = n.startQuarters
+						+ (one.startSeconds - n.startSeconds) * perQ;
+					one.lengthQuarters = one.lengthSeconds * perQ;
 					grown.push_back(one);
 				}
 				continue;

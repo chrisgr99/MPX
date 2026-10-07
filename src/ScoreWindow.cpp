@@ -884,35 +884,6 @@ struct ScoreWindow : widget::OpaqueWidget {
 			nvgRestore(args.vg);
 		}
 
-		// THE BAR NUMBERS, in the window's own pixels so they are the same size whatever the
-		// notation is scaled to, and in amber so they read as ours rather than as something the
-		// composer wrote. Every bar carries its number: a score is talked about in bar numbers,
-		// and counting from the last one printed is what a reader should not have to do.
-		nvgSave(args.vg);
-		nvgTranslate(args.vg, area.pos.x, area.pos.y);
-		snapToPixels(args.vg);
-		nvgFontFaceId(args.vg, face->handle);
-		nvgFontSize(args.vg, 10.f);
-		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-		nvgFillColor(args.vg, nvgRGBA(255, 176, 64, 205));
-		for (size_t i = 0; i < sys.size(); i++) {
-			const float top = (sys[i].top - flow) * unit;
-			if (top + sys[i].height * unit < 0.f || top > area.size.y)
-				continue;
-			for (size_t b = 0; b < sys[i].bars.size(); b++) {
-				const px::ScoreBox& box = sys[i].bars[b];
-				if (box.number.empty())
-					continue;
-				// ABOVE THE BAR AND A LITTLE INTO IT, which is where an engraver puts one.
-				const float x = box.x1 * unit + 2.f;
-				const float y = (box.y1 + sys[i].top - flow) * unit - 1.f;
-				if (y < 8.f || y > area.size.y)
-					continue;
-				crispText(args.vg, x, y, box.number.c_str(), NULL);
-			}
-		}
-		nvgRestore(args.vg);
-
 		// WHAT IS BEING LOOPED AND WHERE THE MUSIC IS, over the music and in the window's own
 		// pixels, since the systems each have a transform of their own and these do not.
 		nvgTranslate(args.vg, area.pos.x, area.pos.y);
@@ -956,6 +927,45 @@ struct ScoreWindow : widget::OpaqueWidget {
 			nvgStrokeWidth(args.vg, 2.f);
 			nvgStroke(args.vg);
 		}
+		// THE BAR NUMBERS, in the window's own pixels so they are the same size whatever the
+		// notation is scaled to, and in amber so they read as ours rather than as something the
+		// composer wrote. Every bar carries its number: a score is talked about in bar numbers,
+		// and counting from the last one printed is what a reader should not have to do.
+		nvgSave(args.vg);
+		nvgTranslate(args.vg, area.pos.x, area.pos.y);
+		snapToPixels(args.vg);
+		nvgFontFaceId(args.vg, face->handle);
+		nvgFontSize(args.vg, 13.f);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+		for (size_t i = 0; i < sys.size(); i++) {
+			const float top = (sys[i].top - flow) * unit;
+			if (top + sys[i].height * unit < 0.f || top > area.size.y)
+				continue;
+			for (size_t b = 0; b < sys[i].bars.size(); b++) {
+				const px::ScoreBox& box = sys[i].bars[b];
+				if (box.number.empty())
+					continue;
+				// ABOVE THE BAR AND A LITTLE INTO IT, which is where an engraver puts one.
+				const float x = box.x1 * unit + 2.f;
+				const float y = (box.y1 + sys[i].top - flow) * unit - 1.f;
+				if (y < 8.f || y > area.size.y)
+					continue;
+				// ON A BACKING OF ITS OWN. A number dropped onto an engraving lands among
+				// slurs, beams and dynamics, and amber alone was not enough to pick it out of
+				// them; a patch of the paper behind it is.
+				float at[4] = {0.f, 0.f, 0.f, 0.f};
+				nvgTextBounds(args.vg, x, y, box.number.c_str(), NULL, at);
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, at[0] - 3.f, at[1] - 1.f,
+					at[2] - at[0] + 6.f, at[3] - at[1] + 2.f, 2.f);
+				nvgFillColor(args.vg, nvgRGBA(28, 30, 34, 225));
+				nvgFill(args.vg);
+				nvgFillColor(args.vg, nvgRGBA(255, 176, 64, 255));
+				crispText(args.vg, x, y, box.number.c_str(), NULL);
+			}
+		}
+		nvgRestore(args.vg);
+
 		nvgRestore(args.vg);
 	}
 	void drawFrame(const DrawArgs& args, std::shared_ptr<window::Font> face) {
