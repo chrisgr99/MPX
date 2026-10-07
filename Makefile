@@ -227,6 +227,38 @@ gpxmltest:
 
 # WHAT A SCORE SENDS DOWN THE CABLE, as plain text, for the release testbed to play.
 #   make scorenotes ARGS="a-piece.mxl 20" > notes.txt
+# BARS, PICKUPS AND NUMBERING. What the reader made of a score's bar lines: which bar the page
+# calls bar one, how long a pickup is, and where each played bar falls on the clock. A pickup is
+# numbered nought and is shorter than the metre says, and both of those were wrong once.
+#   make barcheck ARGS="a-score.mxl"
+barcheck:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
+		test/barcheck.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/barcheck
+	@./build/barcheck $(ARGS)
+
+# WHAT A DRUM TRACK LOOKS LIKE LEAVING THE READER: whether it is marked percussion, and whether
+# its notes are General MIDI kit numbers.
+#   make drumcheck ARGS="$(HOME)/Downloads/*.gp5"
+drumcheck:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
+		test/drumcheck.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/drumcheck
+	@./build/drumcheck $(ARGS)
+
+# AND WHETHER A KIT CAN BE SELECTED AND SOUNDED AT ALL, at the size the chart modules run the
+# synthesiser at. Drums come out of bank 128; a channel left on its startup default plays them on
+# a piano, which is what a missing instrument sounds like.
+#   make drumsound
+drumsound:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -w -I dep/include test/drumsound.cpp src/FluidEngine.cpp \
+		dep/lib/libfluidsynth.a -o build/drumsound -framework CoreAudio \
+		-framework CoreFoundation -framework CoreMIDI -framework AudioUnit -framework AudioToolbox
+	@./build/drumsound $(ARGS)
+
 scorenotes:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \

@@ -152,7 +152,11 @@ int main(int argc, char** argv) {
 			if (b.startSeconds > seconds)
 				break;
 			char head[96];
-			std::snprintf(head, sizeof head, "bar %d pass %d", b.written + 1, b.pass);
+			int number = b.written + 1;
+			if (b.written >= 0 && b.written < (int) song.masterBars.size()
+					&& song.masterBars[(size_t) b.written].number >= 0)
+				number = song.masterBars[(size_t) b.written].number;
+			std::snprintf(head, sizeof head, "bar %d pass %d", number, b.pass);
 			list.push_back(Mark{b.startSeconds, head});
 			const int beats = (b.written < (int) song.masterBars.size())
 				? song.masterBars[(size_t) b.written].beatsPerBar : 4;

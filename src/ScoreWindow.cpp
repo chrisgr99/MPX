@@ -629,7 +629,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 					continue;
 				if (x >= box.x1 && x <= box.x2
 						&& y >= box.y1 + sys[i].top && y <= box.y2 + sys[i].top)
-					return std::atoi(box.number.c_str()) - 1;
+					return std::atoi(box.number.c_str());
 			}
 		}
 		return -1;
@@ -800,8 +800,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 	bool boxOf(int bar, px::ScoreBox& out) const {
 		if (bar < 0)
 			return false;
-		// THE FILE NUMBERS FROM ONE and everything here counts from nought.
-		const std::string want = std::to_string(bar + 1);
+		// THE NUMBER THE PAGE PRINTS, which is what the module sends: a pickup is bar nought and
+		// the first whole bar is bar one. See GuitarChart's writtenNumber.
+		const std::string want = std::to_string(bar);
 		const std::vector<px::ScoreSystem>& sys = score.systems();
 		for (size_t i = 0; i < sys.size(); i++) {
 			for (size_t b = 0; b < sys[i].bars.size(); b++) {
@@ -985,9 +986,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 				char loop[64];
 				if (loopTo > loopFrom)
 					std::snprintf(loop, sizeof(loop), "   looping bars %d to %d",
-						loopFrom + 1, loopTo + 1);
+						loopFrom, loopTo);
 				else
-					std::snprintf(loop, sizeof(loop), "   looping bar %d", loopFrom + 1);
+					std::snprintf(loop, sizeof(loop), "   looping bar %d", loopFrom);
 				label += loop;
 			}
 		}

@@ -474,6 +474,18 @@ struct SongModule : Module, NoteSource {
 			params[P_MUTE + r].setValue((L.track[r] >= 0) ? 0.f : 1.f);
 	}
 
+	/** WHAT THE PAGE CALLS A BAR, which is not where it sits. A pickup is numbered nought and the
+	first whole bar is one, so a bar's position and its number differ by one for the whole piece —
+	and a cursor that used the position sat a bar ahead of the music from the first note. */
+	static int writtenNumber(const Playing& L, int written) {
+		if (written >= 0 && written < (int) L.song.masterBars.size()) {
+			const int said = L.song.masterBars[(size_t) written].number;
+			if (said >= 0)
+				return said;
+		}
+		return written + 1;
+	}
+
 	/** A bus for every row that carries a track, and none for the rest. Main thread. */
 	void claimBuses(const Playing& L) {
 		for (int r = 0; r < ROWS; r++) {
@@ -781,7 +793,7 @@ struct SongModule : Module, NoteSource {
 
 		// WHERE THE MUSIC HAS GOT TO, for a score window to show. The bar as the FILE numbers it,
 		// since the page draws each bar once however many times it is played. See ScoreFollow.hpp.
-		scoreFollowPublish(id, bar.written,
+		scoreFollowPublish(id, writtenNumber(L, bar.written),
 			(bar.quarters > 0.0) ? (float) ((quarters - bar.startQuarters) / bar.quarters) : 0.f,
 			running && !awaitPulse);
 
@@ -792,7 +804,7 @@ struct SongModule : Module, NoteSource {
 			const int wanted = scoreFollowTakeGoTo(id);
 			if (wanted >= 0) {
 				for (size_t i = 0; i < L.line.bars.size(); i++) {
-					if (L.line.bars[i].written != wanted)
+					if (writtenNumber(L, L.line.bars[i].written) != wanted)
 						continue;
 					quarters = L.line.bars[i].startQuarters;
 					barIndex = (int) i;
@@ -815,9 +827,10 @@ struct SongModule : Module, NoteSource {
 				double at = -1.0, end = -1.0;
 				for (size_t i = 0; i < L.line.bars.size(); i++) {
 					const GpPlayedBar& b = L.line.bars[i];
-					if (at < 0.0 && b.written == from)
+					const int n = writtenNumber(L, b.written);
+					if (at < 0.0 && n == from)
 						at = b.startQuarters;
-					if (at >= 0.0 && b.written == to) {
+					if (at >= 0.0 && n == to) {
 						end = b.startQuarters + b.quarters;
 						break;
 					}

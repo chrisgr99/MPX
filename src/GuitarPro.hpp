@@ -134,6 +134,17 @@ struct GpTrack {
 /** What a bar says about time, key and structure. One of these per bar of the song, shared by
 every track: Guitar Pro keeps them once rather than per track, and so does this. */
 struct GpMasterBar {
+	/** WHAT THE SCORE CALLS THIS BAR, which is not always its position. A pickup is numbered
+	nought and everything after it is numbered from one, so the second bar of the file is the
+	first bar of the music. Nought here means nobody said, and the position is used instead.
+
+	Anything showing or asking for a bar — a cursor on an engraving, a loop over a passage — has
+	to mean the number the reader sees on the page. */
+	int number = -1;
+	/** HOW LONG IT ACTUALLY IS, in quarter notes, where that is not what the metre says. A pickup
+	holds less than a bar and the music must not wait out the difference. Nought means the metre
+	decides, which is every ordinary bar. */
+	float quarters = 0.f;
 	int beatsPerBar = 4;
 	int beatUnit = 4;         /**< The lower number of the time signature. */
 	int keyAccidentals = 0;   /**< Sharps positive, flats negative. */

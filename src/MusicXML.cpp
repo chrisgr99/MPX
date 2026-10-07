@@ -465,6 +465,11 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				out.masterBars.resize((size_t) barNumber + 1);
 			GpBar& bar = track.bars[(size_t) barNumber];
 			barStarts.push_back(barStart);
+			// WHAT THE PAGE CALLS THIS BAR, and whether the writer called it a pickup. A pickup
+			// is numbered nought, so a bar's number is not its position and anything showing a
+			// bar must use the number. See GpMasterBar::number.
+			const bool implicit =
+				std::string(measure.attribute("implicit").as_string()) == "yes";
 			GpMasterBar* master = (barNumber < (int) out.masterBars.size())
 				? &out.masterBars[(size_t) barNumber] : NULL;
 			if (master && barNumber > 0 && first) {
@@ -478,11 +483,22 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				master->section.clear();
 				master->sectionLetter.clear();
 				master->doubleBar = false;
+				// WHAT IS THIS BAR'S ALONE does not carry on: the number the page gives it, and
+				// its length where that is not the metre's. Inherited, a pickup made every bar
+				// after it a pickup too, and numbered them all nought.
+				master->number = -1;
+				master->quarters = 0.f;
+			}
+			if (master && first) {
+				const char* said = measure.attribute("number").as_string();
+				if (said && said[0])
+					master->number = std::atoi(said);
 			}
 
 			// One list of beats per voice, each keyed by where in the bar it falls.
 			std::map<int, Building> voices;
 			long cursor = 0;      // Divisions from the start of the bar.
+			long filled = 0;      // The furthest any voice reached, which is what the bar holds.
 			long lastNoteAt = 0;
 			int lastVoice = 1;
 
@@ -765,16 +781,30 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					lastNoteAt = cursor;
 					lastVoice = voice;
 					cursor += duration;
+					if (cursor > filled)
+						filled = cursor;
 				}
 			}
 
-			// THE NEXT BAR BEGINS A BAR'S LENGTH LATER, counted from the metre rather than from
-			// what the bar happens to hold, which is what the timeline does too.
+			// THE NEXT BAR BEGINS A BAR'S LENGTH LATER, which is the metre's length for an
+			// ordinary bar and the bar's own for a short one.
+			//
+			// A PICKUP IS SHORTER THAN A BAR AND THE MUSIC MUST NOT WAIT OUT THE DIFFERENCE. The
+			// E minor Prelude opens with one quarter of music in a bar of four; counted as four,
+			// three quarters of silence were inserted between the pickup and the first whole bar,
+			// and everything after it sat three quarters late. A bar is called short only where
+			// the writer marked it implicit or where it is both under length and the first bar,
+			// so that a bar merely left unfilled by a transcriber is not mistaken for one.
 			{
 				double length = 4.0;
 				if (barNumber < (int) out.masterBars.size()) {
-					const GpMasterBar& m = out.masterBars[(size_t) barNumber];
+					GpMasterBar& m = out.masterBars[(size_t) barNumber];
 					length = (double) m.beatsPerBar * 4.0 / (double) std::max(1, m.beatUnit);
+					const double held = (double) filled / (double) divisions;
+					if (first && held > 0.0 && held < length - 1e-6 && (implicit || barNumber == 0)) {
+						m.quarters = (float) held;
+						length = held;
+					}
 				}
 				barStart += length;
 			}

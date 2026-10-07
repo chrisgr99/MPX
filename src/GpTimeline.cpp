@@ -295,8 +295,9 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 		bar.written = written;
 		bar.pass = order[i].second;
 		bar.startQuarters = quarters;
-		bar.quarters = (double) master.beatsPerBar * 4.0
-			/ ((master.beatUnit > 0) ? master.beatUnit : 4);
+		// A PICKUP IS AS LONG AS IT IS, not as long as the metre says. See GpMasterBar::quarters.
+		bar.quarters = (master.quarters > 0.f) ? (double) master.quarters
+			: (double) master.beatsPerBar * 4.0 / ((master.beatUnit > 0) ? master.beatUnit : 4);
 
 		const std::map<int, std::vector<GpTempo> >::const_iterator found = byBar.find(written);
 		if (found != byBar.end()) {

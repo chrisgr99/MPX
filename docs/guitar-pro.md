@@ -52,6 +52,10 @@ Rows are six or twelve, chosen in the right-click menu, twelve putting a second 
 
 **A slug is permanent**, so the two charts are still registered and a patch saved with one still opens. They are hidden, not removed.
 
+**A pickup is a bar of its own length, numbered nought.** MusicXML marks one `implicit`, and it holds less music than the metre says — the E minor Prelude opens with one quarter in a bar of four, Autumn Leaves with three. Counted as a full bar, the difference was inserted as silence, so the music sat three quarters late from its first note and the first whole bar's notes arrived after the cursor had passed them.
+
+And a bar's number is not its position. A pickup is numbered nought and the first whole bar is one, so the two differ by one for the rest of the piece. Anything that shows or asks for a bar — a cursor on an engraving, a loop over a passage — uses the number the reader sees on the page, and the module translates. Of six scores here, three have pickups.
+
 **The per-row audio outputs are gone.** A row is played through its MPX cable, and the band is heard through the stereo mix. The ports are laid out for twelve rows whatever the panel shows, which puts the mix on outputs twelve and thirteen — where it was before, when six rows each had an audio jack — so a patch wired to the mix stays wired to it.
 
 One MPX cable is one instrument, always. That is what every module already downstream of a cable assumes — mpxVoicing decides where the voices sit, mpxArp arpeggiates the notes, mpxOut turns the cable into control voltage, and none of them asks which part a note belongs to. A cable carrying a whole band would have all of them playing every track at once, and making each one part-aware is a change in every module and a rule that some would honour and some would not.
