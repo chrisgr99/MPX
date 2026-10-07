@@ -65,6 +65,12 @@ struct FluidEngine {
 	// ---- the audio thread ----------------------------------------------------------------------
 
 	void program(int channel, int bank, int program);
+
+	/** WHAT A CHANNEL ACTUALLY ENDED UP PLAYING, for a bench to check against what was asked for.
+	`fluid_synth_program_select` fails silently when the preset is not there, and a channel left
+	on the program it had before is how a drum part comes out sounding like a keyboard. Returns a
+	`fluid_preset_t*`, opaque here; see test/drumsound.cpp. */
+	void* channelPreset(int channel) const;
 	/** How far a full bend reaches, in semitones. Twelve, so a two-tone bend and a long slide
 	both resolve smoothly through fourteen bits rather than in steps. */
 	void bendRange(int channel, int semitones);

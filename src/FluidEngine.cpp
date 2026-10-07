@@ -136,6 +136,13 @@ void FluidEngine::program(int channel, int bank, int number) {
 }
 
 
+void* FluidEngine::channelPreset(int channel) const {
+	if (!synth)
+		return NULL;
+	return (void*) fluid_synth_get_channel_preset(synth, channel);
+}
+
+
 void FluidEngine::bendRange(int channel, int semitones) {
 	if (!synth)
 		return;

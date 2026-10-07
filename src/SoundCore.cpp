@@ -235,6 +235,17 @@ void SoundCore::followProgram(int part, const Instrument& in) {
 	}
 	if (program >= 0)
 		setProgram(part, bank, program);
+	// SAID IN THE LOG, once for each part: a drum track that comes out sounding like a keyboard
+	// is this choice going wrong, and nothing about it can be seen from a panel. Temporary.
+	INFO("%s: part %d instrument -> %s bank %d, asked program %d, got %d (%d presets, %d kits)",
+		logName.empty() ? "SoundCore" : logName.c_str(), part,
+		in.percussion ? "PERCUSSION" : "melodic", bank, wanted, program,
+		(int) list.size(), [&]() {
+			int k = 0;
+			for (size_t i = 0; i < list.size(); i++)
+				if (list[i].bank == 128) k++;
+			return k;
+		}());
 	// AND WHERE IT SITS, on every one of the part's channels.
 	const int pan = math::clamp((int) std::lround(64.f + in.pan * 63.f), 0, 127);
 	for (int v = 0; v < voices; v++)

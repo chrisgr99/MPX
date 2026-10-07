@@ -42,9 +42,17 @@ What it is not for is feeding mpxComp, mpxMelody or mpxPhrase. Those were built 
 
 So the harmony is real and it goes out on the cable, but the song is not a way of driving the existing players.
 
-## What the module does
+## One module, not three
 
-`mpxGuitarChart` reads a file and plays it.
+`mpxScore` reads a file and plays it. It is the only one of these now: `mpxGuitarChart` and `mpxGuitarChart6` are deprecated and hidden from the module browser.
+
+They converged honestly rather than drifted. All three were generated from one header by a handful of defines, and the only differences left were the slug, the panel title and the row count — the score learned nothing the charts lacked, because everything went into the shared header and so into all of them. The score reads Guitar Pro and the charts read MusicXML; the file chooser offers the same nine extensions from either; a track with no tuning turns the guitar's assumptions off by itself.
+
+Rows are six or twelve, chosen in the right-click menu, twelve putting a second column beside the first. That is the last thing the twelve-row chart had that the score did not.
+
+**A slug is permanent**, so the two charts are still registered and a patch saved with one still opens. They are hidden, not removed.
+
+**The per-row audio outputs are gone.** A row is played through its MPX cable, and the band is heard through the stereo mix. The ports are laid out for twelve rows whatever the panel shows, which puts the mix on outputs twelve and thirteen — where it was before, when six rows each had an audio jack — so a patch wired to the mix stays wired to it.
 
 One MPX cable is one instrument, always. That is what every module already downstream of a cable assumes — mpxVoicing decides where the voices sit, mpxArp arpeggiates the notes, mpxOut turns the cable into control voltage, and none of them asks which part a note belongs to. A cable carrying a whole band would have all of them playing every track at once, and making each one part-aware is a change in every module and a rule that some would honour and some would not.
 

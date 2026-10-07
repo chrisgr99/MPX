@@ -57,7 +57,7 @@
     {
       "slug": "mpxVoicing",
       "name": "mpxChordVoicing",
-      "description": "Decides where the notes of the chord on an MPX cable go \u2014 how many voices, where they sit, how far apart and how little they move \u2014 and publishes that voicing for everything downstream",
+      "description": "Decides where the notes of the chord on an MPX cable go — how many voices, where they sit, how far apart and how little they move — and publishes that voicing for everything downstream",
       "tags": [
         "Polyphonic",
         "Utility",
@@ -88,7 +88,7 @@
     {
       "slug": "mpxRand",
       "name": "mpxRand",
-      "description": "Varies one attribute of an MPX cable's notes \u2014 duration, level, pan, timing or tuning \u2014 by white, walk or Perlin randomness",
+      "description": "Varies one attribute of an MPX cable's notes — duration, level, pan, timing or tuning — by white, walk or Perlin randomness",
       "tags": [
         "Random",
         "Polyphonic",
@@ -118,7 +118,7 @@
     {
       "slug": "mpxMelodyVoice",
       "name": "mpxVoice",
-      "description": "One melodic line drawn against the harmony on the cable \u2014 bass, melody or inner voice. Sits beside mpxMelody",
+      "description": "One melodic line drawn against the harmony on the cable — bass, melody or inner voice. Sits beside mpxMelody",
       "tags": [
         "Sequencer",
         "Expander",
@@ -138,7 +138,7 @@
     {
       "slug": "mpxPathSprites",
       "name": "mpxPathSprites",
-      "description": "Eight reading heads running drawn lines and circles over a picture; what each passes over becomes a voltage \u2014 a drawn LFO, or at speed a wavetable oscillator",
+      "description": "Eight reading heads running drawn lines and circles over a picture; what each passes over becomes a voltage — a drawn LFO, or at speed a wavetable oscillator",
       "tags": [
         "LFO",
         "Oscillator",
@@ -169,26 +169,28 @@
     {
       "slug": "mpxGuitarChart",
       "name": "mpxGuitarChart12",
-      "description": "Plays a Guitar Pro file: each track on its own MPX cable, with a mute beside each one. Reads .gp, .gpx and .gp3 to .gp5.",
+      "description": "Deprecated: use mpxScore, which reads the same files and has six or twelve rows. Kept so that patches made with this module still open.",
       "tags": [
         "Sequencer",
         "Polyphonic"
-      ]
+      ],
+      "hidden": true
     },
     {
       "slug": "mpxGuitarChart6",
       "name": "mpxGuitarChart6",
-      "description": "Plays a Guitar Pro file: six tracks, each on its own MPX cable with a mute, and a built-in General MIDI band with an audio output and gain per track and a stereo mix, shown from the menu.",
+      "description": "Deprecated: use mpxScore, which reads the same files and has six or twelve rows. Kept so that patches made with this module still open.",
       "tags": [
         "Sequencer",
         "Sampler",
         "Polyphonic"
-      ]
+      ],
+      "hidden": true
     },
     {
       "slug": "mpxScore",
       "name": "mpxScore",
-      "description": "Plays a MusicXML or Guitar Pro score written for instruments with no fingerboard \u2014 a fugue, a string quartet: six parts, each on its own MPX cable with a mute, and a built-in General MIDI ensemble with an audio output and gain per part and a stereo mix, shown from the menu.",
+      "description": "Plays a score — MusicXML or Guitar Pro — with each part on its own MPX cable with a mute and a gain, six or twelve rows from the menu, a built-in General MIDI band on a stereo mix, and a continuous engraved view with a playhead and bars to loop.",
       "tags": [
         "Sequencer",
         "Sampler",
@@ -245,7 +247,7 @@
     {
       "slug": "mpxGuitarist",
       "name": "mpxGuitarist",
-      "description": "Plays an articulated MPX part as control voltage \u2014 a channel per string, with the bends, slides, hammer-ons, palm mutes and vibrato already in the pitch, the gate and the level. Any voice in the rack can then play a guitar part.",
+      "description": "Plays an articulated MPX part as control voltage — a channel per string, with the bends, slides, hammer-ons, palm mutes and vibrato already in the pitch, the gate and the level. Any voice in the rack can then play a guitar part.",
       "tags": [
         "Polyphonic",
         "Utility"
