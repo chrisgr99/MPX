@@ -61,8 +61,13 @@ struct LevelEvent {
 
 
 /** HOW FAR A HAIRPIN GOES WHEN NOTHING SAYS. A crescendo with no mark after it still has to
-arrive somewhere; this is the distance it travels, which is about one step of the ladder. */
-const float HAIRPIN_REACH = 0.25f;
+arrive somewhere; this is the distance it travels, which is one step of the ladder.
+
+MEASURED OFF THE LADDER ITSELF rather than guessed. The marks run .15 .25 .35 .5 .6 .75 .88 1.0,
+so a step between neighbours is about an eighth. A quarter — which this was, while claiming to be
+one step — is two dynamics at a stroke: every crescendo from f slammed into the ceiling and stayed
+there, which put an eighth of the Ballade at full. */
+const float HAIRPIN_REACH = 0.13f;
 
 
 /** THE QUIETEST A RAMP MAY ARRIVE AT. ppp is the quietest thing written in music, and a ramp whose
@@ -71,11 +76,49 @@ ever asks for. A mark that really says ppp is obeyed, since that is not a guess.
 const float QUIETEST = 0.15f;
 
 
+/** HOW CLOSE A MARK HAS TO BE TO BE WHAT A HAIRPIN LEADS TO, in quarter notes. A dynamic written
+under the end of a hairpin is its destination; one two bars further on belongs to something else,
+and a hairpin that jumped to it would arrive long before the music does. */
+const float HAIRPIN_LEADS = 4.f;
+
+
 /** THE LOUDNESS OF THE WHOLE PART AS A LINE, built from the marks: a list of points with straight
 lines between them. A step is two points at the same moment. */
 std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events) {
-	std::sort(events.begin(), events.end(),
-		[](const LevelEvent& a, const LevelEvent& b) { return a.at < b.at; });
+	// WHAT HAPPENS FIRST WHERE TWO THINGS HAPPEN AT ONCE. A hairpin leading to a dynamic puts its
+	// stop and that dynamic at the same moment, which is the commonest marking in music; read
+	// with the mark first, the music arrives at pp and the hairpin then takes another step DOWN
+	// from it, inventing a level below the one written. So a stop is settled before a mark at the
+	// same moment — it is the mark it was leading to — and a hairpin OPENS after one, since it
+	// sets out from the dynamic just given.
+	auto rank = [](const LevelEvent& e) {
+		if (e.kind == LevelEvent::STOP)
+			return 0;
+		return (e.kind == LevelEvent::MARK) ? 1 : 2;
+	};
+	std::stable_sort(events.begin(), events.end(),
+		[&rank](const LevelEvent& a, const LevelEvent& b) {
+			if (a.at != b.at)
+				return a.at < b.at;
+			return rank(a) < rank(b);
+		});
+
+	// A BENCH FOR THIS, since what it decides is heard and never seen. Set MPX_LEVELS to a range
+	// of quarters — "100 140" — and every mark and every point of the line in that range is
+	// printed. Temporary only in the sense that nothing calls it unless asked.
+	const char* watch = std::getenv("MPX_LEVELS");
+	double from = 0.0, to = 0.0;
+	if (watch)
+		std::sscanf(watch, "%lf %lf", &from, &to);
+	if (watch) {
+		static const char* KINDS[] = {"mark", "swell", "fade", "stop", "swell-word", "fade-word"};
+		for (size_t i = 0; i < events.size(); i++) {
+			if (events[i].at < from || events[i].at > to)
+				continue;
+			std::fprintf(stderr, "  at %8.2f  %-11s %.2f\n", events[i].at,
+				KINDS[(int) events[i].kind], events[i].value);
+		}
+	}
 
 	std::vector<std::pair<double, float> > curve;
 	float now = 0.6f;
@@ -109,7 +152,7 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 			float target = 0.f;
 			bool toward = false;
 			for (; j < events.size(); j++) {
-				if (events[j].at <= e.at)
+				if (events[j].at < e.at)
 					continue;
 				if (events[j].kind == LevelEvent::MARK) {
 					end = events[j].at;
@@ -131,7 +174,7 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 			// happens when a hairpin has got there first — the mark cannot be the destination,
 			// since a crescendo that arrives no louder is not one. The word wins and it travels
 			// a step, as a ramp with no mark after it does.
-			if (toward && (up ? (target <= now) : (target >= now)))
+			if (toward && (up ? (target <= now) : (target > now)))
 				toward = false;
 			if (!toward) {
 				// NOTHING SAYS WHERE IT ARRIVES, so it travels about one step of the ladder, as a
@@ -151,33 +194,70 @@ std::vector<std::pair<double, float> > levelCurve(std::vector<LevelEvent> events
 			i = last;
 		}
 		else {
-			// WHERE THE HAIRPIN ARRIVES: the next mark after it if there is one, and otherwise
-			// a step of its own in whichever direction it was going.
-			float target = now;
-			bool found = false;
-			for (size_t j = i + 1; j < events.size(); j++) {
-				if (events[j].kind == LevelEvent::MARK) {
-					target = events[j].value;
-					found = true;
+			// WHERE THE HAIRPIN ARRIVES.
+			//
+			// WHICH WAY IT WAS GOING, first, from the last one opened before this stop: nothing
+			// else here means anything without it.
+			bool up = true;
+			for (size_t j = i; j > 0; j--) {
+				if (events[j - 1].kind == LevelEvent::FADE) {
+					up = false;
 					break;
 				}
+				if (events[j - 1].kind == LevelEvent::SWELL)
+					break;
 			}
-			if (!found) {
-				// Which way it was going, from the last hairpin opened before this stop.
-				float way = HAIRPIN_REACH;
-				for (size_t j = i; j > 0; j--) {
-					if (events[j - 1].kind == LevelEvent::FADE) {
-						way = -HAIRPIN_REACH;
-						break;
-					}
-					if (events[j - 1].kind == LevelEvent::SWELL)
-						break;
+
+			// THE MARK IT LEADS TO, but only if it really does lead to it: the mark must be the
+			// next thing written and must be close enough to be this hairpin's destination.
+			//
+			// TAKING THE NEXT MARK ANYWHERE AHEAD WAS WRONG, and wrong in a way that undid whole
+			// passages. Bars 56 to 60 of the Ballade are a crescendo, then alternating
+			// diminuendos and crescendos, and the next mark after all of them is one p four bars
+			// later. Every hairpin therefore arrived at p: the crescendo in bar 56 took the music
+			// DOWN from f to p, and the four bars after it did nothing whatever, because each was
+			// already at the value it was aiming for. Five bars of written expression came out
+			// flat and one came out backwards.
+			float target = now;
+			bool leads = false;
+			for (size_t j = i + 1; j < events.size(); j++) {
+				// NOT PAST A MARK AT THE SAME MOMENT. A hairpin leading to a dynamic puts the two
+				// at the same place, so a look-ahead that skipped everything "not later than
+				// here" skipped the one thing it was looking for — and every such hairpin, which
+				// is most of them, fell back to a blind step instead of arriving where it was
+				// written to arrive.
+				if (events[j].at < e.at)
+					continue;
+				// A MARK SITTING UNDER THE END OF THE HAIRPIN is what it leads to. Anything else
+				// in between means this hairpin is its own instruction and that mark belongs to
+				// whatever comes after it.
+				if (events[j].kind == LevelEvent::MARK && events[j].at - e.at <= HAIRPIN_LEADS) {
+					target = events[j].value;
+					leads = true;
 				}
-				target = now + way;
+				break;
 			}
-			target = std::max(0.05f, std::min(1.f, target));
+			// AND A HAIRPIN MEANS WHAT IT SAYS. A crescendo that arrives no louder is not a
+			// crescendo, whatever the mark after it says.
+			// A MARK THAT RESTATES THE DYNAMIC IS STILL THE DESTINATION, going down. "pp, dim.,
+			// pp" is a composer saying it is already quiet and to stay there, and a fade that
+			// insisted on moving would invent a level below the one written. Going up there is
+			// no such risk and a crescendo that arrives no louder is not one, so it moves.
+			if (leads && (up ? (target <= now) : (target > now)))
+				leads = false;
+			if (!leads)
+				target = now + (up ? HAIRPIN_REACH : -HAIRPIN_REACH);
+			target = std::max(QUIETEST, std::min(1.f, target));
 			curve.push_back(std::make_pair(e.at, target));
 			now = target;
+		}
+	}
+	if (watch) {
+		std::fprintf(stderr, "  --- the line\n");
+		for (size_t i = 0; i < curve.size(); i++) {
+			if (curve[i].first < from || curve[i].first > to)
+				continue;
+			std::fprintf(stderr, "  at %8.2f  %.3f\n", curve[i].first, curve[i].second);
 		}
 	}
 	// IN TIME ORDER, because a worded ramp puts its far end on the line before the marks that
