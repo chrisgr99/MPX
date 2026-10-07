@@ -294,8 +294,14 @@ float levelAt(const std::vector<std::pair<double, float> >& curve, double at) {
 		return 0.6f;
 	if (at <= curve.front().first)
 		return curve.front().second;
+	// A MARK APPLIES TO THE NOTE IT IS WRITTEN ON. The line holds a step as two points at the
+	// same moment — the level up to there, then the level from there — and stopping at the first
+	// of them gave a note sitting exactly on a mark the dynamic BEFORE it. Marks are written on
+	// beats and notes are played on beats, so that was most of the notes that carry a mark at
+	// all: a note on a ff was played at the p before it. Walking past both points takes the
+	// level from the second, which is what the mark says.
 	for (size_t i = 1; i < curve.size(); i++) {
-		if (at > curve[i].first)
+		if (at >= curve[i].first)
 			continue;
 		const double a = curve[i - 1].first, b = curve[i].first;
 		if (b - a < 1e-9)
@@ -728,6 +734,17 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					beat.grace = isGrace ? 2 : 0;
 					if (isGrace) {
 						beat.quarters = GRACE_QUARTERS;
+						// ORNAMENTS BEFORE ONE NOTE FOLLOW EACH OTHER. They are all written at
+						// the position of the note they lean on, so taking that position
+						// literally sounded three of them at one instant — a faint blur where a
+						// run of three quick notes belongs. Each begins where the one before it
+						// ended.
+						int already = 0;
+						for (size_t gi = 0; gi < building.graces.size(); gi++) {
+							if (building.graces[gi] == where)
+								already++;
+						}
+						beat.start += (float) already * GRACE_QUARTERS;
 						building.graces.push_back(where);
 					}
 					else {
@@ -804,8 +821,18 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						// over once as something nothing downstream could play, which was the
 						// wrong place to decide: the alternation is written out in the timeline,
 						// so what an instrument receives is notes like any others.
-						if (marks.child("ornaments").child("trill-mark"))
+						const pugi::xml_node orn = marks.child("ornaments");
+						// A WAVY LINE IS A TRILL TOO. The mark and the line are two ways of
+						// writing one, and a long trill is often only the line.
+						if (orn.child("trill-mark") || orn.child("wavy-line"))
 							note.trill = true;
+						// AND THE SHORT ONES, which are a flick rather than an alternation.
+						if (orn.child("inverted-mordent"))
+							note.invertedMordent = true;
+						if (orn.child("mordent"))
+							note.mordent = true;
+						if (orn.child("turn") || orn.child("inverted-turn"))
+							note.turn = true;
 						// A ROLLED CHORD. The notes are written together and played one after
 						// another from the bottom, which is a brush — the same thing a guitar's
 						// is, and carried by the same field.

@@ -66,6 +66,11 @@ struct GpNote {
 	/** TRILLED: alternated with the note a step above it in the key, for its whole length. The
 	alternation is written out by the timeline, so what reaches an instrument is notes. */
 	bool trill = false;
+	/** THE SHORT ORNAMENTS, each a flick of two or three notes at the start of this one rather
+	than an alternation lasting its whole length. Written out by the timeline, as the trill is. */
+	bool mordent = false;          /**< Main, the note below, main. */
+	bool invertedMordent = false;  /**< Main, the note above, main — a short trill. */
+	bool turn = false;             /**< Above, main, below, main. */
 	/** A GRACE NOTE LEADING INTO THIS ONE: nought for none, 1 played before the beat, 2 taking
 	time from it. `graceFret` is where it is fingered, on this note's own string. */
 	uint8_t grace = 0;

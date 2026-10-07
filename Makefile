@@ -231,6 +231,16 @@ gpxmltest:
 # calls bar one, how long a pickup is, and where each played bar falls on the clock. A pickup is
 # numbered nought and is shorter than the metre says, and both of those were wrong once.
 #   make barcheck ARGS="a-score.mxl"
+# EVERY MARK A SCORE CARRIES, AND WHETHER WE PLAY IT. Ornaments were being found one at a time by
+# ear, and a mark read and ignored sounds exactly like one that was never there.
+#   make marksused ARGS="$(HOME)/Downloads/*.mxl"
+marksused:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
+		test/marksused.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/marksused
+	@./build/marksused $(ARGS)
+
 barcheck:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \

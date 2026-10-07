@@ -68,6 +68,23 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	// WHERE THE GRACE NOTES ARE, and what the timeline made of them.
+	{
+		std::printf("  grace notes in the song model:\n");
+		for (size_t t = 0; t < s.tracks.size(); t++)
+			for (size_t b = 0; b < s.tracks[t].bars.size(); b++)
+				for (size_t e = 0; e < s.tracks[t].bars[b].beats.size(); e++) {
+					const GpBeat& beat = s.tracks[t].bars[b].beats[e];
+					if (!beat.grace)
+						continue;
+					const int number = (b < s.masterBars.size() && s.masterBars[b].number >= 0)
+						? s.masterBars[b].number : (int) b + 1;
+					std::printf("    bar %3d at %6.3fq lasting %5.3fq, %d notes, level %.2f\n",
+						number, beat.start, beat.quarters, (int) beat.notes.size(),
+						beat.dynamic);
+				}
+	}
+
 	GpTimeline line;
 	if (!gpBuildTimeline(s, line, &why)) { std::printf("%s\n", why.c_str()); return 1; }
 	for (size_t i = 0; i < line.bars.size() && i < 5; i++)

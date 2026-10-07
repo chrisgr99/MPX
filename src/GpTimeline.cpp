@@ -560,27 +560,29 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			});
 	}
 
-	// ---- trills -----------------------------------------------------------------------------
+	// ---- ornaments --------------------------------------------------------------------------
 	//
-	// A TRILL IS WRITTEN OUT AS THE NOTES IT STANDS FOR: the written note and the one a step
-	// above it in the key, alternating for the note's whole length. Done here rather than left
-	// to an instrument, so that every instrument plays it and none has to know what the sign
-	// means — the same reason a rolled chord becomes an order of notes rather than a flag.
+	// AN ORNAMENT IS WRITTEN OUT AS THE NOTES IT STANDS FOR. Done here rather than left to an
+	// instrument, so that every instrument plays one and none has to know what the sign means —
+	// the same reason a rolled chord becomes an order of notes rather than a flag.
 	//
 	// A STEP IN THE KEY, not a tone and not a semitone. The Nocturne's trill is on F in E flat
 	// major, where the step above is G; in another key the same F trills to F sharp. The key
-	// signature gives the seven notes and the one above is the next of them.
+	// signature gives seven notes and the neighbour is the next of them either way.
 	//
-	// IT STARTS AND ENDS ON THE WRITTEN NOTE, which is what the ear expects of it and what makes
-	// the trill sound like an ornament of that note rather than of the pair. So the count of
-	// alternations is odd.
+	// A TRILL LASTS THE WHOLE NOTE and starts and ends on the written one, so its count of
+	// alternations is odd. The short ornaments are a flick at the start and then the note itself:
+	// a mordent is main, below, main; an inverted mordent — which is what a short trill is
+	// written as — is main, above, main; a turn is above, main, below, main.
 	for (size_t t = 0; t < out.tracks.size(); t++) {
 		std::vector<GpPlayedNote>& played = out.tracks[t];
 		std::vector<GpPlayedNote> grown;
 		bool any = false;
 		for (size_t i = 0; i < played.size(); i++) {
 			const GpPlayedNote& n = played[i];
-			if (!n.note.trill || n.lengthSeconds < 2.0 * TRILL_SECONDS || n.note.midi <= 0) {
+			const bool quick = n.note.mordent || n.note.invertedMordent || n.note.turn;
+			if ((!n.note.trill && !quick) || n.note.midi <= 0
+					|| n.lengthSeconds < 2.0 * TRILL_SECONDS) {
 				grown.push_back(n);
 				continue;
 			}
@@ -595,35 +597,86 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			}
 			const int tonic = ((fifths * 7) % 12 + 12) % 12;
 			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
-			int above = n.note.midi + 1;
+			int above = n.note.midi + 1, below = n.note.midi - 1;
 			for (int step = 1; step <= 3; step++) {
-				const int pc = ((n.note.midi + step) % 12 + 12) % 12;
-				bool inKey = false;
+				bool up = false, down = false;
+				const int pu = ((n.note.midi + step) % 12 + 12) % 12;
+				const int pd = ((n.note.midi - step) % 12 + 12) % 12;
 				for (int d = 0; d < 7; d++) {
-					if (pc == (tonic + MAJOR[d]) % 12)
-						inKey = true;
+					if (pu == (tonic + MAJOR[d]) % 12) up = true;
+					if (pd == (tonic + MAJOR[d]) % 12) down = true;
 				}
-				if (inKey) {
+				if (up && above == n.note.midi + 1 && step > 0 && above <= n.note.midi + step)
 					above = n.note.midi + step;
-					break;
-				}
+				if (down && below == n.note.midi - 1 && step > 0 && below >= n.note.midi - step)
+					below = n.note.midi - step;
 			}
-			int count = (int) std::lround(n.lengthSeconds / TRILL_SECONDS);
-			if (count < 3)
+			// THE NOTES THE SIGN STANDS FOR, and how many of them are the ornament rather than
+			// the note it is on.
+			int pitches[8];
+			int count = 0;
+			if (n.note.trill) {
+				count = (int) std::lround(n.lengthSeconds / TRILL_SECONDS);
+				if (count < 3)
+					count = 3;
+				if ((count % 2) == 0)
+					count++;
+			}
+			else if (n.note.turn) {
+				pitches[0] = above; pitches[1] = n.note.midi;
+				pitches[2] = below; pitches[3] = n.note.midi;
+				count = 4;
+			}
+			else {
+				pitches[0] = n.note.midi;
+				pitches[1] = n.note.invertedMordent ? above : below;
+				pitches[2] = n.note.midi;
 				count = 3;
-			if ((count % 2) == 0)
-				count++;
+			}
+			if (n.note.trill) {
+				for (int k = 0; k < count; k++) {
+					GpPlayedNote one = n;
+					one.note.trill = false;
+					one.note.midi = (k % 2) ? above : n.note.midi;
+					one.note.tied = false;
+					one.startQuarters = n.startQuarters + n.lengthQuarters * (double) k / count;
+					one.lengthQuarters = n.lengthQuarters / (double) count;
+					one.startSeconds = n.startSeconds + n.lengthSeconds * (double) k / count;
+					one.lengthSeconds = n.lengthSeconds / (double) count;
+					grown.push_back(one);
+				}
+				continue;
+			}
+			// A FLICK AND THEN THE NOTE. The ornament never takes more than half of what it is
+			// on, so a short note keeps something of itself to be heard as.
+			double each = TRILL_SECONDS;
+			if (each * count > n.lengthSeconds * 0.5)
+				each = n.lengthSeconds * 0.5 / count;
+			const double perQuarter = (n.lengthSeconds > 0.0)
+				? n.lengthQuarters / n.lengthSeconds : 0.0;
+			double at = 0.0;
 			for (int k = 0; k < count; k++) {
 				GpPlayedNote one = n;
-				one.note.trill = false;
-				one.note.midi = (k % 2) ? above : n.note.midi;
+				one.note.mordent = one.note.invertedMordent = one.note.turn = false;
+				one.note.midi = pitches[k];
 				one.note.tied = false;
-				one.startQuarters = n.startQuarters + n.lengthQuarters * (double) k / count;
-				one.lengthQuarters = n.lengthQuarters / (double) count;
-				one.startSeconds = n.startSeconds + n.lengthSeconds * (double) k / count;
-				one.lengthSeconds = n.lengthSeconds / (double) count;
+				one.startSeconds = n.startSeconds + at;
+				one.lengthSeconds = each;
+				one.startQuarters = n.startQuarters + at * perQuarter;
+				one.lengthQuarters = each * perQuarter;
 				grown.push_back(one);
+				at += each;
 			}
+			// AND THE REST OF THE NOTE, which is what the ornament was an ornament of.
+			GpPlayedNote rest = n;
+			rest.note.mordent = rest.note.invertedMordent = rest.note.turn = false;
+			rest.note.tied = false;
+			rest.startSeconds = n.startSeconds + at;
+			rest.lengthSeconds = n.lengthSeconds - at;
+			rest.startQuarters = n.startQuarters + at * perQuarter;
+			rest.lengthQuarters = n.lengthQuarters - at * perQuarter;
+			if (rest.lengthSeconds > 0.01)
+				grown.push_back(rest);
 		}
 		if (any) {
 			std::stable_sort(grown.begin(), grown.end(),
