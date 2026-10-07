@@ -88,6 +88,16 @@ It checks the bar boxes in the same pass, which is what matters for phase 6: a b
 
 The strongest single check is that the bar count does not move: the same score laid out at five sizes records exactly the same number of boxes, and that number is the measure count of one part.
 
+## A score exported from a performance
+
+Some files write the rubato down. The Nocturne in E flat here carries **512 visible metronome marks across 36 bars** — fourteen to a bar, each with its own beats per minute, because whoever made it recorded a player and wrote every fluctuation into the score as a direction.
+
+Verovio draws all of them, quite correctly, and the page becomes columns of bracketed numbers with the music somewhere underneath. Nothing about the layout is at fault, which is why making the page narrower, taller, or one system at a time changed nothing: the page was full of tempo marks.
+
+So a flood of them is taken out before the score is engraved. An engraver writes a tempo at the top and at each change of pace, which is far fewer than one a bar; more than two a bar is a recording rather than a marking, and then every one goes, since keeping an arbitrary few of a player's wavering says nothing. Of the scores here only that one is affected — the next most marked has a single tempo in 988 bars.
+
+**The music is unaffected.** The tempo it plays at comes from the reader, which takes these marks from the file itself and never from the engraving, so the rubato is still played. It is only not drawn.
+
 ## What submitting it would still need
 
 The compiler question was the one that could have ended this. It is not the only one.

@@ -116,6 +116,9 @@ struct Score {
 	and never where the drawing happens. */
 	/** Adjusts the page width until a system holds a readable number of bars, since a file's own
 	scaling decides how much a given width holds. Called once, after loading. */
+	/** WHAT VEROVIO MADE OF THE DOCUMENT, as MEI. For a bench: when a score engraves as something
+	other than music, what it was turned into is the first thing to look at. */
+	std::string asMEI() const;
 	void fitSystems();
 	void measureSystems();
 	const std::vector<ScoreSystem>& systems() const { return allSystems; }

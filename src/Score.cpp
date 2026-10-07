@@ -128,16 +128,74 @@ static std::vector<ScorePart> readParts(const pugi::xml_document& doc) {
 }
 
 
-std::string Score::onePart(int index) const {
-	if (index < 0 || index >= (int) allParts.size() || allParts.size() <= 1)
-		return source;
+/** TAKES OUT A FLOOD OF METRONOME MARKS, and says whether it took any.
 
+A SCORE EXPORTED FROM A PERFORMANCE WRITES THE RUBATO DOWN. This Nocturne carries 512 visible
+metronome marks across 36 bars — fourteen to a bar, each with its own beats per minute, because
+whoever made the file recorded a player and wrote every fluctuation into the score. Verovio draws
+all of them, quite correctly, and the result is columns of bracketed numbers with the music
+somewhere underneath: the page is unreadable and nothing about the layout is at fault.
+
+A FEW ARE MEANT TO BE SEEN and are left alone. An engraver writes a tempo at the top and at each
+change of pace, which is far fewer than one a bar; more than two a bar is a recording rather than
+a marking. The music is unaffected either way — the tempo this plays at comes from the reader,
+which takes these marks from the file itself and never from the engraving. */
+static bool stripRubato(pugi::xml_document& doc) {
+	int bars = 0, marks = 0;
+	for (pugi::xml_node part = doc.child("score-partwise").child("part"); part;
+			part = part.next_sibling("part")) {
+		for (pugi::xml_node m = part.child("measure"); m; m = m.next_sibling("measure")) {
+			bars++;
+			for (pugi::xml_node d = m.child("direction"); d; d = d.next_sibling("direction")) {
+				if (d.child("direction-type").child("metronome"))
+					marks++;
+			}
+		}
+	}
+	if (bars < 1 || marks <= bars * 2)
+		return false;
+	// EVERY ONE OF THEM, since what is left would be an arbitrary few of a player's wavering.
+	for (pugi::xml_node part = doc.child("score-partwise").child("part"); part;
+			part = part.next_sibling("part")) {
+		for (pugi::xml_node m = part.child("measure"); m; m = m.next_sibling("measure")) {
+			pugi::xml_node d = m.child("direction");
+			while (d) {
+				pugi::xml_node next = d.next_sibling("direction");
+				pugi::xml_node type = d.child("direction-type");
+				if (type.child("metronome")) {
+					type.remove_child(type.child("metronome"));
+					// A DIRECTION THAT SAID ONLY THAT NOW SAYS NOTHING, and an empty one draws an
+					// empty box in some renderers.
+					if (!type.first_child())
+						d.remove_child(type);
+					if (!d.child("direction-type"))
+						m.remove_child(d);
+				}
+				d = next;
+			}
+		}
+	}
+	return true;
+}
+
+
+std::string Score::onePart(int index) const {
 	pugi::xml_document doc;
 	if (!doc.load_buffer(source.data(), source.size()))
 		return source;
 	pugi::xml_node root = doc.child("score-partwise");
 	if (!root)
 		return source;   // Timewise MusicXML, which this does not cut up. Shown whole.
+
+	// THE RUBATO COMES OUT WHETHER OR NOT THE SCORE IS CUT DOWN. See stripRubato.
+	const bool stripped = stripRubato(doc);
+	if (index < 0 || index >= (int) allParts.size() || allParts.size() <= 1) {
+		if (!stripped)
+			return source;
+		std::ostringstream out;
+		doc.save(out, "", pugi::format_raw);
+		return out.str();
+	}
 
 	const std::string keep = allParts[index].id;
 
@@ -293,6 +351,11 @@ int Score::pageCount() const {
 outside that the notation is either cramped to nothing or so sparse that a page holds a phrase. */
 static const double FIT_BARS_LOW = 2.0;
 static const double FIT_BARS_HIGH = 5.0;
+
+
+std::string Score::asMEI() const {
+	return (loaded && toolkit) ? toolkit->GetMEI("") : std::string();
+}
 
 
 void Score::fitSystems() {

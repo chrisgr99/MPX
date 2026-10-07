@@ -313,6 +313,18 @@ int main(int argc, char** argv) {
 	// each system is before it can stack them, and a render with no context does everything up to
 	// the drawing — which is how the glyph sheet is fetched too. If this is cheap, a continuous
 	// view costs one pass at load and nothing per frame.
+	// PAGE MINUS TWO WRITES OUT WHAT VEROVIO MADE OF THE FILE, as MEI, so a score that engraves
+	// as something other than music can be looked at rather than guessed about.
+	if (page == -2) {
+		const std::string mei = score.asMEI();
+		FILE* f = std::fopen("build/score.mei", "wb");
+		if (f) {
+			std::fwrite(mei.data(), 1, mei.size(), f);
+			std::fclose(f);
+			std::printf("wrote build/score.mei, %d bytes\n", (int) mei.size());
+		}
+		return 0;
+	}
 	if (page == -1) {
 		// AND AGAIN AFTER A RESIZE, which is what the window does when its shape settles. The
 		// fitted width was thrown away by that and the crammed layout came back, so the bench
