@@ -118,6 +118,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 	reader who wants to look at something, and back on when the music is sent somewhere by hand. */
 	bool follow = true;
 	bool wasPlaying = false;
+	/** Which tool the pointer is over, or -1. For the tip: these are glyphs, and a glyph is only
+	obvious to whoever chose it. */
+	int hoverTool = -1;
 
 	/** HOW FAR DOWN THE WHOLE SCORE THE VIEW IS, in page units from the top of the first system —
 	not pixels, which change with the width of the window, and not a page, of which there are none
@@ -489,6 +492,15 @@ struct ScoreWindow : widget::OpaqueWidget {
 	}
 
 	void onHover(const HoverEvent& e) override {
+		hoverTool = -1;
+		if (e.pos.y < SW_TITLE) {
+			for (int i = 0; i <= 6; i++) {
+				if (toolBox(i).contains(e.pos)) {
+					hoverTool = i;
+					break;
+				}
+			}
+		}
 		int mask = edgesAt(e.pos);
 		if (!mask && gripBox().contains(e.pos))
 			mask = 2 | 8;
@@ -497,6 +509,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 	}
 
 	void onLeave(const LeaveEvent& e) override {
+		hoverTool = -1;
 		setCursor(GLFW_ARROW_CURSOR);
 		OpaqueWidget::onLeave(e);
 	}
@@ -537,11 +550,16 @@ struct ScoreWindow : widget::OpaqueWidget {
 					return;
 				}
 				if (toolBox(4).contains(e.pos)) {
+					followAgain(!follow);
+					claim(e, this);
+					return;
+				}
+				if ((partCount() > 1 || song) && toolBox(5).contains(e.pos)) {
 					offerParts();
 					claim(e, this);
 					return;
 				}
-				if (loopFrom >= 0 && toolBox(5).contains(e.pos)) {
+				if (loopFrom >= 0 && toolBox(6).contains(e.pos)) {
 					clearLoop();
 					claim(e, this);
 					return;
@@ -654,6 +672,19 @@ struct ScoreWindow : widget::OpaqueWidget {
 	cannot wait does nothing instead. */
 	bool usable() const {
 		return ready.load() && !working.load();
+	}
+
+	/** Follows the music again, and goes to it at once rather than waiting for the next system:
+	somebody turning this on is asking to see where the music is now. */
+	void followAgain(bool on) {
+		follow = on;
+		if (!on)
+			return;
+		int at = -1;
+		float through = 0.f;
+		bool going = false;
+		if (px::scoreFollowRead(moduleId, at, through, going) && at >= 0)
+			bringIntoView(at);
 	}
 
 	/** BRINGS A BAR INTO VIEW, by putting the system it is on near the top of the window.
@@ -964,20 +995,26 @@ struct ScoreWindow : widget::OpaqueWidget {
 
 		drawCross(args.vg, closeBox());
 		drawCross(args.vg, closeBoxLeft());
+		drawTip(args.vg, face);
 		drawTool(args.vg, toolBox(0), "\xe2\x88\x92", face);   // minus
 		drawTool(args.vg, toolBox(1), "+", face);
 		drawTool(args.vg, toolBox(2), "\xe2\x80\xb9", face);   // single angle quotes
 		drawTool(args.vg, toolBox(3), "\xe2\x80\xba", face);
+		// FOLLOWING THE MUSIC OR NOT. Scrolling by hand stops the view chasing the playhead, so
+		// that a passage can be read while the piece plays — and until this button there was no
+		// way back short of clicking a bar, which also moves the music, so somebody who only
+		// wanted to go on watching had to interrupt what they were listening to.
+		drawTool(args.vg, toolBox(4), "\xe2\x97\x89", face, follow ? 1 : 0);   // a ringed dot
 		// THE INSTRUMENT, offered only when there is more than one. A control that opens a list
 		// of one thing is a control that does nothing.
 		if (partCount() > 1 || song)
-			drawTool(args.vg, toolBox(4), "\xe2\x96\xbe", face);   // a small downward triangle
+			drawTool(args.vg, toolBox(5), "\xe2\x96\xbe", face);   // a small downward triangle
 		// A WAY OUT OF THE LOOP THAT CAN BE SEEN. Clicking the looped bar again clears it, which
 		// is quick once you know and invisible until somebody tells you — and a reader who has
 		// looped a bar by accident is stuck with the same bar repeating and nothing on the window
 		// admitting to it. So the loop says it is there and offers to stop.
 		if (loopFrom >= 0)
-			drawTool(args.vg, toolBox(5), "\xe2\x9c\x95", face);   // a cross
+			drawTool(args.vg, toolBox(6), "\xe2\x9c\x95", face);   // a cross
 	}
 
 	static void drawCross(NVGcontext* vg, math::Rect r) {
@@ -993,11 +1030,55 @@ struct ScoreWindow : widget::OpaqueWidget {
 		nvgStroke(vg);
 	}
 
+	/** WHAT THE TOOL UNDER THE POINTER DOES, in a word. The tools are glyphs, and a glyph only
+	says what it means to whoever chose it. Kept to a word or two: this is a tip, not a sentence. */
+	void drawTip(NVGcontext* vg, std::shared_ptr<window::Font> face) {
+		if (hoverTool < 0)
+			return;
+		static const char* TIPS[] = {"Smaller", "Larger", "Back", "Forward", "Follow",
+			"Instrument", "Loop off"};
+		if (hoverTool >= (int) (sizeof(TIPS) / sizeof(TIPS[0])))
+			return;
+		// NOTHING ABOUT A TOOL THAT IS NOT THERE. Two of them come and go.
+		if (hoverTool == 5 && !(partCount() > 1 || song))
+			return;
+		if (hoverTool == 6 && loopFrom < 0)
+			return;
+		const char* tip = TIPS[hoverTool];
+		nvgFontFaceId(vg, face->handle);
+		nvgFontSize(vg, 12.f);
+		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		float bounds[4] = {0.f, 0.f, 0.f, 0.f};
+		nvgTextBounds(vg, 0.f, 0.f, tip, NULL, bounds);
+		const float w = bounds[2] - bounds[0] + 12.f, h = 18.f;
+		const math::Rect r = toolBox(hoverTool);
+		// UNDER THE BUTTON, and never off the edge of the window.
+		float x = math::clamp(r.getCenter().x - w / 2.f, 2.f, std::fmax(2.f, box.size.x - w - 2.f));
+		const float y = SW_TITLE + 3.f;
+		nvgBeginPath(vg);
+		nvgRoundedRect(vg, x, y, w, h, 3.f);
+		nvgFillColor(vg, nvgRGBA(0, 0, 0, 225));
+		nvgFill(vg);
+		nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 40));
+		nvgStrokeWidth(vg, 1.f);
+		nvgStroke(vg);
+		nvgFillColor(vg, SW_INK);
+		crispText(vg, x + w / 2.f, y + h / 2.f, tip, NULL);
+	}
+
 	void drawTool(NVGcontext* vg, math::Rect r, const char* glyph,
-			std::shared_ptr<window::Font> face) {
+			std::shared_ptr<window::Font> face, int lit = -1) {
+		// A TOOL THAT IS A SWITCH SHOWS WHICH WAY IT IS SET. Lit, it is doing something now;
+		// dark, it is there to be turned on. -1 is a tool that is not a switch at all.
+		if (lit >= 0) {
+			nvgBeginPath(vg);
+			nvgRoundedRect(vg, r.pos.x + 3.f, r.pos.y + 4.f, r.size.x - 6.f, r.size.y - 8.f, 3.f);
+			nvgFillColor(vg, lit ? nvgRGBA(120, 200, 255, 60) : nvgRGBA(255, 255, 255, 16));
+			nvgFill(vg);
+		}
 		nvgFontFaceId(vg, face->handle);
 		nvgFontSize(vg, SW_TITLE * 0.8f);
-		nvgFillColor(vg, SW_INK);
+		nvgFillColor(vg, (lit == 0) ? nvgRGBA(255, 255, 255, 120) : SW_INK);
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 		const math::Vec c = r.getCenter();
 		crispText(vg, c.x, c.y, glyph, NULL);
