@@ -346,14 +346,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// A SIZE ASKED FOR WHILE THE LAST ONE WAS STILL BEING DRAWN. Picked up here rather than
 		// in the button, so pressing plus four times quickly lays the score out once at the end
 		// instead of four times on the way.
-		// WHAT SHAPE THE PAGE SHOULD BE, from the window as it is now. Compared loosely, since a
-		// window being dragged to a new size changes this every frame and laying the score out
-		// again costs a tenth of a second: it settles when the dragging stops.
-		{
-			const math::Rect area = body();
-			if (area.size.x > 1.f && area.size.y > 1.f)
-				wantAspect = area.size.y / area.size.x;
-		}
+		// THE WINDOW'S SHAPE NO LONGER DECIDES THE PAGE'S. A page holds one system, as tall as
+		// it needs to be, and the width is fitted to the music rather than to the window — so
+		// resizing the window scales what is drawn and does not lay the score out again. It used
+		// to, and that relayout was where the fitted width was lost.
 		if (wantReload && !working.load()) {
 			wantReload = false;
 			unitsNow = 0;
@@ -361,7 +357,6 @@ struct ScoreWindow : widget::OpaqueWidget {
 		}
 		if (!working.load() && ready.load()
 				&& (wantUnits != unitsNow || wantPart != partNow
-					|| std::fabs(wantAspect - aspectNow) > 0.02f
 					|| (song && wantStaves != stavesNow))) {
 			beginWork(false);
 		}

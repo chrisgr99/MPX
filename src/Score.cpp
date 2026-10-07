@@ -279,6 +279,11 @@ void Score::setPage(int w, int h) {
 	// systems break in different places and the page count changes.
 	applyOptions();
 	toolkit->RedoLayout();
+	// AND FITTED AGAIN, because this has just thrown the fitted width away. Laying out at the
+	// width that was asked for is exactly what fitSystems exists to correct, so a resize that
+	// did not refit put the crammed layout straight back — which is what a score still coming
+	// out as a scribble after the fit was written turned out to be.
+	fitSystems();
 }
 
 

@@ -314,6 +314,12 @@ int main(int argc, char** argv) {
 	// the drawing — which is how the glyph sheet is fetched too. If this is cheap, a continuous
 	// view costs one pass at load and nothing per frame.
 	if (page == -1) {
+		// AND AGAIN AFTER A RESIZE, which is what the window does when its shape settles. The
+		// fitted width was thrown away by that and the crammed layout came back, so the bench
+		// asks for the page a second time and reports both.
+		std::printf("  before a resize: %d systems\n", score.pageCount());
+		score.setPage(units + 1, (units + 1) * 2);
+		std::printf("  after a resize:  %d systems\n", score.pageCount());
 		const auto began = std::chrono::steady_clock::now();
 		score.measureSystems();
 		const double took = std::chrono::duration<double>(
