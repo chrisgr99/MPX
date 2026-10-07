@@ -112,6 +112,12 @@ passage is still a note and not a drone. */
 static const float MIN_SECONDS = 0.01f;
 static const float MAX_SECONDS = 30.f;
 
+/** HOW LONG A SILENCE HAS TO BE before a slur stops meaning legato, in seconds. A note written to
+end a shade before the next is a player's articulation and the slur still holds the line together;
+a real rest between them is a break the composer asked for. Fifty milliseconds is longer than the
+overlap any renderer adds and far shorter than the shortest rest anybody writes. */
+static const float LEGATO_GAP = 0.05f;
+
 
 /** A song as it is played, with the rows' choice of track. Whole, so that swapping to a new one
 is one store. */
@@ -969,6 +975,18 @@ struct SongModule : Module, NoteSource {
 				e.duration = math::clamp((float) n.lengthQuarters * quarterSeconds,
 					MIN_SECONDS, MAX_SECONDS);
 				describe(e, n, L.song.tracks[(size_t) t].letRingThroughout);
+				// A SLUR ONLY MEANS LEGATO WHERE THERE IS SOMETHING TO BE LEGATO TO. The mark
+				// says a note runs into the one after it, and a renderer holds it on a little
+				// past its end for that reason — but where the next note in this part does not
+				// begin until well after this one has stopped, the sound was meant to break and
+				// holding it over would smear a rest. The engraver's slur is believed about
+				// phrasing; about silence, the notes themselves are.
+				if ((e.technique & Event::SLURRED) && cursor[r] < notes.size()) {
+					const double ends = n.startQuarters + n.lengthQuarters;
+					const double gap = notes[cursor[r]].startQuarters - ends;
+					if (gap * (double) quarterSeconds > LEGATO_GAP)
+						e.technique &= ~(uint32_t) Event::SLURRED;
+				}
 				busPush(slot[r], e);
 				struck = true;
 			}

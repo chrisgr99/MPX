@@ -411,6 +411,10 @@ static void libraryRelease() {
 
 // ---- the module --------------------------------------------------------------------------------
 
+/** THE MOST NOTES TAKEN AS ONE CHORD. Ten fingers, and a few more for a hand that has just
+rolled one, after which balancing them against each other stops meaning anything. */
+static const int MAX_CHORD = 16;
+
 static const int MAX_VOICES = 96;
 /** Voices kept back for the mechanical sounds, so a chord never loses a string to a key noise. */
 static const int NOISE_VOICES = 24;
@@ -478,6 +482,12 @@ struct PianoModule : Module, NoteSink {
 	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
 	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
 	float pedalNoise = 1.f;
+
+	/** HOW FAR A SLURRED NOTE IS HELD PAST ITS WRITTEN END, in seconds. A pianist's finger overlap
+	is a few tens of milliseconds whatever the note is worth; forty is in the middle of what is
+	measured of real playing. The written notes of a score do not overlap at all — in the Ballade
+	consecutive melody notes butt exactly end to end — so all of it has to come from here. */
+	static constexpr float LEGATO_OVERLAP = 0.04f;
 
 	/** HOW LONG THE FOOT IS OFF THE FLOOR when it changes the pedal: long enough for the dampers
 	to touch and clear what was ringing, short enough that the note being played through the
@@ -733,10 +743,55 @@ static float partGain(int part) {
 			level = std::min(1.f, level * 1.25f);
 		if (duration <= 0.f)
 			return;
-		if (technique & Event::STACCATO)
+		if (technique & Event::STACCATO) {
 			duration *= 0.45f;
-		else if (technique & Event::SLURRED)
-			duration *= 1.08f;
+			return;
+		}
+		// LEGATO IS AN OVERLAP OF TIME, NOT OF PROPORTION.
+		//
+		// A FINGER HOLDS ON FOR A MOMENT after the next note is down, and that moment is about
+		// the same however long the note is worth — a pianist does not hold a minim ten times as
+		// far past the next note as a quaver. Stretching by a fraction of the note did exactly
+		// that, and backwards: a note in a fast run got fifteen milliseconds, where the join
+		// matters most, and a long note sixty, where it hardly matters at all.
+		//
+		// AND IT NEVER REACHES THE NOTE AFTER NEXT. Capped against the note's own length as well,
+		// since a very short note stretched by a fixed time would run past its neighbour and
+		// through the one beyond it.
+		if (technique & Event::SLURRED)
+			duration += std::min(LEGATO_OVERLAP, duration * 0.35f);
+	}
+
+	/** HOW A CHORD IS BALANCED AGAINST A SINGLE NOTE.
+
+	THREE NOTES STRUCK TOGETHER ARE FOUR AND EIGHT TENTHS OF A DECIBEL LOUDER than one, and six are
+	nearly eight — which is why a line that alternates single notes and chords comes out lopsided.
+	In the Ballade a single note sits next to a chord a thousand times.
+
+	A PIANIST DOES NOT DIVIDE BY THREE. A chord really is louder than a single note, and should be.
+	But two things hold it back that nothing here was doing. The arm's weight is shared out among
+	the fingers, so the same gesture across three keys gives each key less than one finger takes
+	alone. And a pianist VOICES a chord: the note carrying the tune is played firmly and the inner
+	notes are held back, which is one of the most characteristic things about good playing and the
+	reason a real chord does not swamp the line.
+
+	SO THE TOP NOTE KEEPS ITS LEVEL, the lowest keeps most of its weight, since the bass is the
+	harmony's foundation and is played firmly, and everything between is held back. A three-note
+	chord then comes out about three decibels above a single note instead of nearly five, and a
+	six-note chord about five instead of eight: still louder, which is right, but no longer
+	drowning what it is answering.
+
+	WHAT COUNTS AS A CHORD is whatever is struck in the same sample, which is what reaches here in
+	one go. A rolled chord arrives spread over tens of milliseconds and is left alone, which is
+	also right: it is played note by note. */
+	static float voicing(int rank, int count) {
+		if (count < 2)
+			return 1.f;
+		if (rank == count - 1)
+			return 1.f;         // The top note, which is the one being listened to.
+		if (rank == 0)
+			return 0.8f;        // The bass, which carries the harmony.
+		return 0.6f;            // Everything in between.
 	}
 
 	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft,
@@ -981,18 +1036,45 @@ static float partGain(int part) {
 
 		if (bank) {
 			Event e;
+			// EVERYTHING STRUCK AT ONCE IS TAKEN AT ONCE, so a chord can be balanced as a chord
+			// rather than as a handful of notes that happen to coincide. See voicing.
+			Event struck[MAX_CHORD];
+			int chord = 0;
 			while (reader.next(e)) {
 				if (e.kind == Event::ON) {
-					// WHAT THE SCORE WROTE OVER THE NOTE, turned into a hammer speed and a
-					// finger's length: see shapeByMark.
-					float level = e.level, duration = e.duration;
-					shapeByMark(e.technique, level, duration);
-					noteOn(e.handle, e.pitch, level, sr, soft, duration);
+					if (chord < MAX_CHORD)
+						struck[chord++] = e;
+					else {
+						// More notes at one instant than any hand could play: the rest are
+						// started unbalanced rather than dropped.
+						float level = e.level, duration = e.duration;
+						shapeByMark(e.technique, level, duration);
+						noteOn(e.handle, e.pitch, level, sr, soft, duration);
+					}
 				}
 				else if (e.kind == Event::OFF)
 					noteOff(e.handle, sr, sustain);
 				else
 					update(e, sr);
+			}
+			if (chord > 0) {
+				// IN PITCH ORDER, since which note is the top one is the whole question. A short
+				// insertion sort: there are never more than a handful.
+				for (int a = 1; a < chord; a++) {
+					Event hold = struck[a];
+					int b = a - 1;
+					for (; b >= 0 && struck[b].pitch > hold.pitch; b--)
+						struck[b + 1] = struck[b];
+					struck[b + 1] = hold;
+				}
+				for (int a = 0; a < chord; a++) {
+					// WHAT THE SCORE WROTE OVER THE NOTE, turned into a hammer speed and a
+					// finger's length: see shapeByMark.
+					float level = struck[a].level, duration = struck[a].duration;
+					shapeByMark(struck[a].technique, level, duration);
+					level *= voicing(a, chord);
+					noteOn(struck[a].handle, struck[a].pitch, level, sr, soft, duration);
+				}
 			}
 
 			// THE PEDAL MOVING. Down is heard as the pedal's own noise; up lets every damper fall

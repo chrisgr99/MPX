@@ -48,9 +48,26 @@ The menu chooses how many velocity layers to load: 4, 8 or all 16, default 16. A
 
 A piano has one way to sound a note — a hammer at a speed — so every mark a score carries reaches it as some mixture of how hard the key is struck and how long the finger stays down, and nothing else.
 
+### Balancing a chord against a single note
+
+Three notes struck together are 4.8 dB louder than one and six are nearly 8, which is why a line alternating single notes and chords comes out lopsided — in the Ballade a single note sits next to a chord a thousand times.
+
+A pianist does not answer this by dividing by three, because a chord really is louder than a single note. Two other things hold it back. The arm's weight is shared out among the fingers, so the same gesture across three keys gives each key less than one finger takes alone. And a pianist **voices** a chord: the note carrying the tune is played firmly and the inner notes are held back, which is one of the most characteristic things about good playing and the reason a real chord does not swamp the line.
+
+So the top note keeps its level, the lowest keeps most of its weight since the bass is the harmony's foundation, and everything between is held back:
+
+| struck together | was | now |
+|---|---|---|
+| two notes | +3.0 dB | +2.1 dB |
+| three notes | +4.8 dB | +3.0 dB |
+| four notes | +6.0 dB | +3.7 dB |
+| six notes | +7.8 dB | +4.9 dB |
+
+Still louder, which is right, but no longer drowning what it is answering. A chord is whatever is struck in the same sample; a rolled chord arrives spread over tens of milliseconds and is left alone, which is also right, since it is played note by note.
+
 - **An accent is a faster hammer**, a quarter louder, and brighter with it because the recorded layers are brighter the harder they were struck. A strong accent is nearly half again.
 - **A staccato is the same hammer and an early release**, taking the note to under half its written length.
-- **A note under a slur is held a little past its length**, which is the overlap between one finger and the next that makes a line sound joined rather than typed.
+- **A note under a slur is held forty milliseconds past its length**, which is the overlap between one finger and the next that makes a line sound joined rather than typed. An overlap of TIME and not of proportion: a pianist does not hold a minim ten times as far past the next note as a quaver, and the written notes of a score provide none of it — in the Ballade consecutive melody notes butt exactly end to end. It is capped against the note's own length so a short note cannot run past its neighbour, and mpxScore takes the slur off a note that has a real rest after it, since about silence the notes are a better authority than the engraver's phrasing.
 - **Tenuto is the written length with nothing taken off it**, which is what a note gets anyway, so it changes nothing here and is carried for the modules that will want it.
 
 ### Pedalling what the score does not mark

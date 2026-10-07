@@ -113,6 +113,29 @@ int main(int argc, char** argv) {
 				lowest = std::min(lowest, n.dynamic);
 				highest = std::max(highest, n.dynamic);
 			}
+		// WHAT THE LEGATO RULE WILL DO, counted here because the module that applies it cannot be
+		// run: a slur means a note is held a little past its end, except where the next note in
+		// that part does not arrive until the sound was meant to have broken. See GuitarChart.
+		int slurs = 0, broken = 0;
+		double quarterSeconds = 0.5;
+		if (line.seconds > 0.0 && line.quarters > 0.0)
+			quarterSeconds = line.seconds / line.quarters;
+		for (size_t t = 0; t < line.tracks.size(); t++) {
+			const std::vector<GpPlayedNote>& ns = line.tracks[t];
+			for (size_t i = 0; i < ns.size(); i++) {
+				if (!ns[i].note.slurred || ns[i].note.staccato)
+					continue;
+				slurs++;
+				if (i + 1 >= ns.size())
+					continue;
+				const double ends = ns[i].startQuarters + ns[i].lengthQuarters;
+				if ((ns[i + 1].startQuarters - ends) * quarterSeconds > 0.05)
+					broken++;
+			}
+		}
+		std::fprintf(stderr,
+			"  legato: %d slurred notes, %d of them with a real rest after, so held over: %d\n",
+			slurs, broken, slurs - broken);
 		std::fprintf(stderr,
 			"  pedal: %d down, %d up, %d change, %d of them the middle pedal\n"
 			"  notes: %d accented, %d heavily, %d staccato, %d tenuto, %d slurred, %d rolled\n"
