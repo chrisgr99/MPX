@@ -55,6 +55,10 @@ of anything can be measured by watching what goes past between the two. Only mea
 they are what the pointer is pointed at and what a loop is made of. */
 struct ScoreBox {
 	std::string id;
+	/** WHICH BAR OF THE SCORE IT IS, as the file numbers them — which is what everything outside
+	the drawing counts in, and what lets a playing bar be found on the page. Empty where the
+	writer numbered nothing. */
+	std::string number;
 	float x1 = 0.f, y1 = 0.f, x2 = 0.f, y2 = 0.f;
 	bool valid() const { return x2 > x1 && y2 > y1; }
 };

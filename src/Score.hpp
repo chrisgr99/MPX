@@ -33,6 +33,27 @@ struct ScorePart {
 };
 
 
+/** ONE SYSTEM OF THE SCORE, measured but not drawn.
+
+A CONTINUOUS VIEW IS A STACK OF SYSTEMS, not a sequence of pages. Verovio lays out pages and draws
+one at a time, so the score is laid out onto pages just tall enough for a single system and the
+window stacks as many as it can see. Nothing is engraved twice and no page break is ever shown.
+
+The heights come from a render with no context — everything up to the drawing, which measures the
+ink without putting any of it on the screen. See Score::measureSystems. */
+struct ScoreSystem {
+	/** Where this system's top sits in the whole flow, in page units from the first system. */
+	float top = 0.f;
+	float height = 0.f;
+	/** What the page itself called the top of this system, which is what must be taken off when
+	it is drawn somewhere else. */
+	float shift = 0.f;
+	/** The bars on it, in this system's own coordinates: `top` already taken off, so a bar's
+	place in the flow is its box plus nothing. */
+	std::vector<ScoreBox> bars;
+};
+
+
 struct Score {
 	Score();
 	~Score();
@@ -44,6 +65,9 @@ struct Score {
 	thread and never from the drawing one. Returns false and fills `reason`. */
 	bool load(const std::string& musicxml, std::string* reason);
 	bool loadFile(const std::string& path, std::string* reason);
+	/** THE SAME, FROM BYTES ALREADY IN HAND, compressed or not. `called` is what to call it, since
+	there is no path to take a name from. */
+	bool loadBytes(const std::string& bytes, const std::string& called, std::string* reason);
 	bool ready() const;
 
 	/** THE INSTRUMENTS IN THE FILE, and which one is being shown.
@@ -87,6 +111,14 @@ struct Score {
 	/** Where each bar of the last page drawn ended up, in Verovio units. */
 	const std::vector<ScoreBox>& bars() const;
 
+	/** EVERY SYSTEM, measured. Costs one render of each with nothing to draw on — a fifth of a
+	second for a long piano score — so it is done on the thread that lays the score out, once,
+	and never where the drawing happens. */
+	void measureSystems();
+	const std::vector<ScoreSystem>& systems() const { return allSystems; }
+	/** How tall the whole flow is, in page units. */
+	float flowHeight() const;
+
 	/** What the last page drawn asked for, and what could not be drawn. See ScoreDraw::Tally. */
 	const ScoreDraw* backend() const { return device; }
 
@@ -103,6 +135,7 @@ private:
 	std::string name;
 	/** The file as it came, kept so that another part can be cut from it without reading it
 	again. A long score is a few megabytes, which is less than the laid-out document beside it. */
+	std::vector<ScoreSystem> allSystems;
 	std::string source;
 	std::vector<ScorePart> allParts;
 	int chosen = 0;

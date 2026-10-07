@@ -38,6 +38,11 @@ std::string Score::resourcePath() {
 }
 
 
+/** HOW FAR APART STACKED SYSTEMS SIT, in page units. Each is trimmed to its own ink, so without
+this they would touch. */
+static const float SCORE_SYSTEM_GAP = 900.f;
+
+
 void Score::applyOptions() {
 	// FOOTER AND HEADER OFF. They are for printing a page, and this is a window on a score: the
 	// title and the composer would take a third of the first page and say what the panel says.
@@ -174,7 +179,20 @@ bool Score::loadFile(const std::string& path, std::string* reason) {
 	}
 	std::stringstream all;
 	all << file.rdbuf();
-	source = all.str();
+	std::string called = path;
+	const size_t slash = called.find_last_of('/');
+	if (slash != std::string::npos)
+		called = called.substr(slash + 1);
+	return loadBytes(all.str(), called, reason);
+}
+
+
+/** THE SAME, ON A DOCUMENT ALREADY IN HAND. A module that loaded a file holds the bytes of it —
+it has to, since a patch carries the score inside it — and handing those over shows the score the
+writer wrote rather than one converted back out of the model, which is not the same document and
+on a piano is not even the same number of staves. See scoreWindowShowDocument. */
+bool Score::loadBytes(const std::string& bytes, const std::string& called, std::string* reason) {
+	source = bytes;
 
 	// COMPRESSED MUSICXML, OPENED HERE RATHER THAN LEFT TO VEROVIO.
 	//
@@ -209,8 +227,7 @@ bool Score::loadFile(const std::string& path, std::string* reason) {
 			reason->clear();
 	}
 
-	const size_t slash = path.find_last_of('/');
-	name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+	name = called;
 	const size_t dot = name.find_last_of('.');
 	if (dot != std::string::npos && dot > 0)
 		name = name.substr(0, dot);
@@ -288,6 +305,45 @@ void Score::drawOneGlyph(NVGcontext* vg, char32_t code, int width, int height) {
 
 float Score::drawnHeight() const {
 	return device ? device->page.y2 : 0.f;
+}
+
+
+void Score::measureSystems() {
+	allSystems.clear();
+	if (!loaded || !device)
+		return;
+	// A GAP BETWEEN SYSTEMS, since each is trimmed to its own ink and two stacked with none would
+	// touch. A fifth of the mean system is about what a page leaves.
+	float top = 0.f;
+	const int count = pageCount();
+	allSystems.reserve((size_t) std::max(0, count));
+	for (int p = 1; p <= count; p++) {
+		// A RENDER WITH NOTHING TO DRAW ON: see drawOneGlyph, which uses the same trick to fetch
+		// the glyphs. Every drawing in ScoreDraw measures before it looks for a context.
+		device->vg = NULL;
+		toolkit->RenderToDeviceContext(p, device);
+		ScoreSystem sys;
+		sys.shift = device->page.y1;
+		sys.height = std::fmax(0.f, device->page.y2 - device->page.y1);
+		sys.top = top;
+		sys.bars = device->bars;
+		// THE BARS IN THE SYSTEM'S OWN COORDINATES, so nothing downstream has to know what the
+		// page thought it was doing.
+		for (size_t i = 0; i < sys.bars.size(); i++) {
+			sys.bars[i].y1 -= sys.shift;
+			sys.bars[i].y2 -= sys.shift;
+		}
+		top += sys.height + SCORE_SYSTEM_GAP;
+		allSystems.push_back(sys);
+	}
+}
+
+
+float Score::flowHeight() const {
+	if (allSystems.empty())
+		return 0.f;
+	const ScoreSystem& last = allSystems.back();
+	return last.top + last.height;
 }
 
 

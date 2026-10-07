@@ -2,6 +2,7 @@
 // Verovio is reached through Score, which keeps its headers to itself — but Score.hpp forward
 // declares vrv::Toolkit only, so nothing here has to be included in a particular order.
 #include "ScoreWindow.hpp"
+#include "ScoreFollow.hpp"
 
 #include "GpMusicXML.hpp"
 #include "GuitarPro.hpp"
@@ -51,7 +52,6 @@ const int SW_UNITS_STEP = 200;
 
 /** The page's shape, fixed: portrait, three to four, so that changing how large the notation is
 does not also change the shape of the paper under it. */
-const float SW_PAGE_ASPECT = 4.f / 3.f;
 
 
 /** Where the window was last dragged to, or negative when nobody has moved it. */
@@ -71,6 +71,13 @@ struct ScoreWindow : widget::OpaqueWidget {
 	a path and cuts the part out of the document instead. Only one of the two is ever set. */
 	std::shared_ptr<const GpSong> song;
 
+	/** THE DOCUMENT THE MODULE LOADED, where the file it loaded was MusicXML. Shown in preference
+	to the song, because it is not the same score: a piano is one part of two staves in the file
+	and two tracks of one staff in the model, so a window built from the model shows one hand and
+	loses the pedalling, which is written under the other one. The module holds these bytes
+	already — a patch carries the score inside it — so this costs nothing to carry. */
+	std::shared_ptr<const std::string> document;
+
 	/** THE SCORE, AND THE THREAD THAT LAYS IT OUT.
 
 	Seventeen parts of a long song take Verovio over a second, which is thirty dropped frames if
@@ -85,6 +92,15 @@ struct ScoreWindow : widget::OpaqueWidget {
 	should use next, and what it last used. */
 	int wantUnits = 1500;
 	int unitsNow = 0;
+	/** THE PAGE IS THE SHAPE OF THE WINDOW, which is what makes one page one windowful.
+
+	A page of a fixed shape is a page that does not fit: the window would scroll down it and then
+	turn to the next one, so the reader is working two ways of moving through the same score at
+	once, and the breaks are in the engraver's places rather than anywhere to do with what can be
+	seen. Given the window's own shape to lay out into, Verovio fills each page with as many
+	systems as fit and never splits one across the bottom edge, so turning the page is the only
+	movement there is and every page is full. */
+	float wantAspect = 1.f, aspectNow = 0.f;
 	/** Which instrument is being shown, and which one the worker last fetched. */
 	int wantPart = 0;
 	int partNow = 0;
@@ -92,9 +108,25 @@ struct ScoreWindow : widget::OpaqueWidget {
 	GpStaves wantStaves = GP_BOTH;
 	GpStaves stavesNow = GP_BOTH;
 
-	int page = 1;
-	/** How far down the page the view is, in pixels of the page as drawn. */
-	float scroll = 0.f;
+	/** THE BARS BEING LOOPED, as the file numbers them, counting from nought; minus one for none.
+	Held here as well as published so the window can draw what it asked for without reading back
+	something a module may not have taken yet. */
+	int loopFrom = -1, loopTo = -1;
+	/** The bar last clicked, which a shift-click makes a loop back to. */
+	int anchor = -1;
+	/** WHETHER THE PAGE FOLLOWS THE MUSIC. On until the reader turns a page by hand, which is a
+	reader who wants to look at something, and back on when the music is sent somewhere by hand. */
+	bool follow = true;
+	bool wasPlaying = false;
+
+	/** HOW FAR DOWN THE WHOLE SCORE THE VIEW IS, in page units from the top of the first system —
+	not pixels, which change with the width of the window, and not a page, of which there are none
+	to the reader. `want` is where it is going and `flow` where it has got to: a view that jumped
+	to a new system left the eye with nothing to follow, so it glides. */
+	float flow = 0.f, flowWant = 0.f;
+	/** Kept only because the page buttons and the engraving talk in pages; the reader never sees
+	one, since a page here holds a single system. */
+
 	/** 0 nothing, 1 moving, 2 resizing. */
 	int drag = 0;
 	int edges = 0;
@@ -105,6 +137,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 	}
 
 	~ScoreWindow() override {
+		// THE LOOP GOES WITH THE WINDOW THAT ASKED FOR IT. The module would otherwise be left
+		// going round a bar with nothing on screen admitting to it and nothing to click to stop
+		// it, which is a state a patch cannot be got out of.
+		if (loopFrom >= 0)
+			px::scoreFollowSetLoop(moduleId, -1, -1, false);
 		if (worker.joinable())
 			worker.join();
 	}
@@ -122,15 +159,30 @@ struct ScoreWindow : widget::OpaqueWidget {
 		working.store(true);
 		ready.store(false);
 		const int units = wantUnits;
+		const float aspect = wantAspect;
 		const int part = wantPart;
 		const GpStaves staves = wantStaves;
 		const std::string file = path;
 		const std::shared_ptr<const GpSong> carried = song;
-		worker = std::thread([this, load, units, part, staves, file, carried]() {
+		const std::shared_ptr<const std::string> doc = document;
+		worker = std::thread([this, load, units, aspect, part, staves, file, carried, doc]() {
 			std::string reason;
 			bool ok = true;
-			score.setPage(units, (int) (units * SW_PAGE_ASPECT));
-			if (carried) {
+			// ONE SYSTEM TO A PAGE. The window stacks them itself, so what Verovio calls a page
+			// is never shown as one: a page just tall enough for a single system is how a
+			// continuous view is got out of a renderer that draws pages. The height only has to
+			// be too small for two systems; Verovio does not stretch one to fill it.
+			score.setPage(units, (int) (units * 0.35f));
+			(void) aspect;
+			if (doc) {
+				// THE WRITER'S OWN DOCUMENT, cut to one part as a file opened by name is.
+				if (load)
+					ok = score.loadBytes(*doc, name, &reason);
+				else if (part != score.part())
+					ok = score.setPart(part, &reason);
+				partNow = score.part();
+			}
+			else if (carried) {
 				// FROM THE SONG ITSELF, one track written out as MusicXML. Converting is quick —
 				// thousandths of a second against the tenths that laying it out takes — so there
 				// is nothing to be gained by keeping the last one.
@@ -159,7 +211,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 					ok = score.setPart(part, &reason);
 				partNow = score.part();
 			}
+			if (ok)
+				score.measureSystems();
 			unitsNow = units;
+			aspectNow = aspect;
 			trouble = ok ? "" : reason;
 			ready.store(ok);
 			working.store(false);
@@ -200,8 +255,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		if (to == wantStaves)
 			return;
 		wantStaves = to;
-		page = 1;
-		scroll = 0.f;
+		flow = flowWant = 0.f;
 		beginWork(false);
 	}
 
@@ -260,8 +314,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		if (index == wantPart)
 			return;
 		wantPart = index;
-		page = 1;
-		scroll = 0.f;
+		flow = flowWant = 0.f;
 		beginWork(false);
 	}
 
@@ -278,7 +331,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		wantUnits = math::clamp(wantUnits - by * SW_UNITS_STEP, SW_UNITS_MIN, SW_UNITS_MAX);
 		if (wantUnits == unitsNow)
 			return;
-		scroll = 0.f;
+		flow = flowWant = 0.f;
 		beginWork(false);
 	}
 
@@ -287,13 +340,59 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// A SIZE ASKED FOR WHILE THE LAST ONE WAS STILL BEING DRAWN. Picked up here rather than
 		// in the button, so pressing plus four times quickly lays the score out once at the end
 		// instead of four times on the way.
+		// WHAT SHAPE THE PAGE SHOULD BE, from the window as it is now. Compared loosely, since a
+		// window being dragged to a new size changes this every frame and laying the score out
+		// again costs a tenth of a second: it settles when the dragging stops.
+		{
+			const math::Rect area = body();
+			if (area.size.x > 1.f && area.size.y > 1.f)
+				wantAspect = area.size.y / area.size.x;
+		}
 		if (!working.load() && ready.load()
 				&& (wantUnits != unitsNow || wantPart != partNow
+					|| std::fabs(wantAspect - aspectNow) > 0.02f
 					|| (song && wantStaves != stavesNow))) {
 			beginWork(false);
 		}
-		if (usable() && page > score.pageCount())
-			page = std::max(1, score.pageCount());
+		// STARTING TO PLAY PUTS THE VIEW BACK ON THE MUSIC. Scrolling by hand stops the view
+		// chasing it, which is right for a reader looking ahead at something — but then pressing
+		// play is them asking to hear the piece, and a view still parked where they were reading
+		// would leave the music running along out of sight.
+		{
+			int at = -1;
+			float through = 0.f;
+			bool going = false;
+			if (px::scoreFollowRead(moduleId, at, through, going)) {
+				if (going && !wasPlaying)
+					follow = true;
+				wasPlaying = going;
+			}
+		}
+		// THE VIEW FOLLOWS THE MUSIC.
+		if (follow && usable() && !working.load()) {
+			int at = -1;
+			float through = 0.f;
+			bool going = false;
+			if (px::scoreFollowRead(moduleId, at, through, going) && going && at >= 0)
+				bringIntoView(at);
+		}
+		// AND GETS THERE SMOOTHLY. A view that jumped to a new system left the eye with nothing
+		// to follow — which is the whole complaint against pages — so it glides, fast enough to
+		// keep up with the music and slow enough to be followed. A move of less than a tenth of a
+		// unit is finished rather than approached for ever.
+		if (std::fabs(flowWant - flow) > 0.1f)
+			flow += (flowWant - flow) * 0.18f;
+		else
+			flow = flowWant;
+		// THE VIEW CANNOT BE PAST THE END, which a score laid out again at a new size may leave
+		// it: fewer systems, or shorter ones, and what was the middle is now past the bottom.
+		if (usable() && !working.load()) {
+			const float most = deepest();
+			if (flowWant > most)
+				flowWant = most;
+			if (flow > most)
+				flow = most;
+		}
 		escapeStep();
 	}
 
@@ -428,12 +527,12 @@ struct ScoreWindow : widget::OpaqueWidget {
 					return;
 				}
 				if (toolBox(2).contains(e.pos)) {
-					turnTo(page - 1);
+					stepView(-1);
 					claim(e, this);
 					return;
 				}
 				if (toolBox(3).contains(e.pos)) {
-					turnTo(page + 1);
+					stepView(1);
 					claim(e, this);
 					return;
 				}
@@ -442,12 +541,80 @@ struct ScoreWindow : widget::OpaqueWidget {
 					claim(e, this);
 					return;
 				}
+				if (loopFrom >= 0 && toolBox(5).contains(e.pos)) {
+					clearLoop();
+					claim(e, this);
+					return;
+				}
 				drag = 1;
+				claim(e, this);
+				return;
+			}
+			// ON THE MUSIC ITSELF: the bar under the pointer is the one to go round. Clicking
+			// one loops it; holding shift and clicking another takes the loop out to there;
+			// clicking inside the loop again lets it go. See ScoreFollow.hpp.
+			// ON THE MUSIC ITSELF.
+			//
+			// A PLAIN CLICK GOES TO THAT BAR AND LOOPS NOTHING. Clicking a bar is how a passage
+			// is found, and it is what every program that shows music does: it moves the music
+			// there and lets go of whatever was repeating. Looping used to be the same gesture,
+			// which meant a reader who wanted to hear bar forty got bar forty over and over.
+			//
+			// HOLDING SHIFT MAKES A LOOP, from the bar last clicked to this one, which is how a
+			// range is picked everywhere else.
+			const int bar = barAt(e.pos);
+			if (bar >= 0) {
+				if ((e.mods & GLFW_MOD_SHIFT) && anchor >= 0) {
+					loopFrom = std::min(anchor, bar);
+					loopTo = std::max(anchor, bar);
+					px::scoreFollowSetLoop(moduleId, loopFrom, loopTo, true);
+				}
+				else {
+					anchor = bar;
+					clearLoop();
+					px::scoreFollowGoTo(moduleId, bar);
+				}
+				follow = true;
 				claim(e, this);
 				return;
 			}
 		}
 		OpaqueWidget::onButton(e);
+	}
+
+	void clearLoop() {
+		loopFrom = loopTo = -1;
+		px::scoreFollowSetLoop(moduleId, -1, -1, false);
+	}
+
+	/** WHICH BAR IS UNDER A POINT IN THE WINDOW, or minus one for none. The boxes are in the
+	page's own units, so the point is put into those before it is asked about — the same
+	transform the drawing uses, undone. */
+	int barAt(math::Vec pos) const {
+		if (!usable())
+			return -1;
+		const math::Rect area = const_cast<ScoreWindow*>(this)->body();
+		if (!area.contains(pos))
+			return -1;
+		const float unit = score.pageScale(area.size.x);
+		if (unit <= 0.f)
+			return -1;
+		const float x = (pos.x - area.pos.x) / unit;
+		const float y = (pos.y - area.pos.y) / unit + flow;
+		const std::vector<px::ScoreSystem>& sys = score.systems();
+		for (size_t i = 0; i < sys.size(); i++) {
+			if (y < sys[i].top || y > sys[i].top + sys[i].height)
+				continue;
+			for (size_t b = 0; b < sys[i].bars.size(); b++) {
+				const px::ScoreBox& box = sys[i].bars[b];
+				if (box.number.empty())
+					continue;
+				if (x >= box.x1 && x <= box.x2
+						&& y >= box.y1 + sys[i].top && y <= box.y2 + sys[i].top)
+					return std::atoi(box.number.c_str()) - 1;
+			}
+		}
+		return -1;
 	}
 
 	void onDragMove(const DragMoveEvent& e) override {
@@ -489,48 +656,71 @@ struct ScoreWindow : widget::OpaqueWidget {
 		return ready.load() && !working.load();
 	}
 
-	void turnTo(int to) {
-		if (!usable())
+	/** BRINGS A BAR INTO VIEW, by putting the system it is on near the top of the window.
+
+	NOTHING MOVES WHILE THE BAR IS WHOLLY VISIBLE — a view that scrolled on every bar would never
+	be still, and still is what a page of small print has to be to be read. When it is not, the
+	bar's own system goes to the top, which is where the most music after it is. */
+	void bringIntoView(int bar) {
+		px::ScoreBox box;
+		if (!boxOf(bar, box))
 			return;
-		const int last = std::max(1, score.pageCount());
-		page = math::clamp(to, 1, last);
-		scroll = 0.f;
+		const math::Rect area = body();
+		const float unit = score.pageScale(area.size.x);
+		if (unit <= 0.f)
+			return;
+		// Where the bar would sit in the window once the view has finished moving.
+		const float top = (box.y1 - flowWant) * unit, bottom = (box.y2 - flowWant) * unit;
+		if (top >= 0.f && bottom <= area.size.y)
+			return;
+		const float margin = std::fmin(24.f, area.size.y * 0.04f) / unit;
+		flowWant = math::clamp(box.y1 - margin, 0.f, deepest());
 	}
+
+	/** How far down the flow the view can go: far enough to bring the last system to the bottom
+	of the window and no further, so the score does not scroll off into nothing. */
+	float deepest() {
+		const math::Rect area = body();
+		const float unit = score.pageScale(area.size.x);
+		if (unit <= 0.f)
+			return 0.f;
+		return std::fmax(0.f, score.flowHeight() - area.size.y / unit);
+	}
+
+	/** A WINDOWFUL AT A TIME, which is what the two arrows do now that there are no pages: the
+	reader wanting the next screen of music, with a system's worth kept in common so the eye has
+	something it has already read to land on. */
+	void stepView(int way) {
+		follow = false;
+		const math::Rect area = body();
+		const float unit = score.pageScale(area.size.x);
+		if (unit <= 0.f)
+			return;
+		const float screen = std::fmax(1.f, area.size.y / unit);
+		flowWant = math::clamp(flowWant + way * screen * 0.85f, 0.f, deepest());
+	}
+
 
 	/** THE WHEEL WALKS THE WHOLE SCORE, not one page. A page taller than the window has to be
 	scrolled, and reaching the bottom of one page and then having to find a button to get to the
 	next is a pause in the middle of reading. Scrolling past the end turns the page. */
 	void onHoverScroll(const HoverScrollEvent& e) override {
 		// NOT WHILE IT IS BEING ENGRAVED. A long score takes over a second to lay out, which is a
-		// second in which the wheel is there to be turned — and turning it asked the document how
-		// many pages it had while Verovio was still deciding.
+		// second in which the wheel is there to be turned.
 		if (!usable()) {
 			e.consume(this);
 			e.stopPropagating();
 			return;
 		}
-		const float over = pageHeight() - body().size.y;
-		scroll -= e.scrollDelta.y;
-		if (scroll > std::fmax(0.f, over)) {
-			if (page < score.pageCount()) {
-				page++;
-				scroll = 0.f;
-			}
-			else
-				scroll = std::fmax(0.f, over);
-		}
-		else if (scroll < 0.f) {
-			if (page > 1) {
-				page--;
-				scroll = std::fmax(0.f, pageHeight() - body().size.y);
-			}
-			else
-				scroll = 0.f;
-		}
+		follow = false;
+		const float unit = score.pageScale(body().size.x);
+		// THE WHEEL MOVES THE SCORE, not a page of it: a notch is about a line of music at any
+		// size, since the units are the score's and the pixels are the window's.
+		if (unit > 0.f)
+			flowWant = math::clamp(flowWant - e.scrollDelta.y / unit, 0.f, deepest());
 		e.consume(this);
 		e.stopPropagating();
 	}
-
 	/** Escape closes it, asked of the keyboard for the reason the chart window gives. */
 	bool escapeWasDown = false;
 
@@ -571,28 +761,57 @@ struct ScoreWindow : widget::OpaqueWidget {
 
 	// ---- drawing -------------------------------------------------------------------------------
 
-	/** HOW FAR THE VIEW HAS TO SCROLL, in pixels.
 
-	The page's own height, or how far the music actually reached if that is further — which it is
-	whenever a score has more parts than a page that size can hold. Scrolling to the page's height
-	alone would leave the rest of the music below the bottom edge with no way to reach it.
+	/** THE BOX OF ONE BAR ON THE PAGE AS DRAWN, or nothing where that bar is on another page.
+	The boxes come from the drawing, so this is only true of the page last drawn. */
+	/** WHERE A BAR IS IN THE WHOLE FLOW: its box with the system's own offset already in it, so
+	everything above works in one set of coordinates. False where there is no such bar. */
+	bool boxOf(int bar, px::ScoreBox& out) const {
+		if (bar < 0)
+			return false;
+		// THE FILE NUMBERS FROM ONE and everything here counts from nought.
+		const std::string want = std::to_string(bar + 1);
+		const std::vector<px::ScoreSystem>& sys = score.systems();
+		for (size_t i = 0; i < sys.size(); i++) {
+			for (size_t b = 0; b < sys[i].bars.size(); b++) {
+				if (sys[i].bars[b].number != want)
+					continue;
+				out = sys[i].bars[b];
+				out.y1 += sys[i].top;
+				out.y2 += sys[i].top;
+				return true;
+			}
+		}
+		return false;
+	}
 
-	How far it reached is only known once the page has been drawn, so the first frame scrolls to
-	the nominal height and every frame after that to the true one. */
-	float pageHeight() {
-		const float nominal = body().size.x * SW_PAGE_ASPECT;
-		if (!usable())
-			return nominal;
-		const float unit = score.pageScale(body().size.x);
-		const float drawn = score.drawnHeight() * unit;
-		return std::fmax(nominal, drawn + body().size.y * 0.04f);
+
+	/** PUTS WHATEVER IS DRAWN NEXT ON A WHOLE PIXEL OF THE SCREEN.
+
+	A staff line is thinner than a pixel, so where it falls between two of them decides how it is
+	shared across both. While the music moves, a line seated at a fraction that changes every frame
+	is shared differently every frame, and that is seen as the lines shimmering — which on a page
+	of small print makes the score unreadable while it scrolls.
+
+	ROUNDING IN THE WINDOW'S OWN COORDINATES IS NOT ENOUGH, which is the thing that took a second
+	go. Rack draws the whole rack through a zoom, so a whole number here is a fraction on the
+	screen at any zoom that is not exactly one — and at that point the rounding has done nothing
+	at all. So the transform in force is asked where it is actually putting things, and the nudge
+	is worked out there and applied back through the scale. */
+	static void snapToPixels(NVGcontext* vg) {
+		float xf[6] = {1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
+		nvgCurrentTransform(vg, xf);
+		// [4] and [5] are where the origin lands on the screen; [0] and [3] are the scale it got
+		// there by. A scale of nought would be a transform with nothing to draw into.
+		if (std::fabs(xf[0]) < 1e-6f || std::fabs(xf[3]) < 1e-6f)
+			return;
+		const float dx = (std::round(xf[4]) - xf[4]) / xf[0];
+		const float dy = (std::round(xf[5]) - xf[5]) / xf[3];
+		nvgTranslate(vg, dx, dy);
 	}
 
 	void drawPage(const DrawArgs& args) {
 		const math::Rect area = body();
-		// THE PAPER IS THE WHOLE WIDTH. A page narrower than the window with grey each side
-		// would be tidier and would also mean the notation is smaller than it needs to be, which
-		// is the one thing this window is for.
 		nvgSave(args.vg);
 		nvgScissor(args.vg, area.pos.x, area.pos.y, area.size.x, area.size.y);
 
@@ -601,18 +820,80 @@ struct ScoreWindow : widget::OpaqueWidget {
 		nvgFillColor(args.vg, SW_PAPER);
 		nvgFill(args.vg);
 
-		// THE BACKEND IS TOLD WHAT THE PAPER IS, so it can take ink away as well as put it down —
-		// a tablature line is broken behind its fret number by painting the number's box out in
-		// this colour. See ScoreDraw::paper.
 		if (px::ScoreDraw* back = const_cast<px::ScoreDraw*>(score.backend()))
 			back->paper = SW_PAPER;
 		const float unit = score.pageScale(area.size.x);
-		nvgTranslate(args.vg, area.pos.x, area.pos.y - scroll);
-		nvgScale(args.vg, unit, unit);
-		score.draw(args.vg, page, unit);
+
+		// THE SYSTEMS THAT CAN BE SEEN, AND NO OTHERS. A continuous view of a long score is
+		// hundreds of systems and drawing them all would cost half a second a frame; drawing the
+		// two or three in the window costs what one page used to.
+		const std::vector<px::ScoreSystem>& sys = score.systems();
+		for (size_t i = 0; i < sys.size(); i++) {
+			const float top = (sys[i].top - flow) * unit;
+			const float bottom = top + sys[i].height * unit;
+			if (bottom < 0.f || top > area.size.y)
+				continue;
+			nvgSave(args.vg);
+			// ON WHOLE PIXELS. A staff line is drawn half a pixel wide, so where it falls between
+			// two of them decides how it is shared across both — and a system seated at a
+			// fraction that changes every frame shares them differently every frame, which is
+			// seen as the lines shimmering while the music moves. Scrolling by whole pixels keeps
+			// every line at the same fraction it had when it was still, so they hold steady. The
+			// score still moves smoothly: a pixel at this size is a fiftieth of a staff space.
+			//
+			// The page's own top is taken off here as well: see ScoreSystem::shift.
+			nvgTranslate(args.vg, area.pos.x, area.pos.y + top - sys[i].shift * unit);
+			snapToPixels(args.vg);
+			nvgScale(args.vg, unit, unit);
+			score.draw(args.vg, (int) i + 1, unit);
+			nvgRestore(args.vg);
+		}
+
+		// WHAT IS BEING LOOPED AND WHERE THE MUSIC IS, over the music and in the window's own
+		// pixels, since the systems each have a transform of their own and these do not.
+		nvgTranslate(args.vg, area.pos.x, area.pos.y);
+		snapToPixels(args.vg);
+		if (loopFrom >= 0 && loopTo >= loopFrom) {
+			for (int b = loopFrom; b <= loopTo; b++) {
+				px::ScoreBox box;
+				if (!boxOf(b, box))
+					continue;
+				// SEEN ON DARK PAPER. A wash at a tenth of full strength is how this is done on
+				// white and is all but invisible on a page this dark, which left a reader looping
+				// a bar with nothing to show for it. A stronger wash and an outline around it:
+				// the wash says which bars and the outline says so again at a glance.
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, box.x1 * unit, (box.y1 - flow) * unit,
+					(box.x2 - box.x1) * unit, (box.y2 - box.y1) * unit);
+				nvgFillColor(args.vg, nvgRGBA(255, 190, 60, 46));
+				nvgFill(args.vg);
+				nvgStrokeColor(args.vg, nvgRGBA(255, 190, 60, 235));
+				nvgStrokeWidth(args.vg, 2.f);
+				nvgStroke(args.vg);
+			}
+		}
+		int at = -1;
+		float through = 0.f;
+		bool going = false;
+		px::ScoreBox box;
+		if (px::scoreFollowRead(moduleId, at, through, going) && at >= 0 && boxOf(at, box)) {
+			// A BAR LIT AND A LINE IN IT. The bar says where to look from across the room and
+			// the line says where in it, which the bar alone cannot.
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, box.x1 * unit, (box.y1 - flow) * unit,
+				(box.x2 - box.x1) * unit, (box.y2 - box.y1) * unit);
+			nvgFillColor(args.vg, nvgRGBA(120, 200, 255, going ? 58 : 34));
+			nvgFill(args.vg);
+			const float x = (box.x1 + (box.x2 - box.x1) * math::clamp(through, 0.f, 1.f)) * unit;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, x, (box.y1 - flow) * unit);
+			nvgLineTo(args.vg, x, (box.y2 - flow) * unit);
+			nvgStrokeColor(args.vg, nvgRGBA(120, 200, 255, going ? 220 : 120));
+			nvgStrokeWidth(args.vg, 2.f);
+			nvgStroke(args.vg);
+		}
 		nvgRestore(args.vg);
 	}
-
 	void drawFrame(const DrawArgs& args, std::shared_ptr<window::Font> face) {
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 5.f);
@@ -648,10 +929,36 @@ struct ScoreWindow : widget::OpaqueWidget {
 		const std::string instrument = partName();
 		if (!instrument.empty())
 			label += "   " + instrument;
-		if (usable() && score.pageCount() > 1) {
-			char count[64];
-			std::snprintf(count, sizeof(count), "   page %d of %d", page, score.pageCount());
-			label += count;
+		// WHICH BAR, NOT WHICH PAGE. There are no pages to the reader any more, and a bar number
+		// is what a score is talked about in and what a passage being worked on is found by.
+		if (usable()) {
+			int first = -1, last = -1;
+			const std::vector<px::ScoreSystem>& sys = score.systems();
+			for (size_t i = 0; i < sys.size(); i++) {
+				for (size_t b = 0; b < sys[i].bars.size(); b++) {
+					if (sys[i].bars[b].number.empty())
+						continue;
+					const int n = std::atoi(sys[i].bars[b].number.c_str());
+					if (last < 0 || n > last)
+						last = n;
+					if (first < 0 && sys[i].top + sys[i].height >= flow)
+						first = n;
+				}
+			}
+			if (first > 0 && last > 0) {
+				char count[64];
+				std::snprintf(count, sizeof(count), "   bar %d of %d", first, last);
+				label += count;
+			}
+			if (loopFrom >= 0) {
+				char loop[64];
+				if (loopTo > loopFrom)
+					std::snprintf(loop, sizeof(loop), "   looping bars %d to %d",
+						loopFrom + 1, loopTo + 1);
+				else
+					std::snprintf(loop, sizeof(loop), "   looping bar %d", loopFrom + 1);
+				label += loop;
+			}
 		}
 		crispText(args.vg, SW_TITLE + 6.f, SW_TITLE / 2.f, label.c_str(), NULL);
 
@@ -665,6 +972,12 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// of one thing is a control that does nothing.
 		if (partCount() > 1 || song)
 			drawTool(args.vg, toolBox(4), "\xe2\x96\xbe", face);   // a small downward triangle
+		// A WAY OUT OF THE LOOP THAT CAN BE SEEN. Clicking the looped bar again clears it, which
+		// is quick once you know and invisible until somebody tells you — and a reader who has
+		// looped a bar by accident is stuck with the same bar repeating and nothing on the window
+		// admitting to it. So the loop says it is there and offers to stop.
+		if (loopFrom >= 0)
+			drawTool(args.vg, toolBox(5), "\xe2\x9c\x95", face);   // a cross
 	}
 
 	static void drawCross(NVGcontext* vg, math::Rect r) {
@@ -769,6 +1082,24 @@ void scoreWindowShowSong(const std::shared_ptr<const GpSong>& song, int track,
 	window->song = song;
 	window->name = title;
 	window->wantPart = math::clamp(track, 0, (int) std::max<size_t>(1, song->tracks.size()) - 1);
+	window->partNow = -1;
+	window->beginWork(true);
+}
+
+
+void scoreWindowShowDocument(const std::shared_ptr<const std::string>& musicxml,
+		const std::string& title, int64_t moduleId) {
+	if (!musicxml || musicxml->empty())
+		return;
+	// THE SAME SCORE AGAIN CLOSES IT, as the song and the file both do.
+	if (gScoreWindow && gScoreWindow->moduleId == moduleId && gScoreWindow->document == musicxml) {
+		gScoreWindow->requestDelete();
+		return;
+	}
+	ScoreWindow* window = makeWindow(moduleId);
+	window->document = musicxml;
+	window->name = title;
+	window->wantPart = 0;
 	window->partNow = -1;
 	window->beginWork(true);
 }

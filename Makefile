@@ -340,7 +340,8 @@ scorerender:
 		-I dep/include/verovio/json -I dep/include/verovio/pugi \
 		-I dep/include/verovio/crc -I dep/include/verovio/midi \
 		-I dep/include/verovio/zip -I dep/include/verovio/tuning-library \
-		test/scorerender.cpp src/Score.cpp src/ScoreDraw.cpp -o build/scorerender \
+		test/scorerender.cpp src/Score.cpp src/ScoreDraw.cpp src/GuitarPro.cpp \
+		-o build/scorerender \
 		dep/lib/libverovio.a -L$(RACK_DIR) -lRack -framework OpenGL
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/scorerender $(ARGS)
 	@sips -s format png build/score.ppm --out build/score.png >/dev/null 2>&1 \

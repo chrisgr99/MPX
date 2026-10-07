@@ -30,6 +30,7 @@ returns. Nothing is brought to the front and nothing is rearranged.
 extern "C" NVGcontext* nvgCreateGL2(int flags);
 extern "C" void nvgDeleteGL2(NVGcontext* ctx);
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -295,8 +296,42 @@ int main(int argc, char** argv) {
 		std::printf("could not read it: %s\n", why.c_str());
 		return 1;
 	}
+	// THE PAGE IS THE SHAPE OF WHAT IT IS BEING DRAWN INTO, which is what the score window does
+	// with the window: one page is then one windowful and there is nothing to scroll.
+	const int tall = (width > 0) ? (int) ((double) units * height / width) : units * 4 / 3;
 	if (units > 0)
-		score.setPage(units, units * 4 / 3);
+		score.setPage(units, tall);
+	// EVERY SYSTEM MEASURED WITHOUT DRAWING ANY OF THEM. A continuous view has to know how tall
+	// each system is before it can stack them, and a render with no context does everything up to
+	// the drawing — which is how the glyph sheet is fetched too. If this is cheap, a continuous
+	// view costs one pass at load and nothing per frame.
+	if (page == -1) {
+		const auto began = std::chrono::steady_clock::now();
+		score.measureSystems();
+		const double took = std::chrono::duration<double>(
+			std::chrono::steady_clock::now() - began).count();
+		const std::vector<px::ScoreSystem>& sys = score.systems();
+		int bars = 0;
+		bool rising = true;
+		float was = -1.f;
+		for (size_t i = 0; i < sys.size(); i++) {
+			bars += (int) sys[i].bars.size();
+			if (sys[i].top <= was)
+				rising = false;
+			was = sys[i].top;
+		}
+		std::printf("measured %d systems in %.0f ms: %d bars, flow %.0f units tall,"
+			" tops %s\n", (int) sys.size(), took * 1000.0, bars, score.flowHeight(),
+			rising ? "rise all the way down" : "DO NOT RISE — the stack is wrong");
+		for (size_t i = 0; i < sys.size() && i < 4; i++) {
+			std::printf("    system %d: top %7.0f  height %5.0f  shift %5.0f  bars %d",
+				(int) i + 1, sys[i].top, sys[i].height, sys[i].shift, (int) sys[i].bars.size());
+			for (size_t b = 0; b < sys[i].bars.size(); b++)
+				std::printf(" %s", sys[i].bars[b].number.c_str());
+			std::printf("\n");
+		}
+		return 0;
+	}
 	std::printf("%s: %d pages, drawing page %d at %dx%d\n",
 		score.title().c_str(), score.pageCount(), page, width, height);
 
@@ -314,6 +349,29 @@ int main(int argc, char** argv) {
 	}
 
 	if (const px::ScoreDraw* back = score.backend()) {
+		// WHICH BARS THE PAGE HOLDS, and whether they know their own numbers. The score window
+		// finds the playing bar on the page by that number, so a page whose boxes are unnumbered
+		// is a playhead that never appears. See ScoreFollow.hpp.
+		{
+			const std::vector<px::ScoreBox>& boxes = score.bars();
+			int numbered = 0;
+			std::string first, last;
+			for (size_t i = 0; i < boxes.size(); i++) {
+				if (boxes[i].number.empty())
+					continue;
+				numbered++;
+				if (first.empty())
+					first = boxes[i].number;
+				last = boxes[i].number;
+			}
+			// HOW FAR DOWN THE PAGE THE MUSIC ACTUALLY WENT, against the page it was given.
+			// The score window makes its pages the shape of the window so that one page is one
+			// windowful; if the drawing runs past the page, it is not and the window scrolls.
+			std::printf("that page: %d bar boxes, %d of them numbered, bars %s to %s,"
+				" drawn %.0f of %d units tall\n",
+				(int) boxes.size(), numbered, first.empty() ? "?" : first.c_str(),
+				last.empty() ? "?" : last.c_str(), score.drawnHeight(), tall * 10);
+		}
 		std::printf("that page: %d glyphs, %d unknown, %d unread, %d runs of lettering skipped\n",
 			back->tally.glyphs, back->tally.glyphsUnknown, back->tally.glyphsUnread,
 			back->tally.wordsSkipped);

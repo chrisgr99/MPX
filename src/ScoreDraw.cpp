@@ -7,6 +7,8 @@
 
 #include "ScoreDraw.hpp"
 
+#include "vrv/measure.h"
+
 #include <nanosvg.h>
 
 #include <cmath>
@@ -363,6 +365,11 @@ void ScoreDraw::DrawMusicText(const std::u32string& text, int x, int y, bool set
 // ---- lines and shapes ------------------------------------------------------------------------------
 
 void ScoreDraw::DrawLine(int x1, int y1, int x2, int y2) {
+	// MEASURED WHETHER OR NOT THERE IS ANYTHING TO DRAW ON. A render with no context is how the
+	// extent of every system is found without putting any of them on the screen, which is what a
+	// continuous view needs before it can stack them. See Score::systems.
+	sawBox((float) std::min(x1, x2), (float) std::min(y1, y2),
+		(float) std::max(x1, x2), (float) std::max(y1, y2));
 	if (!vg)
 		return;
 	nvgBeginPath(vg);
@@ -375,22 +382,60 @@ void ScoreDraw::DrawLine(int x1, int y1, int x2, int y2) {
 	// with what is written over them. Six strings at the weight of a stem is a page of lines with
 	// some numbers in it. Barlines and stems are upright and keep their full weight, since those
 	// ARE the music.
+	// A RULED LINE IS PUT ON A PIXEL. A staff line, a ledger line and a barline are all one
+	// straight line of a single weight, and a line a pixel wide landing between two rows of
+	// pixels is drawn across both at part strength each — which is not a thin line, it is two
+	// grey ones, and while the music scrolls it reads as the staff going soft. Seated on the
+	// middle of a row and given exactly one pixel, it is the same line wherever the music has
+	// scrolled to.
+	//
+	// ASKED OF THE TRANSFORM IN FORCE, not of this function's own coordinates: the score is drawn
+	// through its own scale and Rack through a zoom on top of that, so where a line really lands
+	// is only known at the bottom of the stack. See ScoreWindow::snapToPixels, which does the
+	// same for the system as a whole.
+	if (y1 == y2 || x1 == x2) {
+		float xf[6] = {1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
+		nvgCurrentTransform(vg, xf);
+		const float sx = xf[0], sy = xf[3];
+		if (std::fabs(sx) > 1e-6f && std::fabs(sy) > 1e-6f) {
+			nvgBeginPath(vg);
+			if (y1 == y2) {
+				const float device = (float) y1 * sy + xf[5];
+				const float seated = std::floor(device) + 0.5f;
+				const float y = (seated - xf[5]) / sy;
+				nvgMoveTo(vg, (float) x1, y);
+				nvgLineTo(vg, (float) x2, y);
+				nvgStrokeWidth(vg, 1.f / std::fabs(sy));
+			}
+			else {
+				const float device = (float) x1 * sx + xf[4];
+				const float seated = std::floor(device) + 0.5f;
+				const float x = (seated - xf[4]) / sx;
+				nvgMoveTo(vg, x, (float) y1);
+				nvgLineTo(vg, x, (float) y2);
+				nvgStrokeWidth(vg, std::fmax(1.f / std::fabs(sx), strokeWidth(1.f)));
+			}
+			nvgStrokeColor(vg, penColour());
+			nvgStroke(vg);
+			return;
+		}
+	}
 	strokeHere((y1 == y2) ? 0.5f : 1.f);
-	sawBox((float) std::min(x1, x2), (float) std::min(y1, y2),
-		(float) std::max(x1, x2), (float) std::max(y1, y2));
 }
 
 
 void ScoreDraw::DrawPolyline(int n, vrv::Point points[], bool close) {
-	if (!vg || n < 2)
+	if (n < 2)
+		return;
+	for (int i = 0; i < n; i++)
+		saw((float) points[i].x, (float) points[i].y);
+	if (!vg)
 		return;
 	nvgBeginPath(vg);
 	nvgMoveTo(vg, (float) points[0].x, (float) points[0].y);
 	for (int i = 1; i < n; i++) {
 		nvgLineTo(vg, (float) points[i].x, (float) points[i].y);
-		saw((float) points[i].x, (float) points[i].y);
 	}
-	saw((float) points[0].x, (float) points[0].y);
 	if (close)
 		nvgClosePath(vg);
 	strokeHere();
@@ -398,37 +443,39 @@ void ScoreDraw::DrawPolyline(int n, vrv::Point points[], bool close) {
 
 
 void ScoreDraw::DrawPolygon(int n, vrv::Point points[]) {
-	if (!vg || n < 2)
+	if (n < 2)
+		return;
+	for (int i = 0; i < n; i++)
+		saw((float) points[i].x, (float) points[i].y);
+	if (!vg)
 		return;
 	nvgBeginPath(vg);
 	nvgMoveTo(vg, (float) points[0].x, (float) points[0].y);
 	for (int i = 1; i < n; i++) {
 		nvgLineTo(vg, (float) points[i].x, (float) points[i].y);
-		saw((float) points[i].x, (float) points[i].y);
 	}
-	saw((float) points[0].x, (float) points[0].y);
 	nvgClosePath(vg);
 	fillHere();
 }
 
 
 void ScoreDraw::DrawRectangle(int x, int y, int width, int height) {
+	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 	if (!vg)
 		return;
 	nvgBeginPath(vg);
 	nvgRect(vg, (float) x, (float) y, (float) width, (float) height);
 	fillHere();
-	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 }
 
 
 void ScoreDraw::DrawRoundedRectangle(int x, int y, int width, int height, int radius) {
+	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 	if (!vg)
 		return;
 	nvgBeginPath(vg);
 	nvgRoundedRect(vg, (float) x, (float) y, (float) width, (float) height, (float) radius);
 	fillHere();
-	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 }
 
 
@@ -438,19 +485,20 @@ void ScoreDraw::DrawCircle(int x, int y, int radius) {
 
 
 void ScoreDraw::DrawEllipse(int x, int y, int width, int height) {
+	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 	if (!vg)
 		return;
 	nvgBeginPath(vg);
 	nvgEllipse(vg, (float) x + width / 2.f, (float) y + height / 2.f,
 		width / 2.f, height / 2.f);
 	fillHere();
-	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 }
 
 
 /** An arc of an ellipse, which Verovio asks for in degrees and NanoVG wants in radians going the
 other way: its Y runs down the page, so an angle measured anticlockwise is drawn clockwise. */
 void ScoreDraw::DrawEllipticArc(int x, int y, int width, int height, double start, double end) {
+	sawBox((float) x, (float) y, (float) (x + width), (float) (y + height));
 	if (!vg)
 		return;
 	const float cx = (float) x + width / 2.f;
@@ -692,6 +740,8 @@ void ScoreDraw::StartGraphic(vrv::Object* object, const std::string& gClass,
 		if (inMeasure == 0) {
 			measure = ScoreBox();
 			measure.id = gId;
+			if (const vrv::Measure* m = dynamic_cast<const vrv::Measure*>(object))
+				measure.number = m->GetN();
 		}
 		inMeasure++;
 	}

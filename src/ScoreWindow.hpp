@@ -37,6 +37,16 @@ that has been replaced underneath it is a crash waiting for the next frame. */
 void scoreWindowShowSong(const std::shared_ptr<const GpSong>& song, int track,
 	const std::string& title, int64_t moduleId);
 
+
+/** THE SAME WINDOW, ON THE DOCUMENT A MODULE ALREADY HOLDS.
+
+For a MusicXML file, which is shown as its writer wrote it rather than converted back out of the
+song model. The two are not the same score: the model has one staff per track, so a piano comes
+out as two separate right and left hands, without the pedalling, the octave shifts or anything
+else written between the staves. Taken by copy, for the reason the song is. */
+void scoreWindowShowDocument(const std::shared_ptr<const std::string>& musicxml,
+	const std::string& title, int64_t moduleId);
+
 /** Closes the window if it belongs to this module. Called when the module goes. */
 void scoreWindowCloseFor(int64_t moduleId);
 
