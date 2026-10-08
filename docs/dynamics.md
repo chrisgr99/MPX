@@ -6,17 +6,19 @@ How loud a note is, from the mark on the page to the volts at an instrument's ou
 
 **A marking names a number of decibels, and it names the same number in every score.** Forte means the same thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly is meant to be quieter. Nothing normalises a score against itself.
 
-`MPX_RANGE_DB` in `NoteBus.hpp` is 14.5: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds `MPX_RANGE_DB` times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
+`MPX_RANGE_DB` in `NoteBus.hpp` is 16.5: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds `MPX_RANGE_DB` times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
 
 | | ppp | pp | p | mp | mf | f | ff | fff |
 |---|---|---|---|---|---|---|---|---|
 | level | 0 | 1/7 | 2/7 | 3/7 | 4/7 | 5/7 | 6/7 | 1 |
-| dB | -14.5 | -12.4 | -10.4 | -8.3 | -6.2 | -4.1 | -2.1 | 0 |
-| volts | 1.51 | 1.91 | 2.43 | 3.08 | 3.91 | 4.97 | 6.30 | 8.00 |
+| dB | -16.5 | -14.1 | -11.8 | -9.4 | -7.1 | -4.7 | -2.4 | 0 |
+| volts | 1.20 | 1.57 | 2.06 | 2.70 | 3.54 | 4.65 | 6.10 | 8.00 |
 
 `sf` sits between f and ff, `sfz` at ff, and `fp` strikes at f — the drop that follows is not read, so it is the f that is kept.
 
-**Fourteen and a half decibels, and not the twenty-nine the recordings span on their own.** That is a piano in a quiet room, and a rack has nowhere near that much room — the loudest texture has to fit under ten volts, so every decibel of range is a decibel taken off the bottom. Settled by listening to `test/ladder.py`, which plays the ladder with no music in the way — twice. At twenty-two, ppp and pp were inaudible; at eighteen they still did not move the meter on the mixer. This puts ppp a little above where p used to be.
+**Sixteen and a half decibels, and not the twenty-nine the recordings span on their own.** That is a piano in a quiet room, and a rack has nowhere near that much room — the loudest texture has to fit under ten volts, so every decibel of range is a decibel taken off the bottom. Settled by listening to `test/ladder.py`, which plays the ladder with no music in the way. The top is fixed by the ceiling, so the figure is really a choice about where ppp sits: a step of 2.36 dB from one marking to the next puts it at 1.20 V, which is as quiet as a piano can usefully be here.
+
+**The first three attempts at this were judged against the wrong instrument.** The patch had mpxPiano and mpxScore's band both feeding the mixer with the piano muted, so what was being listened to was the SoundFont and not the samples at all. Everything the piano does — the density share, aiming at the figure, the register normalisation — was inaudible, and the ladder kept being widened and narrowed on the strength of it. **Check the thing being changed is the thing making the sound** before changing it again.
 
 **`MPX_FULL_VOLTS` is eight, and that is a single note rather than the loudest thing the module makes.** A chord is louder than one note even after its dynamic has been shared out — about four and a half decibels at the thickest — and nothing may pass ten volts, where the audio interface stops.
 

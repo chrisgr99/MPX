@@ -68,15 +68,16 @@ A MARKING IS AN ABSOLUTE LOUDNESS AND NOT A PLACE IN A SCORE'S OWN RANGE. Forte 
 thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly
 is meant to be quieter. Nothing normalises a score against itself.
 
-FOURTEEN AND A HALF, AND NOT THE TWENTY-NINE THE RECORDINGS SPAN ON THEIR OWN. That is a piano in a quiet
+SIXTEEN AND A HALF, AND NOT THE TWENTY-NINE THE RECORDINGS SPAN ON THEIR OWN. That is a piano in a quiet
 room. A rack has nowhere near that much room: the loudest texture has to fit under ten volts, so
 every decibel of range is a decibel taken off the bottom, and at twenty-two the ppp and pp of
 a real score were not perceptible. Settled by listening to test/ladder.py, which plays the whole
-ladder with no music in the way, twice: at twenty-two ppp and pp were inaudible, and at eighteen
-they still did not move the meter on the mixer. This puts ppp a little above where p used to be.
+ladder with no music in the way. The top is fixed by the ceiling, so the figure is really a
+choice about where ppp sits: a step of two and a third decibels from one marking to the next
+puts it at one and a fifth volts, which is as quiet as a piano can usefully be here.
 
 The instrument's DYNAMICS control narrows it further for a piece that wants less. */
-static const float MPX_RANGE_DB = 14.5f;
+static const float MPX_RANGE_DB = 16.5f;
 
 /** WHAT A LEVEL IS WORTH, in decibels below MPX_FULL_VOLTS. Nought at fff, negative everywhere
 else. The one conversion every instrument should use, so that a marking is the same loudness
