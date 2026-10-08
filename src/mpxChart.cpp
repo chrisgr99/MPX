@@ -6,6 +6,7 @@
 #include "IReal.hpp"
 #include "ChartExamples.hpp"
 #include "DevMute.hpp"
+#include "LastFolder.hpp"
 
 #include <osdialog.h>
 
@@ -2447,10 +2448,14 @@ static void chartShowSongMenu(ChartModule* module) {
 	menu->addChild(createMenuItem("Import an iReal Pro playlist\u2026", "", []() {
 		// The HTML export iReal Pro produces, which is what people actually have.
 		osdialog_filters* filters = osdialog_filters_parse("HTML:html,htm");
-		char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+		// WHERE PLAYLISTS ARE KEPT, not where the patch was last saved. See LastFolder.hpp.
+		const std::string start = px::lastFolder("playlist");
+		char* path = osdialog_file(OSDIALOG_OPEN, start.empty() ? NULL : start.c_str(),
+			NULL, filters);
 		osdialog_filters_free(filters);
 		if (!path)
 			return;
+		px::rememberFolder("playlist", path);
 		const int added = libraryImport(path);
 		std::free(path);
 		if (added == 0) {
@@ -2946,10 +2951,14 @@ struct ChartWidget : ModuleWidget {
 		menu->addChild(createMenuItem("Import an iReal Pro playlist\u2026", "", []() {
 			// The HTML export iReal Pro produces, which is what people actually have.
 			osdialog_filters* filters = osdialog_filters_parse("HTML:html,htm");
-			char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+			// WHERE PLAYLISTS ARE KEPT. See LastFolder.hpp.
+			const std::string start = px::lastFolder("playlist");
+			char* path = osdialog_file(OSDIALOG_OPEN, start.empty() ? NULL : start.c_str(),
+				NULL, filters);
 			osdialog_filters_free(filters);
 			if (!path)
 				return;
+			px::rememberFolder("playlist", path);
 			const int added = libraryImport(path);
 			std::free(path);
 			if (added == 0) {

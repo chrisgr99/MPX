@@ -36,6 +36,7 @@ synthesiser leaves it alone.
 #if CHART_AUDIO
 #include "SoundCore.hpp"
 #include "Swing.hpp"
+#include "LastFolder.hpp"
 #include "MusicXML.hpp"
 #include "ScoreWindow.hpp"
 #endif
@@ -1375,10 +1376,14 @@ struct SongTitle : widget::OpaqueWidget {
 			return;
 		osdialog_filters* filters = osdialog_filters_parse(
 			"Scores:gp,gpx,gp5,gp4,gp3,gpif,xml,musicxml,mxl");
-		char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+		// WHERE SCORES ARE KEPT, not where the patch was last saved. See LastFolder.hpp.
+		const std::string start = px::lastFolderFor("score", module->filePath);
+		char* path = osdialog_file(OSDIALOG_OPEN, start.empty() ? NULL : start.c_str(),
+			NULL, filters);
 		osdialog_filters_free(filters);
 		if (!path)
 			return;
+		px::rememberFolder("score", path);
 		std::string why;
 		const bool ok = module->setSongFile(path, &why);
 		std::free(path);
@@ -1791,12 +1796,16 @@ struct SongWidget : ModuleWidget {
 		menu->addChild(createMenuItem("Show a MusicXML file…", "", [=]() {
 			osdialog_filters* filters = osdialog_filters_parse(
 				"MusicXML:musicxml,xml,mxl");
-			char* chosen = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+			// THE SAME FOLDER SCORES ARE LOADED FROM. See LastFolder.hpp.
+			const std::string start = px::lastFolderFor("score", m->filePath);
+			char* chosen = osdialog_file(OSDIALOG_OPEN, start.empty() ? NULL : start.c_str(),
+				NULL, filters);
 			osdialog_filters_free(filters);
 			if (!chosen)
 				return;
 			const std::string path = chosen;
 			std::free(chosen);
+			px::rememberFolder("score", path);
 			std::string title = path;
 			const size_t slash = title.find_last_of('/');
 			if (slash != std::string::npos)

@@ -82,6 +82,14 @@ Reaching CV is mpxOut on whichever tracks are wanted, which is how MPX reaches C
 
 It stands beside mpxChart rather than replacing it. A chart is where a part is invented from nothing; a song is where a part already exists and is played, and then varied.
 
+## Where the file chooser opens
+
+Rack opens a chooser in the folder the patch was last saved to, which is right for a patch and wrong for everything else — saving a patch moves the starting folder of every chooser in the rack, so a score fetched from the same place a dozen times is still a walk from wherever the patches happen to live.
+
+The score chooser opens in the folder the module's own file came from, and failing that in the last folder a score was taken from, kept in the plugin's folder so it outlives the patch and is there for a module placed fresh. One folder per kind of file — scores and chord charts are not kept in the same place by anybody who keeps them anywhere. See `LastFolder.hpp`.
+
+The SoundFont choosers are left alone: they open in the plugin's own bank folder, which is where banks are installed and is already not the patch folder.
+
 ## Swing, which the score does not say
 
 A knob on mpxScore, two-sided: clockwise swings late, anticlockwise early, the middle is even. Nought by default, so nothing already patched starts swinging.
