@@ -6,19 +6,21 @@ How loud a note is, from the mark on the page to the volts at an instrument's ou
 
 **A marking names a number of decibels, and it names the same number in every score.** Forte means the same thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly is meant to be quieter. Nothing normalises a score against itself.
 
-`MPX_RANGE_DB` in `NoteBus.hpp` is 18: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds `MPX_RANGE_DB` times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
+`MPX_RANGE_DB` in `NoteBus.hpp` is 14.5: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds `MPX_RANGE_DB` times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
 
 | | ppp | pp | p | mp | mf | f | ff | fff |
 |---|---|---|---|---|---|---|---|---|
 | level | 0 | 1/7 | 2/7 | 3/7 | 4/7 | 5/7 | 6/7 | 1 |
-| dB | -18.0 | -15.4 | -12.9 | -10.3 | -7.7 | -5.1 | -2.6 | 0 |
-| volts | 0.76 | 1.02 | 1.37 | 1.84 | 2.47 | 3.32 | 4.46 | 6.00 |
+| dB | -14.5 | -12.4 | -10.4 | -8.3 | -6.2 | -4.1 | -2.1 | 0 |
+| volts | 1.51 | 1.91 | 2.43 | 3.08 | 3.91 | 4.97 | 6.30 | 8.00 |
 
 `sf` sits between f and ff, `sfz` at ff, and `fp` strikes at f — the drop that follows is not read, so it is the f that is kept.
 
-**Eighteen decibels, and not the twenty-nine the recordings span on their own.** That is a piano in a quiet room, and a rack has nowhere near that much room — the loudest texture has to fit under ten volts, so every decibel of range is a decibel taken off the bottom. At twenty-two the ppp and pp of a real score were not perceptible. Settled by listening to `test/ladder.py`, which plays the whole ladder with no music in the way.
+**Fourteen and a half decibels, and not the twenty-nine the recordings span on their own.** That is a piano in a quiet room, and a rack has nowhere near that much room — the loudest texture has to fit under ten volts, so every decibel of range is a decibel taken off the bottom. Settled by listening to `test/ladder.py`, which plays the ladder with no music in the way — twice. At twenty-two, ppp and pp were inaudible; at eighteen they still did not move the meter on the mixer. This puts ppp a little above where p used to be.
 
-**`MPX_FULL_VOLTS` is six, and that is a single note rather than the loudest thing the module makes.** A chord is louder than one note even after its dynamic has been shared out — about four and a half decibels at the thickest — and nothing may pass ten volts, where the audio interface stops. Six puts the loudest texture at ten and a single fff note below it. Putting one note at ten instead would clip every chord above it.
+**`MPX_FULL_VOLTS` is eight, and that is a single note rather than the loudest thing the module makes.** A chord is louder than one note even after its dynamic has been shared out — about four and a half decibels at the thickest — and nothing may pass ten volts, where the audio interface stops.
+
+Without the soft clip this would have to be six, since the thickest chord would otherwise go over. Those two volts are two and a half decibels that would have come off the bottom of the ladder instead.
 
 A mark is a point and not a property of a note: it holds until the next one. A hairpin is a ramp whose destination is whatever mark comes after it, which may be bars away, so the loudness of every note is worked out after the whole part has been read. A ramp with nothing after it travels `HAIRPIN_REACH`, one seventh — one step of the ladder — and may not arrive below ppp.
 
@@ -36,7 +38,7 @@ Left out deliberately: *sotto voce* and *mezza voce* say how to play rather than
 
 ## What a level is worth
 
-**`MPX_FULL_VOLTS`, in `NoteBus.hpp`: a single note at level 1, with the module's volume control where it starts, peaks at six volts.** Not ten, which is where the interface stops — a chord is louder than one note, so six is what puts the loudest texture at the top of the scale rather than clipping it.
+**`MPX_FULL_VOLTS`, in `NoteBus.hpp`: a single note at level 1, with the module's volume control where it starts, peaks at eight volts.** Not ten, which is where the interface stops — a chord is louder than one note, and the last volt and a half is a curve rather than a wall.
 
 This is a statement about every instrument on the cable, not about one of them. The same number has to be the same loudness wherever it is read, or handing a part to a different instrument changes the music rather than the colour. Two modules playing the same part were once twenty decibels apart, which nobody hears as a fault — it reads as one of them being the wrong instrument for the music.
 
@@ -134,13 +136,22 @@ Worst deviation 1.5 dB, at the band's quiet end.
 
 The band needs one more step, because a velocity is not a loudness either. The SoundFont specification says amplitude follows the square of the velocity; swept through GeneralUser-GS the exponent is nearer **1.57**, and taking the specification at its word left pianissimo four decibels louder than asked. The bench prints the sweep the constant came from, so it can be refitted if the bank changes.
 
-## The limiter
+## The soft clip, and what is left for the limiter
 
-mpxPiano's output used to be hard-clamped at twelve volts, which is not a limiter: it flattens the top of the waveform, and that is distortion arriving exactly on the loudest chord of the piece and on nothing else. mpxGuitar had no limit at all and left it to whatever was downstream.
+**Nothing may pass ten volts**, where the audio interface stops. The question is what to do with the peaks that would.
 
-Both now limit at **ten volts**, twice Rack's nominal level for audio. A millisecond to take hold, a sixth of a second to let go, both channels by the same amount so a loud note on one side cannot pull the image across. The piano keeps its clamp behind the limiter, because nothing with an attack time is instantaneous and the front of a transient still gets through.
+**A limiter is the wrong tool for most of them.** It pulls the whole signal down for a sixth of a second when a peak arrives, so one loud chord ducks the sustain of everything around it. What goes over on a piano is the hammer attack, a couple of milliseconds long: round that and nobody hears it, while ducking the sustain behind it is plainly audible.
 
-**It is a safety net and not a tone control.** The loudest attack in any score in use reaches about six volts. What it is for is the texture that no single marking asked for: on the piano, notes piling up under a held pedal; on the guitar, a full strum, which even with the chord's dynamic shared out reaches eleven volts against a single string's five.
+So the last volt and a half is a curve. `mpxSoftClip` leaves everything below 8.5 V untouched — a single note at fff is eight volts and never reaches it — and bends anything above towards ten without arriving. A tangent, so it meets the straight part with the same slope and does not announce itself at the knee.
+
+| in | 8.0 | 8.5 | 9.0 | 10.0 | 11.4 | 13.3 | 16.0 V |
+|---|---|---|---|---|---|---|---|
+| out | 8.00 | 8.50 | 8.98 | 9.64 | 9.94 | 10.00 | 10.00 V |
+| | 0 | 0 | -0.02 | -0.32 | -1.19 | -2.48 | -4.08 dB |
+
+The thickest chord anybody writes arrives near thirteen volts and leaves at ten — two and a half decibels of rounding on the loudest moment of a piece and nothing anywhere else.
+
+**What is left for a limiter is a plateau rather than a peak**: a texture sitting over the ceiling for whole bars while the pedal holds everything on, which is the case a clipper handles badly. mpxPiano holds that at twelve volts and mpxGuitar at fourteen, high enough never to touch an ordinary loud chord.
 
 ## Still to do
 
@@ -148,12 +159,7 @@ Both now limit at **ten volts**, twice Rack's nominal level for audio. A millise
 
 **The share is counted per instrument, not per score.** Each module sees only its own cable, so in a quartet the four parts do not know about each other. That is the right answer for balance — the written dynamics decide it — but it means a tutti chord spread across four modules is not shared out as one chord.
 
-**Soft clipping, to buy back the range.** A single note sits at six volts because four and a half decibels are reserved for the thickest chord. A limiter is a poor way to reclaim that: it pulls the whole signal down for a sixth of a second when a peak arrives, so one loud chord ducks the sustain of everything around it. A soft clipper touches only the samples that exceed — and on a piano what exceeds is the hammer attack, a couple of milliseconds long. Round that and nobody hears it.
 
-The chain would be the limiter for sustained overs, a soft clip for transients, and the hard clamp never reached, with the clipper doing nearly all the work.
-
-Worth perhaps three decibels: a single note at eight volts, the range back to twenty-one, and ppp near one volt instead of 0.76. The risk is that distortion on a piano is unflattering in a way it is not on a guitar — a clean, harmonically rich sound, where added odd harmonics read as cheapness — so it wants to be gentle and judged with `test/ladder.py` rather than assumed.
-
-**Measure before choosing a curve**: how often and by how much the output actually exceeds, over the library. Rare and brief overs make a clipper nearly free; a dense passage sitting over the ceiling for whole bars is distortion rather than headroom, and then the limiter was the right tool after all.
+**mpxGuitar's densest texture does not fit the way the piano's does.** Six open strings at full come to seven decibels over a single string, against the piano's four and a half for its thickest chord, so a full strum arrives near eighteen volts and the clip rounds it by five. That is heavy. Either the guitar wants a lower figure per note than the shared standard, or a strum wants its dynamic shared out more strongly than a piano chord — one gesture of one pick is not six fingers. Worth deciding before anybody plays loud strummed music through it.
 
 **A loudness bench over the whole library**, reporting LUFS rather than peak, so the figures above are watched rather than remembered. The measurements here were made outside the repository, which is the wrong place for them.

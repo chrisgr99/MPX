@@ -364,8 +364,11 @@ struct SongModule : Module, NoteSource {
 			left += l;
 			right += rr;
 		}
-		outputs[O_MIX_L].setVoltage(left * AUDIO_LEVEL);
-		outputs[O_MIX_R].setVoltage(right * AUDIO_LEVEL);
+		// NOTHING LEAVES ABOVE TEN, which the band needs as much as anything: one programme
+		// of a SoundFont can sit a couple of decibels above the rest and no single scale
+		// factor takes that out. See mpxSoftClip.
+		outputs[O_MIX_L].setVoltage(mpxSoftClip(left * AUDIO_LEVEL));
+		outputs[O_MIX_R].setVoltage(mpxSoftClip(right * AUDIO_LEVEL));
 	}
 #endif
 

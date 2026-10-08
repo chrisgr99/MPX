@@ -55,7 +55,7 @@ WHY IT IS WRITTEN DOWN AT ALL. Two modules playing the same part from the same c
 twenty decibels apart, which is not a thing anybody can hear as a fault: it reads as one of them
 being the wrong instrument for the music. A number on the cable has to mean the same thing at
 every module that reads it. See test/leveltest.cpp, which measures each of them against this. */
-static const float MPX_FULL_VOLTS = 6.f;
+static const float MPX_FULL_VOLTS = 8.f;
 
 /** HOW FAR BELOW THAT THE QUIETEST MARKING IS, in decibels: the whole dynamic range of the
 written dynamics, from ppp to fff.
@@ -68,14 +68,15 @@ A MARKING IS AN ABSOLUTE LOUDNESS AND NOT A PLACE IN A SCORE'S OWN RANGE. Forte 
 thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly
 is meant to be quieter. Nothing normalises a score against itself.
 
-EIGHTEEN, AND NOT THE TWENTY-NINE THE RECORDINGS SPAN ON THEIR OWN. That is a piano in a quiet
+FOURTEEN AND A HALF, AND NOT THE TWENTY-NINE THE RECORDINGS SPAN ON THEIR OWN. That is a piano in a quiet
 room. A rack has nowhere near that much room: the loudest texture has to fit under ten volts, so
 every decibel of range is a decibel taken off the bottom, and at twenty-two the ppp and pp of
 a real score were not perceptible. Settled by listening to test/ladder.py, which plays the whole
-ladder with no music in the way — the figure is what puts ppp a little above where pp used to be.
+ladder with no music in the way, twice: at twenty-two ppp and pp were inaudible, and at eighteen
+they still did not move the meter on the mixer. This puts ppp a little above where p used to be.
 
 The instrument's DYNAMICS control narrows it further for a piece that wants less. */
-static const float MPX_RANGE_DB = 18.f;
+static const float MPX_RANGE_DB = 14.5f;
 
 /** WHAT A LEVEL IS WORTH, in decibels below MPX_FULL_VOLTS. Nought at fff, negative everywhere
 else. The one conversion every instrument should use, so that a marking is the same loudness
@@ -115,6 +116,35 @@ quieter than it was. It is a gain and must stay one: put through `level` instead
 the whole note down the decibel scale, and a six-note chord at forte then comes out quieter than
 a single forte note. See docs/dynamics.md. */
 static const float MPX_DENSITY_POWER = 0.35f;
+
+/** WHERE AN OUTPUT STOPS GETTING LOUDER, and where it starts to be curved on the way there.
+
+NOTHING MAY PASS TEN VOLTS, which is where the audio interface stops. The question is what to do
+with the peaks that would.
+
+A LIMITER IS THE WRONG TOOL FOR MOST OF THEM. It pulls the whole signal down for a sixth of a
+second when a peak arrives, so one loud chord ducks the sustain of everything around it. What
+goes over on a piano is the hammer attack, which lasts a couple of milliseconds: round that and
+nobody hears it, while ducking the sustain behind it is plainly audible.
+
+SO THE LAST VOLT AND A HALF IS A CURVE. Below the knee nothing is touched at all — a single note
+at fff is eight volts and never reaches it — and above it the output bends towards ten and never
+arrives. The thickest chord anybody writes comes in near thirteen and leaves at ten, which is two
+and a half decibels of rounding on the loudest moment of a piece and nothing anywhere else.
+
+A TANGENT, because it meets the straight part with the same slope: no corner at the knee, so the
+curve does not announce itself as the signal crosses it. */
+static const float MPX_CLIP_FROM = 8.5f;
+static const float MPX_CLIP_TO = 10.f;
+
+inline float mpxSoftClip(float v) {
+	const float size = (v < 0.f) ? -v : v;
+	if (size <= MPX_CLIP_FROM)
+		return v;
+	const float room = MPX_CLIP_TO - MPX_CLIP_FROM;
+	const float bent = MPX_CLIP_FROM + room * std::tanh((size - MPX_CLIP_FROM) / room);
+	return (v < 0.f) ? -bent : bent;
+}
 
 inline float mpxShare(int struckTogether) {
 	if (struckTogether < 2)

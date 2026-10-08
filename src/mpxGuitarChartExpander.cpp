@@ -139,11 +139,12 @@ struct ExpanderModule : Module {
 				right += r;
 				// Both sides as one, at the level a centred sound has on either side.
 				if (v < channels)
-					out.setVoltage((l + r) * 0.7071f * level, v);
+					out.setVoltage(mpxSoftClip((l + r) * 0.7071f * level), v);
 			}
 		}
-		outputs[O_L].setVoltage(left * level);
-		outputs[O_R].setVoltage(right * level);
+		// Nothing leaves above ten: see mpxSoftClip.
+		outputs[O_L].setVoltage(mpxSoftClip(left * level));
+		outputs[O_R].setVoltage(mpxSoftClip(right * level));
 	}
 };
 

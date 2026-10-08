@@ -766,7 +766,7 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	audio: by the time a piano is there, something has piled up. A millisecond to take hold is
 	fast enough that only the very front of a transient passes; a sixth of a second to let go is
 	slow enough that the gain moving is not itself heard. */
-	static constexpr float LIMIT_VOLTS = 10.f;
+	static constexpr float LIMIT_VOLTS = 12.f;
 	static constexpr float LIMIT_ATTACK = 0.001f;
 	static constexpr float LIMIT_RELEASE = 0.15f;
 	/** How much the limiter is holding back now, one when it is doing nothing. */
@@ -1727,10 +1727,15 @@ static float partGain(int part) {
 		left *= limitGain;
 		right *= limitGain;
 
-		// AND THE CLAMP STAYS, behind it. Nothing with an attack time is instantaneous, so the
-		// first millisecond of a transient still gets through; this is what it gets through to.
-		outputs[O_L].setVoltage(math::clamp(left, -12.f, 12.f));
-		outputs[O_R].setVoltage(math::clamp(right, -12.f, 12.f));
+		// AND THE LAST VOLT AND A HALF IS A CURVE RATHER THAN A WALL. See mpxSoftClip: below
+		// the knee nothing is touched, so a single note at fff never reaches it and only the
+		// loudest chords are rounded. It bends towards ten and never arrives, which is why
+		// there is nothing left for the clamp to do.
+		left = mpxSoftClip(left);
+		right = mpxSoftClip(right);
+
+		outputs[O_L].setVoltage(math::clamp(left, -MPX_CLIP_TO, MPX_CLIP_TO));
+		outputs[O_R].setVoltage(math::clamp(right, -MPX_CLIP_TO, MPX_CLIP_TO));
 	}
 
 	json_t* dataToJson() override {

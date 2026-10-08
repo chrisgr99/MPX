@@ -256,8 +256,9 @@ struct SoundModule : Module, NoteSink {
 			right += core.partRight(p);
 		}
 		const float level = params[P_LEVEL].getValue() * SOUND_VOLTS;    // To Rack's volts.
-		outputs[O_L].setVoltage(left * level);
-		outputs[O_R].setVoltage(right * level);
+		// Nothing leaves above ten: see mpxSoftClip.
+		outputs[O_L].setVoltage(mpxSoftClip(left * level));
+		outputs[O_R].setVoltage(mpxSoftClip(right * level));
 	}
 };
 

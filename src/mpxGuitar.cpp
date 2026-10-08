@@ -39,7 +39,7 @@ static std::string rulesPath() {
 MPX_FULL_VOLTS, which `make leveltest` measures and holds it to. It was four, which put the same
 note four decibels under every other instrument on the cable — not a difference anybody hears as
 a fault, just one that makes the guitar sound like the wrong instrument for the music. */
-static const float OUTPUT_VOLTS = 7.76f;
+static const float OUTPUT_VOLTS = 10.35f;
 /** How many notes of one instant are taken as a chord. More than this at one moment is not a
 chord any hand could play, and the rest are started unshared rather than dropped. */
 static const int MAX_TOGETHER = 16;
@@ -504,14 +504,20 @@ struct GuitarModule : Module, NoteSink {
 		// above that even with the chord's dynamic shared out — a strum is simply a loud thing.
 		// Both channels by the same amount, fast to take hold and slow to let go. The same
 		// shape and the same ceiling as mpxPiano's.
+		// A BACKSTOP, as on mpxPiano: the soft clip below does the work on peaks without
+		// ducking anything, and what is left for a limiter is a plateau rather than a peak.
+		static const float HOLD_VOLTS = 14.f;
 		const float loud = std::fmax(std::fabs(outL), std::fabs(outR));
-		const float want = (loud > CLIP_VOLTS) ? CLIP_VOLTS / loud : 1.f;
+		const float want = (loud > HOLD_VOLTS) ? HOLD_VOLTS / loud : 1.f;
 		const float towards = (want < limitGain)
 			? (1.f - std::exp(-1.f / (0.001f * args.sampleRate)))
 			: (1.f - std::exp(-1.f / (0.15f * args.sampleRate)));
 		limitGain += (want - limitGain) * towards;
 		outL *= limitGain;
 		outR *= limitGain;
+		// AND NOTHING LEAVES ABOVE TEN. See mpxSoftClip.
+		outL = mpxSoftClip(outL);
+		outR = mpxSoftClip(outR);
 		outputs[O_L].setVoltage(outL);
 		outputs[O_R].setVoltage(outR);
 
