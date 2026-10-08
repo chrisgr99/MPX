@@ -148,4 +148,12 @@ Both now limit at **ten volts**, twice Rack's nominal level for audio. A millise
 
 **The share is counted per instrument, not per score.** Each module sees only its own cable, so in a quartet the four parts do not know about each other. That is the right answer for balance — the written dynamics decide it — but it means a tutti chord spread across four modules is not shared out as one chord.
 
+**Soft clipping, to buy back the range.** A single note sits at six volts because four and a half decibels are reserved for the thickest chord. A limiter is a poor way to reclaim that: it pulls the whole signal down for a sixth of a second when a peak arrives, so one loud chord ducks the sustain of everything around it. A soft clipper touches only the samples that exceed — and on a piano what exceeds is the hammer attack, a couple of milliseconds long. Round that and nobody hears it.
+
+The chain would be the limiter for sustained overs, a soft clip for transients, and the hard clamp never reached, with the clipper doing nearly all the work.
+
+Worth perhaps three decibels: a single note at eight volts, the range back to twenty-one, and ppp near one volt instead of 0.76. The risk is that distortion on a piano is unflattering in a way it is not on a guitar — a clean, harmonically rich sound, where added odd harmonics read as cheapness — so it wants to be gentle and judged with `test/ladder.py` rather than assumed.
+
+**Measure before choosing a curve**: how often and by how much the output actually exceeds, over the library. Rare and brief overs make a clipper nearly free; a dense passage sitting over the ceiling for whole bars is distortion rather than headroom, and then the limiter was the right tool after all.
+
 **A loudness bench over the whole library**, reporting LUFS rather than peak, so the figures above are watched rather than remembered. The measurements here were made outside the repository, which is the wrong place for them.
