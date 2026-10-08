@@ -31,10 +31,19 @@ namespace px {
 
 A General MIDI bank is quiet on purpose, so that a whole orchestra fits in it without clipping,
 and FluidSynth's own gain is a fifth on top of that. Scaled by five, as it first was, a guitar note
-at a moderate dynamic peaked at about 0.15 V — some twenty decibels under mpxGuitar's 2.1 V for
-the same note, which is where Rack's audio sits. At sixty-five the two match; `make leveltest`
-holds them to it. */
-static const float SOUND_VOLTS = 65.f;
+at a moderate dynamic peaked at about 0.15 V — some twenty decibels under mpxGuitar's for the same
+note. Sixty-five brought the two together, and this brings them both to MPX_FULL_VOLTS, which is
+what a level of one is defined to be worth.
+
+ONE FIGURE FOR A WHOLE BANK, which cannot be exact. The programs inside a SoundFont are recorded
+at whatever level their samples happened to have: at this scale the grand piano lands two decibels
+under the standard, the steel guitar on it, and the nylon guitar two over. That spread is the
+bank's and not something a constant here can take out. `make leveltest` measures all three. */
+static const float SOUND_VOLTS = 98.f;
+
+
+/** How many notes of one instant are taken as a chord. See mpxShare. */
+static const int SOUND_TOGETHER = 16;
 
 
 struct SoundCore {

@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "Chord.hpp"
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 /** The note transport — see docs/design.md.
@@ -41,6 +42,81 @@ same audio callback and the consumer drains completely every sample, so it canno
 by more than one sample's worth of events. This is headroom, not a buffer. */
 static const int BUS_RING = 256;
 
+/** WHAT A LEVEL OF ONE IS WORTH AT AN INSTRUMENT'S OUTPUT, as a peak in volts, with that module's
+volume control where it starts and one note sounding.
+
+FIVE VOLTS IS RACK'S OWN NOMINAL FULL SCALE for audio, so the loudest single note an instrument
+plays reaches the top of the scale and everything above it — a chord, a dense texture — is using
+the headroom between there and the hard limit.
+
+WHY IT IS WRITTEN DOWN AT ALL. Two modules playing the same part from the same cable were once
+twenty decibels apart, which is not a thing anybody can hear as a fault: it reads as one of them
+being the wrong instrument for the music. A number on the cable has to mean the same thing at
+every module that reads it. See test/leveltest.cpp, which measures each of them against this. */
+static const float MPX_FULL_VOLTS = 5.f;
+
+/** HOW FAR BELOW THAT THE QUIETEST MARKING IS, in decibels: the whole dynamic range of the
+written dynamics, from ppp to fff.
+
+LEVEL IS A DECIBEL SCALE, which is the point of this. A note's loudness is MPX_RANGE_DB times
+(1 - level) decibels below MPX_FULL_VOLTS, so the eight markings are the eight levels evenly
+spread from nought to one and each is a fixed number of decibels — see mpxLoudness.
+
+A MARKING IS AN ABSOLUTE LOUDNESS AND NOT A PLACE IN A SCORE'S OWN RANGE. Forte means the same
+thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly
+is meant to be quieter. Nothing normalises a score against itself.
+
+TWENTY-TWO AND NOT TWENTY-NINE, which is what the Salamander recordings span on their own. That
+is a piano in a quiet room, and in a rack, with the loud end set where it belongs, it puts
+pianissimo close to inaudible. The instrument's DYNAMICS control scales this down further for a
+piece that wants less. */
+static const float MPX_RANGE_DB = 22.f;
+
+/** WHAT A LEVEL IS WORTH, in decibels below MPX_FULL_VOLTS. Nought at fff, negative everywhere
+else. The one conversion every instrument should use, so that a marking is the same loudness
+whichever of them is playing it.
+
+`narrow` is the instrument's own dynamic range control, one for the full range and less for a
+piece that wants the quiet end brought up; it moves the floor and never the ceiling. */
+inline float mpxDecibels(float level, float narrow = 1.f) {
+	const float l = (level < 0.f) ? 0.f : (level > 1.f ? 1.f : level);
+	return -(1.f - l) * MPX_RANGE_DB * narrow;
+}
+
+/** THE SAME AS A GAIN, one at fff. What an instrument multiplies by once it has its note at full
+loudness — see mpxPiano, which divides out the recording's own measured level to get there. */
+inline float mpxLoudness(float level, float narrow = 1.f) {
+	return std::pow(10.f, mpxDecibels(level, narrow) / 20.f);
+}
+
+/** HOW MUCH OF A DYNAMIC EACH NOTE OF A CHORD IS WORTH, by how many are struck together.
+
+A MARKING IS A LOUDNESS, NOT A FORCE PER FINGER. A player asked for forte on five notes plays a
+forte chord; they do not play five notes each as loud as a single forte note. Nothing shared a
+dynamic out before this, and notes simply added: N of them sum to twenty log N, sixteen decibels
+for six, before anything written is considered. Measured across the scores in use, the amplitude
+of an attack spanned twenty-one and a half decibels between one piece and another, almost all of
+it from how many notes were sounding rather than from what was marked.
+
+THE COUNT TO A FRACTIONAL POWER, settled by measuring what came out. A chord stays bigger than a
+single note, as it should be, but by an amount a player could have chosen rather than one that
+follows from how many notes the chord happens to need: at this exponent two notes come out about
+seven tenths of a decibel above one, six about two, and sixteen about four and a half, against
+nearly thirteen with no sharing at all. A half flattens it altogether, which loses the weight a
+big chord ought to have.
+
+ONE IS LEFT ALONE, so this pulls dense textures down to meet sparse ones and never makes anything
+quieter than it was. It is a gain and must stay one: put through `level` instead it would move
+the whole note down the decibel scale, and a six-note chord at forte then comes out quieter than
+a single forte note. See docs/dynamics.md. */
+static const float MPX_DENSITY_POWER = 0.35f;
+
+inline float mpxShare(int struckTogether) {
+	if (struckTogether < 2)
+		return 1.f;
+	return std::pow((float) struckTogether, -MPX_DENSITY_POWER);
+}
+
 /** The continuing values, which arrive as updates naming the note they belong to. */
 enum Lane {
 	LANE_BEND,
@@ -57,6 +133,19 @@ struct Event {
 	int64_t handle = 0;
 	/** Set at note-on and unchanging for the note's life. */
 	float pitch = 0.f;
+	/** HOW HARD THE NOTE IS PLAYED, nought to one, where the written dynamics land on the ladder
+	in MusicXML.cpp: ppp is .15 and fff is 1.
+
+	WHAT ONE MEANS, IN VOLTS. A single note at level 1, with the instrument's volume control where
+	it starts, peaks at MPX_FULL_VOLTS at that module's output. That is a statement about every
+	instrument on this cable and not about one of them: the same number on the cable has to be the
+	same loudness whichever module reads it, or a part sounds different for having been handed to
+	a different instrument. test/leveltest.cpp measures it and fails when a module drifts.
+
+	IT IS A PER-NOTE FIGURE, and notes add. Nothing here scales a chord against a single note, so
+	a dense texture is louder than a sparse one at the same written dynamic — measured across the
+	scores in use, the amplitude of an attack spans about twenty-one decibels, almost all of it
+	from how many notes are sounding rather than from what is marked. See docs/dynamics.md. */
 	float level = 0.f;
 	float duration = 0.f;
 	float pan = 0.f;

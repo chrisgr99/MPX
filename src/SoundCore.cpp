@@ -318,6 +318,13 @@ void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool r
 		}
 		performer[p].humanise(humanise);
 
+		// EVERYTHING STRUCK AT ONCE IS TAKEN AT ONCE, so a chord is shared out as a chord
+		// rather than being as loud as its note count makes it. Counted here because the
+		// performer spreads a strum across milliseconds and nothing after it can tell. See
+		// mpxShare.
+		PerformNote together[SOUND_TOGETHER];
+		int chord = 0;
+
 		Event e;
 		while (reader[p].next(e)) {
 			if (!on || mute)
@@ -342,7 +349,10 @@ void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool r
 					n.bendAt[k] = (float) e.bendPoints[k].at / 100.f;
 					n.bendCents[k] = (float) e.bendPoints[k].cents;
 				}
-				performer[p].note(n);
+				if (chord < SOUND_TOGETHER)
+					together[chord++] = n;
+				else
+					performer[p].note(n);
 				active[p] = 1.f;
 			}
 			else if (e.kind == Event::OFF) {
@@ -358,6 +368,10 @@ void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool r
 				}
 			}
 		}
+		for (int a = 0; a < chord; a++) {
+			together[a].share = mpxShare(chord);
+			performer[p].note(together[a]);
+		}
 
 		performer[p].advance(sampleTime);
 
@@ -366,8 +380,22 @@ void SoundCore::step(float sampleTime, const bool* muted, float humanise, bool r
 			const int ch = channel(p, m.voice);
 			switch (m.kind) {
 				case PerformMessage::ATTACK:
+					// A LEVEL IS A LOUDNESS AND A VELOCITY IS NOT. See MPX_RANGE_DB: a level is
+					// a decibel scale, and ppp is nought on it — which as a velocity is silence,
+					// and as a loudness is twenty-two decibels down. Sent straight across, the
+					// quiet end of every score disappeared.
+					//
+					// THE BANK'S OWN CURVE, MEASURED RATHER THAN ASSUMED. The SoundFont
+					// specification says amplitude follows the square of the velocity, which
+					// would make the velocity for a given loudness its square root. Swept
+					// through GeneralUser-GS the exponent is nearer one and a half — see
+					// test/leveltest.cpp, which prints the sweep — and taking the spec at its
+					// word left pianissimo four decibels louder than it was asked to be.
+					static const float BANK_POWER = 1.57f;
 					engine.noteOn(ch, math::clamp(m.key, 0, 127),
-						math::clamp((int) std::lround(m.value * 127.f), 1, 127));
+						math::clamp((int) std::lround(127.f
+							* std::pow(mpxLoudness(m.value) * m.share,
+								1.f / BANK_POWER)), 1, 127));
 					break;
 				case PerformMessage::RELEASE:
 					engine.noteOff(ch, math::clamp(m.key, 0, 127));

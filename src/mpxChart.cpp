@@ -1827,6 +1827,20 @@ struct ChartWindow : widget::OpaqueWidget {
 			requestDelete();
 			return;
 		}
+		// SPACE STARTS AND STOPS IT, as it does in everything that plays anything.
+		//
+		// A FIELD BEING TYPED INTO KEEPS ITS SPACE, and nothing here has to arrange that: Rack
+		// offers a key to the selected widget first and only turns it into a hover key when
+		// that one does not take it, so a text field with the cursor in it has already consumed
+		// the space before this is asked.
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE && (e.mods & RACK_MOD_MASK) == 0
+				&& module) {
+			Param& play = module->params[ChartModule::P_PLAY];
+			play.setValue(play.getValue() > 0.5f ? 0.f : 1.f);
+			e.consume(this);
+			e.stopPropagating();
+			return;
+		}
 		widget::OpaqueWidget::onHoverKey(e);
 	}
 
@@ -2849,6 +2863,22 @@ struct ChartWidget : ModuleWidget {
 	void onRemove(const RemoveEvent& e) override {
 		chartWindowCloseFor(dynamic_cast<ChartModule*>(module));
 		ModuleWidget::onRemove(e);
+	}
+
+	/** SPACE STARTS AND STOPS IT while the pointer is over the module, as it does over the
+	window. A field being typed into keeps its space without anything here arranging it: Rack
+	offers a key to the selected widget first and only turns it into a hover key when that one
+	does not take it. */
+	void onHoverKey(const HoverKeyEvent& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE && (e.mods & RACK_MOD_MASK) == 0
+				&& module) {
+			Param& play = module->params[ChartModule::P_PLAY];
+			play.setValue(play.getValue() > 0.5f ? 0.f : 1.f);
+			e.consume(this);
+			e.stopPropagating();
+			return;
+		}
+		ModuleWidget::onHoverKey(e);
 	}
 
 	ChartWidget(ChartModule* module) {

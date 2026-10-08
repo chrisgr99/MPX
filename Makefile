@@ -420,9 +420,11 @@ guitartest:
 # The built-in band's level against mpxGuitar's, the same note through each.
 leveltest:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall -I dep/include test/leveltest.cpp src/FluidEngine.cpp src/GuitarModel.cpp \
-		src/GuitarString.cpp dep/lib/libfluidsynth.a -framework CoreFoundation -o build/leveltest
-	@./build/leveltest $(ARGS)
+	@c++ -std=c++11 -O2 -Wall -I dep/include -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		test/leveltest.cpp src/FluidEngine.cpp src/GuitarModel.cpp \
+		src/GuitarString.cpp dep/lib/libfluidsynth.a -framework CoreFoundation \
+		-L$(RACK_DIR) -lRack -o build/leveltest
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/leveltest $(ARGS)
 
 # The fretting hand: the shapes it finds against the familiar ones. No Rack in it.
 fretboardtest:

@@ -83,6 +83,14 @@ bool Score::load(const std::string& musicxml, std::string* reason) {
 	loaded = false;
 	applyOptions();
 
+	// THE BARS OF THE DOCUMENT BEING LAID OUT, counted here because this is the only place that
+	// has it: what reaches Verovio is one part cut out of the file, and the file itself holds a
+	// set of bars for every instrument. Nought for a zip, which is counted from `source` instead.
+	laidOutBars = 0;
+	for (size_t at = musicxml.find("<measure "); at != std::string::npos;
+			at = musicxml.find("<measure ", at + 1))
+		laidOutBars++;
+
 	// COMPRESSED MUSICXML IS WHAT MUSESCORE WRITES BY DEFAULT, and it is a zip holding the
 	// document and a little file saying which member of the zip the document is. Verovio reads
 	// it, but only through a call of its own: handed the bytes it works the format out by looking
@@ -372,10 +380,22 @@ void Score::fitSystems() {
 	// a tenth of a second each, once, when a score is opened.
 	if (!loaded || !toolkit)
 		return;
-	size_t bars = 0;
-	for (size_t at = source.find("<measure "); at != std::string::npos;
-			at = source.find("<measure ", at + 1))
-		bars++;
+	// THE BARS OF WHAT WAS LAID OUT, NOT OF THE FILE. A score of several parts carries a full set
+	// of bar elements per part — the Schumann quartet has 132 bars and 528 bar elements — while
+	// the document handed to Verovio holds one part. Counting the file therefore counted every
+	// bar once per instrument, the loop below set out to cure a system holding four times too
+	// many bars, and a quartet opened at one bar to a system and four times the size it should
+	// be. A single-part score counts the same either way, which is why this went unseen.
+	size_t bars = (size_t) laidOutBars;
+	if (bars < 2) {
+		// A DOCUMENT HANDED OVER STILL COMPRESSED was never counted, so fall back to the file and
+		// divide by how many parts it holds.
+		for (size_t at = source.find("<measure "); at != std::string::npos;
+				at = source.find("<measure ", at + 1))
+			bars++;
+		const size_t parts = allParts.empty() ? 1 : allParts.size();
+		bars /= parts;
+	}
 	if (bars < 2)
 		return;
 	for (int pass = 0; pass < 6; pass++) {

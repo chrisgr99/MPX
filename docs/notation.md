@@ -38,6 +38,28 @@ The music glyphs are the part that could have been hard and is not: each is a si
 
 **And the graphic markers are what makes it navigable.** Verovio brackets every element it draws with a start and an end carrying that element's identifier, so the backend can record the box each bar occupied as it is drawn. That is what the cursor, clicking a bar, and tinting a loop across several systems all need.
 
+## How large the notation comes out
+
+**A page width does not mean the same thing for every score.** A MusicXML file may carry its own scaling — so many millimetres to so many tenths — and its own page size, and Verovio honours both. So one width holds two bars of a score that declares nothing and eighteen of one that declares a small staff. The Nocturne in E flat came out as two systems of eighteen bars, which on a screen is a scribble.
+
+**So the layout is measured and the width adjusted** until a system holds between two and five bars, which reads well at the sizes this window offers. Verovio is asked for one system a page, so counting pages counts systems. Up to six passes, each a tenth of a second, once, when a score is opened. The width then decides the drawn size: `pageScale` is the pixels asked for divided by that width, so a narrower fitted page draws larger notation.
+
+**Count the bars of the document that was laid out, not of the file.** A score of several parts carries a full set of bar elements per part — the Schumann quartet has 132 bars and 528 bar elements — while what reaches Verovio is one part cut out of it. Counting the file counted every bar once per instrument, so the fit set out to cure a system holding four times too many bars and drove the width down until a system held one. A quartet opened at four times the size it should be, with a single bar overflowing the window.
+
+`Score::load` records the count as it hands the document over, which is the only place that has the document actually being laid out. That also covers a Guitar Pro song written out as MusicXML, where the file on disk is not MusicXML at all.
+
+A single-part score counts the same either way, which is why this went unseen. Two of the piano scores in regular use are engraved as two parts rather than as two staves of one part, so they had been drawing at twice their intended size.
+
+## The window
+
+**It rides with its module.** The window is a child of the scene and so lives in screen coordinates, which meant it stayed put while the rack scrolled out from under it: scroll away from the module and the window was still sitting there, belonging to nothing on screen. What is kept now is its offset from the module rather than its place on the screen, and it is put back beside it every frame. Dragging it, or resizing it by a left or top edge, sets a new offset. The offset is in screen pixels at the current zoom, so zooming moves the rack under a window that stays the size it was.
+
+**The transport is repeated in it**, at the left of the title strip in front of the piece's name, so the line reads as "play this". Reading the score is exactly when you want to start it, stop it and take it back to the top, and the module may be anywhere on the rack — possibly behind the window. The play button shows what pressing it will do: a triangle when stopped, a pair of bars when running.
+
+The window asks and the module's own button moves, through `ScoreFollow::wantTransport`. It is a request and not a state, like the seek beside it: the transport belongs to the module, and two places each holding their own idea of whether the music is running is a pair that can disagree. The chart window does the same thing for the same reason.
+
+The tools on the right are things done to the *view* — its size, its page, which instrument, whether it follows — and they stay there. The transport is about the music, so it sits with it.
+
 ## Where the cursor comes from
 
 From our own timeline, not from Verovio's timemap. The timemap exists and gives every event a time in milliseconds — but we already know, exactly, which written bar is playing and which pass through it we are on, and that is what drives the notes. Asking Verovio when things happen would put a second clock beside the one that is already right. It is asked only where things are on the page.

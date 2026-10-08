@@ -51,6 +51,16 @@ struct ScoreFollow {
 	looping it: the two were the same gesture once and a reader who only wanted to hear bar forty
 	was left with bar forty repeating. */
 	std::atomic<int> goTo{-1};
+
+	/** START OR STOP, ASKED FOR BY THE WINDOW and taken by the module, which puts it back to
+	nought. Reading a score is exactly when you want to start it and stop it, and the module may
+	be anywhere on the rack — possibly behind the window. One for play, two for stop, three to
+	take it back to the top; nought for nothing asked.
+
+	A REQUEST AND NOT A STATE, like the seek above it. The transport is the module's — its button
+	is the one that holds the setting, and two places each holding their own idea of whether the
+	music is running is a pair that can disagree. */
+	std::atomic<int> wantTransport{0};
 };
 
 
@@ -69,6 +79,12 @@ bool scoreFollowLoop(int64_t moduleId, int& from, int& to, bool* takeSeek);
 
 /** Asks for the music to be moved to the start of a written bar. */
 void scoreFollowGoTo(int64_t moduleId, int bar);
+
+/** Asked by the window: 1 play, 2 stop, 3 back to the top. */
+void scoreFollowTransport(int64_t moduleId, int what);
+
+/** Taken by the module: what was asked, or nought. Answers once per request. */
+int scoreFollowTakeTransport(int64_t moduleId);
 
 /** Taken by the module: the bar asked for, or minus one. Answers once per request. */
 int scoreFollowTakeGoTo(int64_t moduleId);

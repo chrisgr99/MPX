@@ -146,6 +146,12 @@ private:
 	std::vector<ScorePart> allParts;
 	int chosen = 0;
 	int width = 1500, height = 2000;
+	/** HOW MANY BARS ARE IN THE DOCUMENT VEROVIO WAS ACTUALLY GIVEN, which is not how many are in
+	`source`. A score of several parts holds a full set of bar elements per part, and the document
+	laid out here holds one part — so counting the file counts the bars once per instrument. See
+	fitSystems, which divided by that count and magnified a quartet fourfold. Nought before
+	anything has been laid out, and for a document handed over still compressed. */
+	int laidOutBars = 0;
 
 	/** The document with every part but `index` taken out of it, or the document unchanged when
 	it has one part, when it is not MusicXML this can read, or when `index` is out of range. */

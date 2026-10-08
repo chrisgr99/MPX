@@ -748,6 +748,18 @@ struct SongModule : Module, NoteSource {
 		if (rewindTrigger.process(params[P_REWIND].getValue(), 0.1f, 1.f))
 			rewind();
 
+		// THE SAME TRANSPORT, ASKED FOR FROM THE SCORE WINDOW. Reading the score is exactly when
+		// you want to start it, stop it and take it back to the top, and the module may be
+		// anywhere on the rack — possibly behind the window. The window asks and this moves the
+		// module's own button, so the two cannot end up each holding a different idea of whether
+		// the music is running. See ScoreFollow::wantTransport.
+		switch (scoreFollowTakeTransport(id)) {
+			case 1: params[P_PLAY].setValue(1.f); break;
+			case 2: params[P_PLAY].setValue(0.f); break;
+			case 3: rewind(); break;
+			default: break;
+		}
+
 		// STOPPED MEANS STOPPED, whatever the clock is doing: this is a transport and not a
 		// mute. The beat is still published, so anything following the song knows where it was
 		// stopped rather than losing it.
@@ -1557,6 +1569,23 @@ static Layout songLayout(int rows) {
 struct SongWidget : ModuleWidget {
 	Panel* panel = NULL;
 	Layout layout;
+
+	/** SPACE STARTS AND STOPS IT while the pointer is over the module, as it does over the
+	score window. A field being typed into keeps its space without anything here arranging it:
+	Rack offers a key to the selected widget first and only turns it into a hover key when that
+	one does not take it, so a text field with the cursor in it has already consumed the space
+	before this is asked. */
+	void onHoverKey(const HoverKeyEvent& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE && (e.mods & RACK_MOD_MASK) == 0
+				&& module) {
+			Param& play = module->params[SongModule::P_PLAY];
+			play.setValue(play.getValue() > 0.5f ? 0.f : 1.f);
+			e.consume(this);
+			e.stopPropagating();
+			return;
+		}
+		ModuleWidget::onHoverKey(e);
+	}
 	SongTitle* titleDisplay = NULL;
 	SongRows* columns[2] = {};
 	/** How many rows the panel is currently showing, so a change of the setting is noticed. */

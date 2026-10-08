@@ -27,10 +27,30 @@ struct Loudness {
 	const char* name;
 	float level;
 };
+/** THE EIGHT MARKINGS, EVENLY SPREAD FROM NOUGHT TO ONE.
+
+EVENLY, BECAUSE LEVEL IS A DECIBEL SCALE. See MPX_RANGE_DB: a level is worth twenty-two times
+(1 - level) decibels below full, so an even spacing here is an even spacing in loudness — one
+seventh of the range, about three decibels, from each marking to the next. A marking names a
+number of decibels, and it names the same number in every score.
+
+WHAT THIS WAS, AND THE TWO THINGS WRONG WITH IT. The levels were .15 .25 .35 .5 .6 .75 .88 1,
+which came from nobody in particular and were spaced evenly in nothing at all. Measured through
+the piano they gave steps of 4.7, 6.1, 4.4, 4.0, 4.0, 4.6 — and then 0.9 from ff to fff, so the
+two loudest markings in music were the same loudness and seven marks did the work of six. And the
+whole span came to twenty-nine decibels, which is a piano in a quiet room and leaves pianissimo
+close to inaudible in a rack.
+
+MF AND FFF ARE WHERE THEY WERE, deliberately: the eighteen scores that carry no dynamics at all
+sit at mf and should not move, and the top of an instrument should not move. Everything below mf
+comes up, ff comes down by the two decibels that were never really there. */
 const Loudness LOUDNESS[] = {
-	{"ppp", 0.15f}, {"pp", 0.25f}, {"p", 0.35f}, {"mp", 0.5f},
-	{"mf", 0.6f}, {"f", 0.75f}, {"ff", 0.88f}, {"fff", 1.f},
-	{"sf", 0.85f}, {"sfz", 0.9f}, {"fp", 0.75f},
+	{"ppp", 0.f},       {"pp", 1.f / 7.f},  {"p", 2.f / 7.f},   {"mp", 3.f / 7.f},
+	{"mf", 4.f / 7.f},  {"f", 5.f / 7.f},   {"ff", 6.f / 7.f},  {"fff", 1.f},
+	// THE ACCENTS, which are a marking and a blow rather than a level that holds: sf sits
+	// between f and ff, sfz at ff, and fp strikes at f and drops to p straight after — the
+	// drop is not read, so it is the f that is kept.
+	{"sf", 5.5f / 7.f}, {"sfz", 6.f / 7.f}, {"fp", 5.f / 7.f},
 };
 const int LOUDNESS_COUNT = (int) (sizeof(LOUDNESS) / sizeof(LOUDNESS[0]));
 
@@ -63,17 +83,19 @@ struct LevelEvent {
 /** HOW FAR A HAIRPIN GOES WHEN NOTHING SAYS. A crescendo with no mark after it still has to
 arrive somewhere; this is the distance it travels, which is one step of the ladder.
 
-MEASURED OFF THE LADDER ITSELF rather than guessed. The marks run .15 .25 .35 .5 .6 .75 .88 1.0,
-so a step between neighbours is about an eighth. A quarter — which this was, while claiming to be
-one step — is two dynamics at a stroke: every crescendo from f slammed into the ceiling and stayed
-there, which put an eighth of the Ballade at full. */
-const float HAIRPIN_REACH = 0.13f;
+ONE STEP OF THE LADDER, which is now a seventh of it: the eight markings are evenly spread, so
+this is exactly the distance from one to the next, about three decibels. A quarter — which this
+was once, while claiming to be one step — is two dynamics at a stroke: every crescendo from f
+slammed into the ceiling and stayed there, which put an eighth of the Ballade at full. */
+const float HAIRPIN_REACH = 1.f / 7.f;
 
 
 /** THE QUIETEST A RAMP MAY ARRIVE AT. ppp is the quietest thing written in music, and a ramp whose
 destination nobody wrote is working from a guess: it may fade, but not to somewhere no composer
-ever asks for. A mark that really says ppp is obeyed, since that is not a guess. */
-const float QUIETEST = 0.15f;
+ever asks for. A mark that really says ppp is obeyed, since that is not a guess.
+
+Nought, because ppp is the bottom of the ladder now that the markings are evenly spread. */
+const float QUIETEST = 0.f;
 
 
 /** HOW LONG AN ORNAMENT LASTS, in quarter notes.

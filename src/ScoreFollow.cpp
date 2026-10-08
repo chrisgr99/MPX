@@ -86,6 +86,19 @@ int scoreFollowTakeGoTo(int64_t moduleId) {
 }
 
 
+void scoreFollowTransport(int64_t moduleId, int what) {
+	ScoreFollow* f = slotFor(moduleId, true);
+	if (f)
+		f->wantTransport.store(what, std::memory_order_release);
+}
+
+
+int scoreFollowTakeTransport(int64_t moduleId) {
+	ScoreFollow* f = slotFor(moduleId, false);
+	return f ? f->wantTransport.exchange(0, std::memory_order_acq_rel) : 0;
+}
+
+
 void scoreFollowDrop(int64_t moduleId) {
 	ScoreFollow* f = slotFor(moduleId, false);
 	if (!f)

@@ -69,6 +69,12 @@ struct PianoRegion {
 	/** The top of the keyboard has no dampers, so those strings ring on after the key comes up. */
 	bool undamped = false;
 	float gain = 1.f;
+	/** HOW LOUD THIS RECORDING ACTUALLY IS, as a fraction of full scale, measured when it is
+	read. The set's sixteen velocity layers are separate performances and span about twenty-four
+	decibels between them, so how loud a note comes out is mostly a property of which recording
+	was chosen and not of any formula. Without this figure the module cannot know how loud a note
+	it is about to play will be, and so cannot reason about its own dynamic range. See DYNAMICS. */
+	float peak = 1.f;
 	int sample = -1;
 };
 
@@ -209,6 +215,21 @@ static PianoBank* loadBank(const std::string& dir, int layers, std::atomic<float
 		if (!readWav(dir + "/samples/" + file, s)) {
 			WARN("mpxPiano: could not read %s", file);
 			continue;
+		}
+		// HOW LOUD THE RECORDING IS, measured once here rather than guessed at per note. Only the
+		// first half second is looked at: a piano note's peak is in its attack, and scanning
+		// whole samples would add seconds to a load that already takes a while.
+		{
+			const size_t look = std::min(s.data.size(), (size_t) (SAMPLES_RATE / 2) * 2);
+			int loudest = 0;
+			for (size_t k = 0; k < look; k++) {
+				const int a = (s.data[k] < 0) ? -s.data[k] : s.data[k];
+				if (a > loudest)
+					loudest = a;
+			}
+			r.peak = (float) loudest / 32768.f;
+			if (r.peak < 0.0001f)
+				r.peak = 0.0001f;
 		}
 		r.sample = (int) bank->samples.size();
 		bank->samples.push_back(std::move(s));
@@ -454,7 +475,7 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	enum ParamId {
 		P_VOLUME,
 		P_RELEASE,
-		P_HAMMER,
+		P_EMPHASIS,
 		P_PEDAL,
 		P_BRIGHT,
 		P_DYNAMICS,
@@ -509,6 +530,10 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
 	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
 	float pedalNoise = 1.f;
+	/** HOW LOUD THE KEY COMING UP IS. A knob until the knob was wanted for the emphasis, and a
+	thing nobody adjusts twice: the mechanical noises are a hundredth of what the metre does to a
+	performance. Beside the pedal's own noise in the menu now. */
+	float hammerNoise = 1.f;
 
 	/** HOW FAR A SLURRED NOTE IS HELD PAST ITS WRITTEN END, in seconds. A pianist's finger overlap
 	is a few tens of milliseconds whatever the note is worth; forty is in the middle of what is
@@ -606,8 +631,8 @@ struct PianoModule : Module, NoteSink, NoteSource {
 		configParam(P_VOLUME, 0.f, 2.f, 1.f, "Volume", "%", 0.f, 100.f);
 		configParam(P_RELEASE, 0.f, 2.f, 1.f, "Release",
 			"%", 0.f, 100.f);
-		configParam(P_HAMMER, 0.f, 2.f, 1.f, "Hammer",
-			"%", 0.f, 100.f);
+		// WHERE THE WEIGHT OF THE BAR GOES. Two-sided about the middle: see metre.
+		configParam(P_EMPHASIS, -1.f, 1.f, 0.f, "Emphasis", "%", 0.f, 100.f);
 		// PEDALLING BY THE METRE. The positions are an axis from driest to wettest, measured
 		// against the pedal marks of two Chopin pieces: see pedalFor and docs/piano.md.
 		configSwitch(P_PEDAL, 0.f, 5.f, 0.f, "Pedalling",
@@ -736,6 +761,17 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	note cannot be judged on its loudness before it has made any. */
 	static constexpr float PROTECT_SECONDS = 0.05f;
 
+	/** WHERE THE OUTPUT STOPS GETTING LOUDER, in volts, and how quickly it gives way and comes
+	back. Ten is mpxGuitar's figure for the same thing, which is twice Rack's nominal level for
+	audio: by the time a piano is there, something has piled up. A millisecond to take hold is
+	fast enough that only the very front of a transient passes; a sixth of a second to let go is
+	slow enough that the gain moving is not itself heard. */
+	static constexpr float LIMIT_VOLTS = 10.f;
+	static constexpr float LIMIT_ATTACK = 0.001f;
+	static constexpr float LIMIT_RELEASE = 0.15f;
+	/** How much the limiter is holding back now, one when it is doing nothing. */
+	float limitGain = 1.f;
+
 	/** HOW MUCH LOUDER A STRING CAN GET FROM BEING STRUCK AGAIN while it is still sounding, as a
 	multiple of what the new strike alone would give. A repeatedly struck string reaches a steady
 	amplitude rather than growing without limit, and a half again is about four decibels — enough
@@ -834,7 +870,7 @@ static float partGain(int part) {
 		// The key coming up is heard whatever the pedal is doing.
 		if (heard && bank)
 			startOneShot(bank->find(PART_HAMMER, v.key, v.vel),
-				params[P_HAMMER].getValue() * v.amp, PART_HAMMER, v.key, sampleRate);
+				hammerNoise * v.amp, PART_HAMMER, v.key, sampleRate);
 		if (sustain < 0.95f)
 			damp(v, sampleRate, sustain);
 	}
@@ -950,8 +986,121 @@ static float partGain(int part) {
 		return 0.6f;            // Everything in between.
 	}
 
+	/** This instrument's share of a chord's dynamic is the shared one: see mpxShare, which
+	every instrument on the cable uses, and which carries the measurements it was settled by.
+	Here it rides to noteOn as a gain and never touches `level` — put through the level it would
+	move the note down the decibel scale instead of quietening it, and a six-note chord at forte
+	came out quieter than a single forte note. */
+	static float density(int count) {
+		return mpxShare(count);
+	}
+
+	/** HOW STRONG A POSITION IN THE BAR IS, one for a downbeat down to a fifth for anything
+	finer than an eighth off the beat. The ladder Phrasing.cpp already uses to decide where a
+	phrase may break, which is the same hierarchy read for a different purpose. */
+	static float metricStrength(float beatsIntoBar, int barBeats) {
+		const float eps = 1e-3f;
+		if (beatsIntoBar < eps)
+			return 1.f;
+		const int whole = (int) std::lround(beatsIntoBar);
+		if (std::fabs(beatsIntoBar - (float) whole) < eps) {
+			if (barBeats % 2 == 0 && whole == barBeats / 2)
+				return 0.7f;       // The middle of an even bar carries the second weight.
+			return 0.5f;
+		}
+		const float withinBeat = beatsIntoBar - std::floor(beatsIntoBar);
+		if (std::fabs(withinBeat - 0.5f) < eps)
+			return 0.3f;
+		return 0.2f;
+	}
+
+	/** AN ORDINARY BEAT, which the emphasis is measured either side of. */
+	static constexpr float METRE_PLAIN = 0.5f;
+	/** HOW FAR THE EMPHASIS REACHES at the end of its travel, in decibels per unit of strength.
+	A downbeat is half a unit above an ordinary beat, so four gives it two decibels — about what
+	a player puts there, and small beside the voicing and the melody lead, which is where it
+	belongs. Heard as a pulse rather than felt as one means it is too strong. */
+	static constexpr float METRE_DB = 4.f;
+	/** AND HOW MUCH LONGER a leaned-on note is held, as a fraction of its length. An agogic
+	accent: players give a strong beat a little more time as well as a little more weight, and
+	it is arguably the larger half of what stops a performance sounding typed. Only the length
+	is touched and never the onset — moving a note in time would walk away from the score's own
+	cursor and from every other instrument reading the same bar. */
+	static constexpr float METRE_LONGER = 0.09f;
+
+	/** WHERE THE WEIGHT OF THE BAR GOES, as a gain and a stretch on one note.
+
+	NOT A DYNAMIC MARKING, AND NOT IN THE SCORE. A score says forte once and means it for twenty
+	bars; what a player does inside those bars is lean very slightly on the strong positions, and
+	nobody writes it down because every player already knows. Its absence is a good part of why a
+	sequenced performance sounds mechanical even when every marked dynamic is right.
+
+	TWO-SIDED ABOUT THE MIDDLE. Clockwise leans on the bar — the downbeat, then the middle of an
+	even bar — and lets the positions between beats fall back. Anticlockwise does the reverse and
+	leans on what falls between the beats, which is what a syncopated line wants and what makes
+	the same rule useful for music that is written against the metre rather than along it. In the
+	middle it does nothing at all.
+
+	IT DOES NOT ARGUE WITH THE SCORE. A note the composer has already accented is left alone
+	entirely: the weight has been placed by hand there, and a rule that knows only the bar line
+	has nothing to add and a good deal to spoil — on a syncopation, which is exactly where accents
+	are written, it would be pulling the other way. */
+	void metre(const Harmony& h, uint32_t technique, float& gain, float& duration) {
+		const float set = params[P_EMPHASIS].getValue();
+		if (std::fabs(set) < 0.01f || h.barBeats < 1)
+			return;
+		if (technique & (Event::ACCENT | Event::HEAVY_ACCENT))
+			return;
+		// THE BAR POSITION IN BEATS OF THE WRITTEN KIND, since beatInBar is in quarter notes and
+		// a bar of six eight does not have six quarter-note beats in it.
+		const float beats = h.beatInBar * (float) h.barUnit / 4.f;
+		const float away = metricStrength(beats, (int) h.barBeats) - METRE_PLAIN;
+		gain *= std::pow(10.f, away * METRE_DB * set / 20.f);
+		if (duration > 0.f)
+			duration *= 1.f + away * METRE_LONGER * set;
+	}
+
+	/** HOW LOUD THIS NOTE IS TO BE, as a gain on the recording about to be played.
+
+	A MARKING NAMES A NUMBER OF DECIBELS, and the instrument's job is to produce it. See
+	MPX_RANGE_DB: level is a decibel scale, forte is a fixed distance below full, and it is that
+	distance in every score — a piece that never rises above mezzo-forte stays quieter than one
+	that reaches fff, because that is what the composer wrote.
+
+	THE LAYER STILL FOLLOWS THE MARKING, so a pianissimo keeps the tone of a pianissimo: which
+	recording is chosen is a question about colour, and how loud it then plays is this. That
+	division is what makes the DYNAMICS knob a clean control — narrowing the range moves the
+	loudness and leaves the colour where it was.
+
+	AND IT IS WHY THE REGISTER NO LONGER MATTERS. The Salamander set was recorded note by note
+	and never normalised: the same marking varied by seven and a half decibels across the
+	keyboard, with three point eight of that between A3 and middle C alone, which are neighbours.
+	A piece whose loud writing happened to sit around F sharp 4 came out four decibels under one
+	whose loud writing sat on middle C, both marked forte. Dividing each recording's own measured
+	peak back out removes all of it, because the note is aimed at a figure rather than left where
+	the performance landed.
+
+	WHAT THIS REPLACED was the set's velocity tracking, seventy-three per cent, taken from its
+	SFZ. That is a reasonable guess at how a piano behaves and it is not a target; it could not
+	say what a note would come out at, only how it would scale.
+
+	THIS NEEDS TO KNOW HOW LOUD THE NOTE WILL BE before playing it, which is why every recording
+	is measured as it is read. See PianoRegion::peak. */
+	float aimedAt(float level, const PianoRegion* r) {
+		if (!r || r->peak <= 0.f)
+			return 0.f;
+		// WHAT THE MARKING IS WORTH, from the one table every instrument reads, narrowed by the
+		// knob. One at fff, and that is MPX_FULL_VOLTS out once the volume stage has it.
+		const float want = mpxLoudness(level, params[P_DYNAMICS].getValue());
+		// AND THE RECORDING'S OWN LOUDNESS DIVIDED BACK OUT, which is what makes the marking a
+		// number rather than an accident of which performance got sampled.
+		return want / r->peak;
+	}
+
+	/** `share` is a gain on the string's amplitude and nothing else: see density, and the comment
+	on v->amp for why it cannot be folded into `level`. One for a note standing on its own. */
 	void noteOn(int64_t source, float pitchV, float level, float sampleRate, float soft,
-			float duration) {
+			float duration, float share = 1.f) {
 		// AND OUT ON THE CABLE, as played: see `slot`. Before anything that could return early,
 		// so that what goes out does not depend on the samples being installed or on a region
 		// being found for this key.
@@ -970,10 +1119,9 @@ static float partGain(int part) {
 		const float m = noteOf(pitchV);
 		const int key = math::clamp((int) std::lround(m), 21, 108);
 		int vel = velocityOf(level);
-		// DYNAMICS narrows the spread about the middle, for the layer chosen and for the level
-		// alike, so turned down every note sounds much alike whatever its velocity.
-		const float dyn = params[P_DYNAMICS].getValue();
-		float layerVel = 64.f + (vel - 64.f) * dyn;
+		// THE LAYER FOLLOWS WHAT WAS WRITTEN, and DYNAMICS no longer touches it: see the gain
+		// worked out below.
+		float layerVel = (float) vel;
 		// THE SOFT PEDAL, imitated: the set has no una corda recording, so it favours the softer
 		// layers here and darkens the tone in the mix.
 		layerVel *= 1.f - 0.35f * soft;
@@ -1032,10 +1180,15 @@ static float partGain(int part) {
 		v->undamped = r->undamped;
 		v->key = key;
 		v->vel = lv;
-		// The set's own velocity tracking, from its SFZ: seventy-three per cent.
-		const float vt = 0.73f;
-		const float x = lv / 127.f;
-		const float fresh = ((1.f - vt) + vt * x * x) * (1.f - 0.2f * soft);
+		// WHAT THE MARKING IS WORTH, aimed at rather than arrived at: see aimedAt.
+		//
+		// THE CHORD'S SHARE AND THE SOFT PEDAL ARE GAINS HERE and not smaller levels, which is
+		// the whole of why the share is carried this far down. A level does not scale amplitude,
+		// it names a loudness — halve it and the note does not halve, it drops to whatever the
+		// table says that marking is worth. The first version of the share divided the level,
+		// and a six-note chord at forte came out quieter than a single forte note, which is the
+		// opposite of the fault it was written to cure.
+		const float fresh = aimedAt(level, r) * (1.f - 0.2f * soft) * share;
 		// WHAT WAS STILL RINGING, ADDED TO THE NEW STRIKE, up to a ceiling: a string driven over
 		// and over settles at an amplitude a little above one strike's, it does not keep growing.
 		// Nought for a key that was not already sounding, which is almost every note.
@@ -1191,7 +1344,7 @@ static float partGain(int part) {
 	/** A NOTE WAITING ITS TURN IN A CHORD. See SPREAD_PER_LEVEL. */
 	struct Waiting {
 		int64_t handle = 0;
-		float pitch = 0.f, level = 0.f, duration = 0.f;
+		float pitch = 0.f, level = 0.f, duration = 0.f, share = 1.f;
 		int64_t in = 0;         /**< Samples still to wait. */
 		bool active = false;
 	};
@@ -1199,7 +1352,8 @@ static float partGain(int part) {
 
 	/** Puts a note by for a moment. False where there is no room, and then it speaks at once,
 	since a note played flat with the rest of the chord is better than one not played. */
-	bool holdBack(int64_t handle, float pitch, float level, float duration, float late, float sr) {
+	bool holdBack(int64_t handle, float pitch, float level, float duration, float late, float sr,
+			float share) {
 		for (size_t i = 0; i < sizeof(waiting) / sizeof(waiting[0]); i++) {
 			if (waiting[i].active)
 				continue;
@@ -1207,6 +1361,7 @@ static float partGain(int part) {
 			waiting[i].pitch = pitch;
 			waiting[i].level = level;
 			waiting[i].duration = duration;
+			waiting[i].share = share;
 			waiting[i].in = (int64_t) std::lround((double) late * (double) sr);
 			waiting[i].active = waiting[i].in > 0;
 			return waiting[i].active;
@@ -1223,7 +1378,7 @@ static float partGain(int part) {
 				continue;
 			waiting[i].active = false;
 			noteOn(waiting[i].handle, waiting[i].pitch, waiting[i].level, sr, soft,
-				waiting[i].duration);
+				waiting[i].duration, waiting[i].share);
 		}
 	}
 
@@ -1298,10 +1453,13 @@ static float partGain(int part) {
 						struck[chord++] = e;
 					else {
 						// More notes at one instant than any hand could play: the rest are
-						// started unbalanced rather than dropped.
+						// started unbalanced rather than dropped. Shared out by density all
+						// the same, since there are certainly at least this many sounding, and
+						// a texture this thick is exactly where the sum runs away.
 						float level = e.level, duration = e.duration;
 						shapeByMark(e.technique, level, duration);
-						noteOn(e.handle, e.pitch, level, sr, soft, duration);
+						noteOn(e.handle, e.pitch, level, sr, soft, duration,
+							density(MAX_CHORD));
 					}
 				}
 				else if (e.kind == Event::OFF)
@@ -1335,6 +1493,16 @@ static float partGain(int part) {
 					levels[a] *= voicing(a, chord) * underMelody(noteOf(struck[a].pitch));
 					loudest = std::fmax(loudest, levels[a]);
 				}
+				// HOW THE CHORD IS BALANCED WITHIN ITSELF IS SETTLED BY NOW. How loud the whole
+				// of it is rides along to noteOn as a gain and does not touch these levels,
+				// which is what keeps it out of two things that are worked out from them: the
+				// velocity layer each note is played from, and the order the notes speak in,
+				// which comes from the gaps between their levels. See density.
+				const float share = density(chord);
+				// AND WHERE IN THE BAR THE CHORD FALLS, which is one answer for all of it: the
+				// notes were struck together, so they are in the same place in the metre.
+				Harmony now;
+				const bool timed = reader.harmony(now);
 				for (int a = 0; a < chord; a++) {
 					// WHEN EACH NOTE OF THE CHORD SPEAKS: see the constants above.
 					float late = (loudest - levels[a]) * SPREAD_PER_LEVEL;
@@ -1346,12 +1514,20 @@ static float partGain(int part) {
 					float held = lengths[a];
 					if (held > 0.f)
 						held = std::fmax(0.02f, held - late);
+					// THE LEAN OF THE BAR, as a gain beside the chord's share and a little more
+					// time on the note. See metre.
+					float weight = share;
+					if (timed)
+						metre(now, struck[a].technique, weight, held);
 					if (late <= 0.f || chord < 2) {
-						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held);
+						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held,
+							weight);
 						continue;
 					}
-					if (!holdBack(struck[a].handle, struck[a].pitch, levels[a], held, late, sr))
-						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held);
+					if (!holdBack(struck[a].handle, struck[a].pitch, levels[a], held, late, sr,
+							weight))
+						noteOn(struck[a].handle, struck[a].pitch, levels[a], sr, soft, held,
+							weight);
 				}
 			}
 
@@ -1472,8 +1648,35 @@ static float partGain(int part) {
 		}
 
 		const float volume = params[P_VOLUME].getValue() * 5.f;
-		outputs[O_L].setVoltage(math::clamp(outL * volume, -12.f, 12.f));
-		outputs[O_R].setVoltage(math::clamp(outR * volume, -12.f, 12.f));
+		float left = outL * volume, right = outR * volume;
+
+		// THE LAST FEW DECIBELS, CAUGHT RATHER THAN SQUARED OFF.
+		//
+		// WHAT WAS HERE WAS A HARD CLAMP at twelve volts, which is not a limiter: it flattens the
+		// top of the waveform and what that sounds like is distortion, arriving exactly on the
+		// loudest chord of the piece and on nothing else.
+		//
+		// IT IS A SAFETY NET AND NOT A TONE CONTROL. Measured over the scores in use, the loudest
+		// attack reaches about six volts, so this never acts on an ordinary chord. What it is for
+		// is the pile-up: the pedal holds the dampers off, notes keep their voices, and twenty of
+		// them ringing together go somewhere no single marking asked for.
+		//
+		// BOTH CHANNELS BY THE SAME AMOUNT, so a loud note on one side cannot pull the image
+		// across. Fast to take hold and slow to let go, which is what makes it inaudible: coming
+		// off the gain quickly is what a listener hears as pumping.
+		const float peak = std::fmax(std::fabs(left), std::fabs(right));
+		const float want = (peak > LIMIT_VOLTS) ? LIMIT_VOLTS / peak : 1.f;
+		const float towards = (want < limitGain)
+			? (1.f - std::exp(-1.f / (LIMIT_ATTACK * sr)))
+			: (1.f - std::exp(-1.f / (LIMIT_RELEASE * sr)));
+		limitGain += (want - limitGain) * towards;
+		left *= limitGain;
+		right *= limitGain;
+
+		// AND THE CLAMP STAYS, behind it. Nothing with an attack time is instantaneous, so the
+		// first millisecond of a transient still gets through; this is what it gets through to.
+		outputs[O_L].setVoltage(math::clamp(left, -12.f, 12.f));
+		outputs[O_R].setVoltage(math::clamp(right, -12.f, 12.f));
 	}
 
 	json_t* dataToJson() override {
@@ -1483,6 +1686,7 @@ static float partGain(int part) {
 		json_object_set_new(rootJ, "stretch", json_boolean(stretch));
 		json_object_set_new(rootJ, "polyphony", json_integer(polyphony));
 		json_object_set_new(rootJ, "pedalNoise", json_real((double) pedalNoise));
+		json_object_set_new(rootJ, "hammerNoise", json_real((double) hammerNoise));
 		json_object_set_new(rootJ, "melodyBalance", json_real((double) melodyBalance));
 		return rootJ;
 	}
@@ -1495,6 +1699,8 @@ static float partGain(int part) {
 			polyphony = math::clamp((int) json_integer_value(j), 8, MAX_VOICES - NOISE_VOICES);
 		if (json_t* j = json_object_get(rootJ, "pedalNoise"))
 			pedalNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
+		if (json_t* j = json_object_get(rootJ, "hammerNoise"))
+			hammerNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
 		if (json_t* j = json_object_get(rootJ, "melodyBalance"))
 			melodyBalance = math::clamp((float) json_number_value(j), 0.1f, 1.f);
 	}
@@ -1656,7 +1862,7 @@ static Layout pianoLayout() {
 	// THE MECHANISM, each a level of its own, so the piano can be made realistic or clean.
 	label("h.mechanism", PANEL_W / 2.f, 54.5f, "MECHANICAL SOUNDS", Panel::CENTRE, true);
 	knob("p.release", COL_A, 64.5f, PianoModule::P_RELEASE, "RELEASE", 0.f);
-	knob("p.hammer", COL_B, 64.5f, PianoModule::P_HAMMER, "HAMMER", 0.f);
+	knob("p.emphasis", COL_B, 64.5f, PianoModule::P_EMPHASIS, "EMPHASIS", 0.f);
 	knob("p.pedal", COL_A, 82.f, PianoModule::P_PEDAL, "PEDALLING", 0.f);
 
 	// The pedals by hand, beside the pedal noise they set off.
@@ -1791,6 +1997,16 @@ struct PianoWidget : ModuleWidget {
 					sub->addChild(createCheckMenuItem(string::f("%.0f%%", v * 100.f), "",
 						[=]() { return std::fabs(m->pedalNoise - v) < 0.01f; },
 						[=]() { m->pedalNoise = v; }));
+			}));
+		// THE KEY COMING UP, which had the knob the emphasis now has. A mechanical noise is a
+		// hundredth of what the metre does to a performance, and nobody sets it twice.
+		menu->addChild(createSubmenuItem("Key noise",
+			string::f("%.0f%%", m->hammerNoise * 100.f), [=](ui::Menu* sub) {
+				const float levels[] = {0.f, 0.5f, 1.f, 1.5f, 2.f};
+				for (float v : levels)
+					sub->addChild(createCheckMenuItem(string::f("%.0f%%", v * 100.f), "",
+						[=]() { return std::fabs(m->hammerNoise - v) < 0.01f; },
+						[=]() { m->hammerNoise = v; }));
 			}));
 		menu->addChild(createSubmenuItem("Polyphony", string::f("%d", m->polyphony), [=](ui::Menu* sub) {
 			const int counts[] = {16, 32, 48, 64, 72};

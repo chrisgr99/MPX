@@ -132,6 +132,11 @@ struct PerformNote {
 	int64_t handle = 0;
 	float pitch = 0.f;           /**< Volts, an octave to the volt, nought at middle C. */
 	float level = 0.6f;
+	/** THIS NOTE'S SHARE OF ITS CHORD'S DYNAMIC, one for a note standing on its own. Decided by
+	whoever read the cable, since only they can see how many arrived together — by the time a
+	strum reaches a renderer it has been spread across several milliseconds and no longer looks
+	like a chord. A gain on the amplitude and never a smaller level: see mpxShare. */
+	float share = 1.f;
 	float seconds = 0.5f;        /**< How long the note is meant to sound. */
 	int string = 0;              /**< 1 is the highest; nought for an instrument with none. */
 	int fret = -1;
@@ -182,6 +187,8 @@ struct PerformMessage {
 	int voice = 0;
 	int key = 60;
 	float value = 0.f;
+	/** On an ATTACK, the note's share of its chord's dynamic. See PerformNote::share. */
+	float share = 1.f;
 	/** WHAT KIND OF NOTE, on a strike and on a note the left hand sounds without one: the
 	cable's technique bits, unchanged, and the fret it is played at, or -1. A renderer that
 	shapes a sound can ignore them, since the level, the length and the brightness already
@@ -241,6 +248,10 @@ private:
 		float length = 0.f;        /**< Seconds it sounds for; large for a note left ringing. */
 		float base = 0.f;          /**< Volts it was struck at. */
 		float level = 0.f;
+		/** The note's share of its chord's dynamic, carried from the cable to the strike: a
+		strum is spread across milliseconds, so by the time the string speaks nothing downstream
+		can still see how many notes were struck together. See PerformNote::share. */
+		float share = 1.f;
 		float timbre = 0.6f;
 		float pan = 0.f;
 		float startDelay = 0.f;    /**< Seconds still to wait before it is struck. */
@@ -272,7 +283,7 @@ private:
 	int queued = 0, taken = 0;
 
 	void push(uint8_t kind, int voice, int key, float value, uint32_t technique = 0,
-		int fret = -1);
+		int fret = -1, float share = 1.f);
 	int voiceFor(const PerformNote& n);
 	float noise();               /**< Minus one to one, from the seed. */
 	void shape(Plan& p, float dt, int index);

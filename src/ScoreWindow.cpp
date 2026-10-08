@@ -55,6 +55,9 @@ does not also change the shape of the paper under it. */
 
 
 /** Where the window was last dragged to, or negative when nobody has moved it. */
+/** WHERE THE WINDOW SITS RELATIVE TO THE MODULE THAT OPENED IT, remembered between openings.
+Relative and not absolute: the window rides with its module, so the place worth remembering is
+the one beside it and not a spot on the screen. */
 math::Vec gScoreWhere = math::Vec(-1.f, -1.f);
 
 
@@ -137,6 +140,50 @@ struct ScoreWindow : widget::OpaqueWidget {
 	/** 0 nothing, 1 moving, 2 resizing. */
 	int drag = 0;
 	int edges = 0;
+
+	/** WHERE THE WINDOW SITS RELATIVE TO ITS MODULE, in screen pixels at the rack's current
+	zoom. The window is a child of the scene and so lives in screen coordinates, which meant it
+	stayed put while the rack scrolled out from under it: scroll away from the module and the
+	window was still there, belonging to nothing on screen. Keeping the offset instead and
+	putting the window back beside its module every frame makes it part of the rack. */
+	math::Vec beside = math::Vec(0.f, 0.f);
+	bool anchored = false;
+
+	/** The module's top-left corner in screen pixels, or false when it has gone. */
+	bool whereIsModule(math::Vec& at) const {
+		if (moduleId < 0 || !APP->scene || !APP->scene->rack)
+			return false;
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		if (!mw)
+			return false;
+		at = mw->getAbsoluteOffset(math::Vec(0.f, 0.f));
+		return true;
+	}
+
+	/** Takes the window's present place as the one to keep beside the module. */
+	void remember() {
+		math::Vec at;
+		if (!whereIsModule(at))
+			return;
+		beside = box.pos.minus(at);
+		gScoreWhere = beside;
+		anchored = true;
+	}
+
+	/** Puts it back there. Called every frame, which is what makes it follow a scroll. */
+	void rideAlong() {
+		math::Vec at;
+		if (!whereIsModule(at)) {
+			// THE MODULE HAS GONE, or has not been drawn yet. The window stays where it is
+			// rather than jumping to a corner; it closes on its own when the module is deleted.
+			return;
+		}
+		if (!anchored) {
+			remember();
+			return;
+		}
+		box.pos = at.plus(beside);
+	}
 
 	ScoreWindow() {
 		box.size = math::Vec(760.f, 620.f);
@@ -355,6 +402,8 @@ struct ScoreWindow : widget::OpaqueWidget {
 			unitsNow = 0;
 			beginWork(true);
 		}
+		// AND IT MOVES WITH ITS MODULE. See rideAlong.
+		rideAlong();
 		if (!working.load() && ready.load()
 				&& (wantUnits != unitsNow || wantPart != partNow
 					|| (song && wantStaves != stavesNow))) {
@@ -412,6 +461,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		at.x = math::clamp(at.x, 0.f, std::fmax(0.f, scene.x - box.size.x));
 		at.y = math::clamp(at.y, 0.f, std::fmax(0.f, scene.y - box.size.y));
 		box.pos = at;
+		remember();
 	}
 
 	math::Rect closeBox() {
@@ -432,8 +482,26 @@ struct ScoreWindow : widget::OpaqueWidget {
 	larger, previous page, next page, and the instrument. Square, the height of the strip. */
 	math::Rect toolBox(int which) {
 		const float w = SW_TITLE;
+		// SEVEN AND EIGHT ARE THE TRANSPORT, and they live at the other end.
+		//
+		// THE TRANSPORT BELONGS WITH THE MUSIC, not among the window's furniture. The tools on
+		// the right are things you do to the view — its size, its page, which instrument — and
+		// the eye reading a score is at the top left of the page. Put in front of the piece's
+		// name the line reads as "play this", which is what the chart window does for the same
+		// reason. See mpxChart.
+		if (which >= 7)
+			return math::Rect(math::Vec(SW_TITLE + 2.f + w * (float) (which - 7), 0.f),
+				math::Vec(w, SW_TITLE));
 		return math::Rect(math::Vec(box.size.x - SW_TITLE - w * (which + 1) - 4.f, 0.f),
 			math::Vec(w, SW_TITLE));
+	}
+
+	/** Whether the module this window is on is playing. */
+	bool moduleRunning() const {
+		int at = -1;
+		float through = 0.f;
+		bool going = false;
+		return px::scoreFollowRead(moduleId, at, through, going) && going;
 	}
 
 	/** The paper, inside the frame and under the title strip. */
@@ -497,7 +565,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 	void onHover(const HoverEvent& e) override {
 		hoverTool = -1;
 		if (e.pos.y < SW_TITLE) {
-			for (int i = 0; i <= 6; i++) {
+			for (int i = 0; i <= 8; i++) {
 				if (toolBox(i).contains(e.pos)) {
 					hoverTool = i;
 					break;
@@ -564,6 +632,21 @@ struct ScoreWindow : widget::OpaqueWidget {
 				}
 				if (loopFrom >= 0 && toolBox(6).contains(e.pos)) {
 					clearLoop();
+					claim(e, this);
+					return;
+				}
+				// THE TRANSPORT. The window asks and the module's own button moves, so the two
+				// cannot end up each holding a different idea of whether the music is running.
+				// See ScoreFollow::wantTransport.
+				if (toolBox(7).contains(e.pos)) {
+					px::scoreFollowTransport(moduleId, moduleRunning() ? 2 : 1);
+					follow = true;
+					claim(e, this);
+					return;
+				}
+				if (toolBox(8).contains(e.pos)) {
+					px::scoreFollowTransport(moduleId, 3);
+					follow = true;
 					claim(e, this);
 					return;
 				}
@@ -641,7 +724,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 	void onDragMove(const DragMoveEvent& e) override {
 		if (drag == 1) {
 			box.pos = box.pos.plus(e.mouseDelta);
-			gScoreWhere = box.pos;
+			remember();
 		}
 		else if (drag == 2) {
 			if (edges & 1) {
@@ -658,6 +741,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 			}
 			if (edges & 8)
 				box.size.y = std::fmax(SW_MIN_H, box.size.y + e.mouseDelta.y);
+			// A LEFT OR TOP EDGE MOVES THE CORNER THE WINDOW IS ANCHORED BY, so the place to
+			// keep beside the module has changed as surely as if it had been dragged there.
+			remember();
 		}
 		OpaqueWidget::onDragMove(e);
 	}
@@ -781,6 +867,16 @@ struct ScoreWindow : widget::OpaqueWidget {
 			e.consume(this);
 			e.stopPropagating();
 			requestDelete();
+			return;
+		}
+		// SPACE STARTS AND STOPS IT, as it does over the module. A field being typed into keeps
+		// its space without anything here arranging it: Rack offers a key to the selected widget
+		// first and only turns it into a hover key when that one does not take it.
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE && (e.mods & RACK_MOD_MASK) == 0) {
+			px::scoreFollowTransport(moduleId, moduleRunning() ? 2 : 1);
+			follow = true;
+			e.consume(this);
+			e.stopPropagating();
 			return;
 		}
 		widget::OpaqueWidget::onHoverKey(e);
@@ -1034,11 +1130,22 @@ struct ScoreWindow : widget::OpaqueWidget {
 				label += loop;
 			}
 		}
-		crispText(args.vg, SW_TITLE + 6.f, SW_TITLE / 2.f, label.c_str(), NULL);
+		// AFTER THE TRANSPORT, which sits in front of it: see toolBox.
+		crispText(args.vg, toolBox(8).pos.x + toolBox(8).size.x + 6.f, SW_TITLE / 2.f,
+			label.c_str(), NULL);
 
 		drawCross(args.vg, closeBox());
 		drawCross(args.vg, closeBoxLeft());
 		drawTip(args.vg, face);
+		// THE TRANSPORT, at the left in front of the name.
+		{
+			const bool going = moduleRunning();
+			// A pair of bars when it is running, a triangle when it is not: the button shows
+			// what pressing it will do, which is the way every transport anybody has used works.
+			drawTool(args.vg, toolBox(7), going ? "\xe2\x9d\x9a" : "\xe2\x96\xb6",
+				face, going ? 1 : 0);
+			drawTool(args.vg, toolBox(8), "\xe2\x8f\xae", face);   // back to the start
+		}
 		drawTool(args.vg, toolBox(0), "\xe2\x88\x92", face);   // minus
 		drawTool(args.vg, toolBox(1), "+", face);
 		drawTool(args.vg, toolBox(2), "\xe2\x80\xb9", face);   // single angle quotes
@@ -1079,7 +1186,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 		if (hoverTool < 0)
 			return;
 		static const char* TIPS[] = {"Smaller", "Larger", "Back", "Forward", "Follow",
-			"Instrument", "Loop off"};
+			"Instrument", "Loop off", "", "To the top"};
+		// THE PLAY BUTTON SAYS WHICH OF THE TWO IT IS, since the glyph changes under it.
+		const char* playTip = moduleRunning() ? "Stop" : "Play";
 		if (hoverTool >= (int) (sizeof(TIPS) / sizeof(TIPS[0])))
 			return;
 		// NOTHING ABOUT A TOOL THAT IS NOT THERE. Two of them come and go.
@@ -1087,7 +1196,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 			return;
 		if (hoverTool == 6 && loopFrom < 0)
 			return;
-		const char* tip = TIPS[hoverTool];
+		const char* tip = (hoverTool == 7) ? playTip : TIPS[hoverTool];
 		nvgFontFaceId(vg, face->handle);
 		nvgFontSize(vg, 12.f);
 		nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1200,8 +1309,11 @@ static ScoreWindow* makeWindow(int64_t moduleId) {
 	}
 	ScoreWindow* window = new ScoreWindow;
 	window->moduleId = moduleId;
-	if (gScoreWhere.x >= 0.f)
-		window->box.pos = gScoreWhere;
+	if (gScoreWhere.x >= 0.f) {
+		window->beside = gScoreWhere;
+		window->anchored = true;
+		window->rideAlong();
+	}
 	else if (app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId))
 		window->placeBeside(math::Rect(mw->getAbsoluteOffset(math::Vec()),
 			mw->box.size.mult(mw->getAbsoluteZoom())));
@@ -1263,8 +1375,11 @@ void scoreWindowShow(const std::string& path, const std::string& title, int64_t 
 	window->moduleId = moduleId;
 	window->path = path;
 	window->name = title;
-	if (gScoreWhere.x >= 0.f)
-		window->box.pos = gScoreWhere;
+	if (gScoreWhere.x >= 0.f) {
+		window->beside = gScoreWhere;
+		window->anchored = true;
+		window->rideAlong();
+	}
 	else if (app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId))
 		window->placeBeside(math::Rect(mw->getAbsoluteOffset(math::Vec()),
 			mw->box.size.mult(mw->getAbsoluteZoom())));

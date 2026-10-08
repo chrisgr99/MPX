@@ -134,6 +134,20 @@ When every voice is in use the quietest is taken, since a piano's notes decay an
 
 A voice is therefore passed over for its first fifty milliseconds, unless every voice in the pool is that new and something has to go.
 
+### Where the weight of the bar goes
+
+Nothing in a score says this and every player does it. A score says forte once and means it for twenty bars; what happens inside those bars is that a player leans very slightly on the strong positions. Its absence is a good part of why a sequenced performance sounds mechanical even when every marked dynamic is right.
+
+The ladder is the one `Phrasing.cpp` already uses to decide where a phrase may break — a downbeat counts one, the middle of an even bar seven tenths, an ordinary beat a half, an eighth off the beat three tenths, anything finer a fifth. An ordinary beat is the neutral point and the emphasis is measured either side of it.
+
+**The knob is two-sided.** Clockwise leans on the bar: at the end of its travel a downbeat is two decibels up and held four per cent longer, the middle of an even bar a little less, and the positions between beats fall back. Anticlockwise does the reverse and leans on what falls *between* the beats, which is what a syncopated line wants and what makes the same control useful for music written against the metre rather than along it. In the middle it does nothing.
+
+**Both weight and time.** Players give a strong beat a little more length as well as a little more force, and the agogic half is arguably the larger part of what stops a performance sounding typed. Only the length is touched, never the onset: moving a note in time would walk away from the score's own cursor and from every other instrument reading the same bar.
+
+**It does not argue with the score.** A note the composer has already accented is left out of it entirely. The weight has been placed by hand there, and a rule that knows only the bar line has nothing to add and a good deal to spoil — on a syncopation, which is exactly where accents get written, it would be pulling the other way.
+
+It is deliberately small beside the voicing and the melody lead. Heard as a pulse rather than felt as one means it is turned up too far.
+
 ### Pedalling what the score does not mark
 
 Most scores are under-marked. The Chopin Ballade marks 189 of its 262 bars and leaves the rest bare, and played literally those bars are dry: every note is stopped a fraction of a second after its written end, which is not how anybody plays a piano. The Pedalling knob fills those passages in.
@@ -183,11 +197,12 @@ This is a change to the transport; `design.md` has still to be updated with it.
 For what is adjusted while playing.
 
 - **Volume.**
-- **Release and Hammer**: the levels of two of the mechanical components, so the piano can be made realistic or clean. The strings are the main sound, covered by volume. The pedal mechanism's own level is in the right-click menu, where the knob that used to set it has been taken for the pedalling.
+- **Release**: how loud the strings' release resonance is, so the piano can be made realistic or clean. The strings themselves are the main sound, covered by volume.
+- **Emphasis**: where the weight of the bar goes. See below. The knob was the key noise's, which is in the right-click menu now beside the pedal mechanism's own level — a mechanical noise is a hundredth of what the metre does to a performance, and nobody sets it twice.
 
   **A release follows the note it ends.** When a key comes up, the release sample is scaled by how loud that note still is at that moment — loud when the string is still ringing hard, faint when it has died away, as the damper sounds on a real piano. The Release knob sets the level on top of that. The note's loudness is already tracked for choosing which note to take when polyphony runs out, so this costs nothing further.
 - **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from mpxIn's timbre input.
-- **Dynamics**: how far the soft and loud layers differ. Down, every note sounds much alike whatever its velocity; up, the full range of the instrument.
+- **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full twenty-two decibels from ppp to fff, and 0.7 gives fifteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
 - **Pedalling**: how the piano pedals a passage its score does not mark, from off through a lift every beat, every half bar, every bar, every two bars, to held down. See below.
 - **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.

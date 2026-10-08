@@ -238,7 +238,7 @@ float Performer::noise() {
 
 
 void Performer::push(uint8_t kind, int voice, int key, float value, uint32_t technique,
-		int fret) {
+		int fret, float share) {
 	if (queued >= (int) (sizeof(queue) / sizeof(queue[0]))) {
 		// A block that produced more messages than this is a patch doing something no player
 		// could; the oldest are the ones already acted on, so the newest are kept.
@@ -252,6 +252,7 @@ void Performer::push(uint8_t kind, int voice, int key, float value, uint32_t tec
 	m.value = value;
 	m.technique = technique;
 	m.fret = fret;
+	m.share = share;
 }
 
 
@@ -427,6 +428,7 @@ void Performer::note(const PerformNote& n) {
 	next.length = length;
 	next.base = n.pitch;
 	next.level = level;
+	next.share = n.share;
 	next.timbre = timbre;
 	next.startDelay = delay;
 	next.struck = false;
@@ -486,7 +488,7 @@ void Performer::shape(Plan& p, float dt, int index) {
 		if (p.startDelay > 0.f)
 			return;
 		p.struck = true;
-		push(PerformMessage::ATTACK, index, p.key, p.level, p.technique, p.fret);
+		push(PerformMessage::ATTACK, index, p.key, p.level, p.technique, p.fret, p.share);
 		push(PerformMessage::TIMBRE, index, p.key, p.timbre);
 	}
 
