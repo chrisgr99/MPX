@@ -118,6 +118,26 @@ A file using something the reader does not know is imported as far as it goes, a
 
 One known gap. A Guitar Pro 6 drum track gives no pitch for its notes — which piece of the kit is struck is a position on the drum staff, read through the instrument's own list of elements, and that list is not read yet, so those notes come out unpitched and counted.
 
+### Worded directions we do not act on yet
+
+Counted over the sixty-three scores in use: 405 distinct worded directions, 1,925 in all. What we already take is the crescendo family — `cresc.` 411 times, `dim.` 176, with `decresc.`, `smorz.`, `morendo`, `calando` and `rinf.` — and the worded levels. Tempo written as text is covered without looking like it: the bare numbers are a metronome mark written as words and each carries a `sound` element with the figure in it.
+
+What is left, in the order it would be worth taking.
+
+**Pizzicato and arco.** `arco` 113 times and `pizz.` 120, through the Fauré and Brahms quartets, and **not once** as a note attribute or a `pluck` element — only as words. Whole passages that should be plucked are bowed, which is not a nuance but the wrong instrument for bars at a time. The cable has no pizzicato bit at all, so it needs one; the bowed-string model will want the same bit.
+
+**The tempo words.** `rit.` 23, `ritard.` 14, `poco rit.` 9, `riten.` 7, `a tempo` 41, `Tempo I` 4, and `Accel.`. Measured: **32 carry a `sound tempo` we could act on and 88 do not**, so three quarters of the tempo instructions here are invisible and every ritardando at a cadence is played straight through.
+
+`a tempo` and `Tempo I` are the easy half — they restore a tempo already known, and between them they are 45 of the 88. A `rit.` is the hard half: it says slow down without saying by how much or over how long, so any curve is ours to invent, and that wants deciding before it is written.
+
+**The degree on a hairpin.** `poco a poco cresc.` 14, `cresc. poco a poco` 14, `poco cresc.` 11, `molto cresc.` 8, `sempre cresc.` 4. All read as a crescendo and all travelling the same single step. *Molto* should go further than *poco* and *poco a poco* should take longer. A cheap refinement to something already working.
+
+**Two manner words that map onto what we do.** `ten.` 15 and `marcato`/`marc.` 24 are the tenuto and accent we already handle, written in letters.
+
+**And the rest, deliberately left.** `dolce` 60, `espressivo`/`espress.` 40, `leggiero`/`leggieriss.` 12, `cantabile` 6, `legato` 3, `sotto voce` 5, `mezza voce` 1. These say how to play rather than how loud or how long, and giving them numbers would be inventing an interpretation rather than reading one.
+
+Not instructions at all: `m.g.` is *main gauche*, and the entries from `.1` to `.9` are fingerings MuseScore has written as text.
+
 ## Seeing the part
 
 A later phase draws one chosen track as written music, as mpxChart draws a chart, so the part can be followed while it plays. The file carries everything that needs — the rhythms, the fret and string of each note, the articulations — so nothing has to be kept for it now.
