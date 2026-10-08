@@ -811,6 +811,8 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						note.midi = midiOf(unpitched.child_value("display-step"), 0,
 							unpitched.child("display-octave").text().as_int(4));
 					}
+					// WRITTEN FOR THE SOUND AND NOT FOR THE EYE. See GpNote::hidden.
+					note.hidden = std::string(node.attribute("print-object").as_string()) == "no";
 					// NO STRING AND NO FRET. This is music with no fingerboard: see the header.
 					note.string = 0;
 					note.fret = -1;

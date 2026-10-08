@@ -76,6 +76,13 @@ struct GpNote {
 	uint8_t grace = 0;
 	int graceFret = -1;
 	bool vibrato = false;
+	/** NOT PRINTED: a note that exists for the sound and not for the eye.
+
+	An engraver who wants an ornament to play a particular way writes the sign for the reader and
+	the notes it stands for in a voice of their own, marked not to print. Both are in the file and
+	only one of them is to be heard — see the ornament pass in GpTimeline.cpp, which drops the
+	sign's own realisation when the writer has supplied one. */
+	bool hidden = false;
 	/** A BEND, as points through the note's length: position from nought to one, height in
 	CENTS. The two families of file count both of those in units of their own, and neither is
 	cents; they are converted on the way in, so everything downstream reads one unit. Empty for

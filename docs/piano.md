@@ -120,7 +120,9 @@ Nothing here is random. If the structure alone sounds human, randomness would on
 
 ### One key is one string
 
-A key struck again while it is already sounding takes over the voice it already has, rather than starting a second one beside it. There is one string per key on a piano, and a hammer meeting a string that is already moving partly re-excites and partly disturbs the motion that is there; what comes out is about another strike's worth of amplitude, not another strike added to the last eleven.
+A key struck again while it is already sounding does not get a second string: the sound already on it is faded out over four milliseconds and the new note starts on a voice of its own.
+
+**Faded and not cut.** Rewinding the recording to the start of a fresh attack jumps the output from wherever the waveform happened to be, and a step in a waveform is a click. It is loudest where re-strikes are closest — an inverted mordent in the Tempest strikes F5 twice inside a fifteenth of a second. Four milliseconds is long enough to be a fade and short enough to be gone before the next note of an ornament arrives, so the string still does not accumulate: a trill holds two voices rather than twenty-three. There is one string per key on a piano, and a hammer meeting a string that is already moving partly re-excites and partly disturbs the motion that is there; what comes out is about another strike's worth of amplitude, not another strike added to the last eleven.
 
 What is still ringing is carried into the new strike rather than thrown away, so a repeated note under the pedal does grow, up to half again as loud as a single strike would be. A string driven over and over settles at a steady amplitude; it does not keep climbing.
 
@@ -133,6 +135,16 @@ The bloom that a pedalled passage should have belongs mostly to the *other* stri
 When every voice is in use the quietest is taken, since a piano's notes decay and the one that has faded most is the one least missed. A note that has only just been struck has made no sound yet, so by that measure it is the quietest voice in the pool and the first one taken — a note was being judged on its loudness before it had produced any. Measuring a run of the Nocturne showed the melody note after the trill taken ten milliseconds after it started, by an accompaniment note at a third of its level.
 
 A voice is therefore passed over for its first fifty milliseconds, unless every voice in the pool is that new and something has to go.
+
+### An ornament the writer has already written out
+
+Scores say the same ornament twice. The visible note carries the sign, for the reader, and a voice of its own carries the notes it stands for, marked not to print, for the player. **183 of the 203 ornaments in the scores in use are engraved that way**, so playing both is not an edge case — it was happening to nine ornaments in ten.
+
+Theirs wins. They chose the speed, where this would have used its own fixed figure, and `GpTimeline.cpp` drops the sign's realisation when it finds one.
+
+**What proves it is a realisation is the neighbour.** Hidden notes are written for all sorts of reasons — a tie across a system, a voice that should sound and not show — so one merely falling inside an ornamented note is no evidence. What every mordent, trill and turn contains is the step above or below, and a hidden note a semitone or a tone away inside the span of an ornamented note is not there by accident.
+
+**The written note is then cut back to where theirs begins**, which is what makes one rule cover the two ways engravers do it. In bar 44 of the Tempest the hidden voice holds only the upper note and the resolution, and the visible note is itself the first note of the figure: it has to stop when the hidden G arrives rather than ring on for its full written eighth. In bar 43 the hidden voice holds all three and starts on the same instant, so the cut takes the written note to nothing and it goes.
 
 ### Where the weight of the bar goes
 

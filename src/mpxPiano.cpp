@@ -778,6 +778,12 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	for a sustained trill to bloom under the pedal, not enough to swallow what follows it. */
 	static constexpr float BLOOM_MOST = 1.5f;
 
+	/** HOW LONG THE OLD SOUND ON A RE-STRUCK STRING TAKES TO GET OUT OF THE WAY, in seconds.
+	Long enough that it is a fade and not a step — a step is a click — and short enough that it
+	is gone well before the next note of an ornament arrives. Four milliseconds is sixty decibels
+	down in about a fiftieth of a second and inaudible as a separate event. */
+	static constexpr float RESTRIKE_FADE = 0.004f;
+
 	PianoVoice* allocate(bool noise, float sampleRate) {
 		const int lo = noise ? MAX_VOICES - NOISE_VOICES : 0;
 		const int hi = noise ? MAX_VOICES : std::min(polyphony, MAX_VOICES - NOISE_VOICES);
@@ -1150,20 +1156,35 @@ static float partGain(int part) {
 		// bloom under a pedal properly belongs to the OTHER strings — every undamped string in
 		// the instrument picking up energy from this one — and that is a separate piece of work;
 		// see docs/piano.md. This keeps the growth in the one place a single string can give it.
-		PianoVoice* v = NULL;
+		// THE STRING'S PRESENT SOUND IS FADED OUT, NOT CUT OFF.
+		//
+		// A RE-STRIKE CANNOT SIMPLY REWIND THE RECORDING. Taking the voice over and setting its
+		// position back to nought jumps the output from wherever the waveform happened to be to
+		// the start of a fresh attack, and a step in a waveform is a click. It is loudest where
+		// re-strikes are closest: an inverted mordent in the Beethoven strikes F5 four times
+		// inside a seventh of a second, and every one of them clicked.
+		//
+		// SO THE OLD SOUND IS GIVEN A FEW MILLISECONDS TO GET OUT OF THE WAY and the new note
+		// starts on a voice of its own. The string still does not accumulate — the tail is
+		// sixty decibels down before the next ornament note arrives and frees itself — so a
+		// trill holds two voices rather than the twenty-three it used to.
 		float carried = 0.f;
 		for (int i = 0; i < MAX_VOICES - NOISE_VOICES; i++) {
-			if (!voices[i].active || voices[i].part != PART_STRINGS || voices[i].key != key)
+			PianoVoice& old = voices[i];
+			if (!old.active || old.part != PART_STRINGS || old.key != key)
 				continue;
-			v = &voices[i];
 			// HOW MUCH OF IT IS LEFT, by the voice's own output against its loudest: the same
 			// measure the release resonance is given. See damp.
-			const float left = (v->peak > 0.f) ? math::clamp(v->follow / v->peak, 0.f, 1.f) : 0.f;
-			carried = v->amp * left;
+			const float left = (old.peak > 0.f) ? math::clamp(old.follow / old.peak, 0.f, 1.f)
+				: 0.f;
+			carried = old.amp * left;
+			old.keyDown = false;
+			old.endsIn = 0;
+			old.releasing = true;
+			old.decay = std::exp(-6.9f / (RESTRIKE_FADE * sampleRate));
 			break;
 		}
-		if (!v)
-			v = allocate(false, sampleRate);
+		PianoVoice* v = allocate(false, sampleRate);
 		if (!v)
 			return;
 		*v = PianoVoice();

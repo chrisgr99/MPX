@@ -615,6 +615,69 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 		for (size_t i = 0; i < played.size(); i++) {
 			const GpPlayedNote& n = played[i];
 			const bool quick = n.note.mordent || n.note.invertedMordent || n.note.turn;
+
+			// AN ORNAMENT THE WRITER HAS ALREADY WRITTEN OUT IS NOT PLAYED TWICE.
+			//
+			// A SIGN FOR THE READER AND THE NOTES FOR THE PLAYER. An engraver who wants an
+			// ornament to sound a particular way puts the sign on the visible note and the
+			// notes it stands for in a voice of their own, marked not to print — so the file
+			// says the same thing twice and only one of them is to be heard. Beethoven's
+			// seventeenth sonata is engraved this way throughout bars 43 to 49, and playing
+			// both struck the same key four times inside a seventh of a second.
+			//
+			// THEIRS WINS. They chose the speed — here two sixty-fourths and a dotted eighth,
+			// where this would have used its own fixed figure.
+			//
+			// AND THE WRITTEN NOTE IS CUT BACK TO WHERE THEIRS BEGINS, which is what makes one
+			// rule cover the two ways they do it. In bar 44 the hidden voice holds only the
+			// upper note and the resolution, and the visible note is itself the first note of
+			// the figure: it has to stop when the hidden G arrives rather than ring through it
+			// for its full written eighth. In bar 43 the hidden voice holds all three and
+			// starts on the same instant, so cutting the written note back to where theirs
+			// begins cuts it to nothing, and it goes.
+			if ((n.note.trill || quick) && !n.note.hidden && n.note.midi > 0) {
+				// THE NEIGHBOUR IS WHAT PROVES IT IS A REALISATION. Hidden notes are common and
+				// are written for all sorts of reasons — a tie across a system, a voice that
+				// should sound and not show — so a hidden note merely falling inside this one
+				// is no evidence at all. What every mordent, trill and turn contains is the
+				// step above or below, and a hidden note a semitone or a tone away inside the
+				// span of an ornamented note is not there by accident.
+				bool realised = false;
+				double startsAt = -1.0;
+				for (size_t j = 0; j < played.size(); j++) {
+					const GpPlayedNote& other = played[j];
+					if (!other.note.hidden)
+						continue;
+					if (other.startSeconds < n.startSeconds - 0.002
+							|| other.startSeconds >= n.startSeconds + n.lengthSeconds)
+						continue;
+					const int step = std::abs(other.note.midi - n.note.midi);
+					if (step == 1 || step == 2)
+						realised = true;
+					// THE CUT IS TO THE FIRST OF THEM, whichever note of the figure it is: the
+					// main note again where they wrote the whole thing out, the neighbour where
+					// they left the written note to be its first note.
+					if (step <= 12 && (startsAt < 0.0 || other.startSeconds < startsAt))
+						startsAt = other.startSeconds;
+				}
+				if (realised && startsAt >= 0.0) {
+					any = true;
+					const double room = startsAt - n.startSeconds;
+					if (room > 0.002) {
+						GpPlayedNote cut = n;
+						// THE SIGN GOES WITH THE REALISATION, so nothing downstream reads it
+						// and plays the ornament a third time.
+						cut.note.trill = cut.note.mordent = false;
+						cut.note.invertedMordent = cut.note.turn = false;
+						const double was = (n.lengthSeconds > 0.0) ? n.lengthSeconds : 1.0;
+						cut.lengthQuarters = (float) (n.lengthQuarters * (room / was));
+						cut.lengthSeconds = room;
+						grown.push_back(cut);
+					}
+					continue;
+				}
+			}
+
 			if ((!n.note.trill && !quick) || n.note.midi <= 0
 					|| n.lengthSeconds < 2.0 * TRILL_SECONDS) {
 				grown.push_back(n);
