@@ -666,6 +666,82 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							e.kind = up ? LevelEvent::SWELL_WORD : LevelEvent::FADE_WORD;
 							levels.push_back(e);
 						}
+						// AND A DYNAMIC WRITTEN AS A WORD, which is a level and not a manner.
+						//
+						// "PIANO E DOLCE" IS A DYNAMIC. The Appassionata's slow movement opens
+						// with it and carries no dynamic element at all until bar 15, where a p
+						// appears — so the whole opening played at the default mezzo-forte and
+						// then dropped six decibels at a mark that was only restating what had
+						// been true since the first bar. It is written in letters because that
+						// is how the composer wrote it, and a reader that only takes the symbol
+						// hears the piece wrong for fourteen bars.
+						//
+						// BY WHOLE WORDS AND NEVER BY SUBSTRING. "Allegro ma non troppo" and
+						// "appassionato" both contain the letters pp, and both are in the
+						// scores here: matching inside a word would make a pianissimo of a
+						// tempo marking. Split on letters and compare whole tokens.
+						//
+						// "PIU" MAKES IT A DIRECTION RATHER THAN A PLACE. "sempre forte" is a
+						// level and stays; "sempre piu forte" is an instruction to go on
+						// getting louder, which is a crescendo in words and is read as one.
+						//
+						// WHAT IS LEFT OUT, deliberately: "sotto voce" and "mezza voce" say how
+						// to play and not how loud — veiled, under the breath — and the nearest
+						// level is a guess. "dolce" and "agitato" likewise. A manner is not a
+						// dynamic even when it implies one.
+						if (!up && !down) {
+							std::vector<std::string> token;
+							std::string one;
+							for (size_t i = 0; i <= w.size(); i++) {
+								const bool letter = i < w.size()
+									&& std::isalpha((unsigned char) w[i]);
+								if (letter)
+									one += w[i];
+								else if (!one.empty()) {
+									token.push_back(one);
+									one.clear();
+								}
+							}
+							const bool more = w.find("piÃ¹") != std::string::npos
+								|| w.find("piu") != std::string::npos;
+							static const struct { const char* word; const char* mark; } SAID[] = {
+								{"fff", "fff"}, {"ff", "ff"}, {"f", "f"},
+								{"ppp", "ppp"}, {"pp", "pp"}, {"p", "p"},
+								{"mf", "mf"}, {"mp", "mp"},
+								{"fortissimo", "ff"}, {"forte", "f"},
+								{"pianissimo", "pp"}, {"piano", "p"},
+							};
+							const char* said = NULL;
+							for (size_t t = 0; t < token.size() && !said; t++) {
+								// "mezzo forte" and "mezzo piano" are two words and one level.
+								if (token[t] == "mezzo" && t + 1 < token.size()) {
+									if (token[t + 1] == "forte") { said = "mf"; break; }
+									if (token[t + 1] == "piano") { said = "mp"; break; }
+								}
+								for (size_t k = 0; k < sizeof(SAID) / sizeof(SAID[0]); k++)
+									if (token[t] == SAID[k].word) {
+										said = SAID[k].mark;
+										break;
+									}
+							}
+							if (said) {
+								LevelEvent e;
+								e.at = here;
+								if (more) {
+									// "piu forte" is a crescendo and "piu pp" a diminuendo:
+									// which way is told by the level that was named.
+									e.kind = (said[0] == 'f') ? LevelEvent::SWELL_WORD
+										: LevelEvent::FADE_WORD;
+								}
+								else {
+									e.kind = LevelEvent::MARK;
+									for (int i = 0; i < LOUDNESS_COUNT; i++)
+										if (std::string(said) == LOUDNESS[i].name)
+											e.value = LOUDNESS[i].level;
+								}
+								levels.push_back(e);
+							}
+						}
 					}
 					// THE SUSTAIN PEDAL. Written as a bracket — a start and a stop — and kept as
 					// the two moves of the foot that the bracket stands for. `continue` and

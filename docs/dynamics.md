@@ -21,6 +21,14 @@ A mark is a point and not a property of a note: it holds until the next one. A h
 
 A part with no mark anywhere sits at mf from the first bar to the last. Seventeen of the thirty-four scores in regular use are like that — every lead sheet, and the Bach prelude and fugue.
 
+**A dynamic written as a word is a dynamic.** Composers write them in letters as often as in symbols — the Appassionata's slow movement opens *piano e dolce* and carries no dynamic element at all until bar 15, and the Waldstein's rondo opens *sempre pp* with none until bar 9. Read as a symbol only, both pieces played their openings at the mezzo-forte default and then appeared to drop when a mark finally restated what had been true from the first bar.
+
+Matched **by whole words, never by substring**: *Allegro ma non troppo* and *appassionato* both contain the letters pp, and both are in the scores here. The text is split on letters and whole tokens are compared.
+
+*Più* makes it a direction rather than a place. *sempre forte* is a level and stays; *sempre più forte* is an instruction to go on getting louder and is read as a crescendo in words.
+
+Left out deliberately: *sotto voce* and *mezza voce* say how to play rather than how loud — veiled, under the breath — and the nearest level is a guess. A manner is not a dynamic even when it implies one.
+
 **The `sound dynamics` attribute is ignored.** Every score that carries written marks also carries these, essentially one per mark, so they add a dependency on whatever playback settings the engraver happened to have and no new information.
 
 ## What a level is worth
