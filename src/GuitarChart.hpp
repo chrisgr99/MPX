@@ -257,7 +257,7 @@ struct SongModule : Module, NoteSource {
 
 	SongModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configButton(P_LOAD, "Load a score");
+		configButton(P_LOAD, "Load a score, or pick a recent one");
 		// SWING, WHICH THE SCORE DOES NOT SAY. Two-sided: see swingRatios and docs/notation.md.
 		// Nought by default, so nothing already patched starts swinging.
 		configParam(P_SWING, -1.f, 1.f, 0.f, "Swing", "%", 0.f, 100.f);
@@ -1374,6 +1374,65 @@ struct SongTitle : widget::OpaqueWidget {
 			L.title.empty() ? std::string("Score") : L.title, module->id);
 	}
 
+	/** Loads one, and says so when it will not. */
+	void loadPath(const std::string& path) {
+		if (!module)
+			return;
+		std::string why;
+		if (module->setSongFile(path, &why)) {
+			px::rememberFolder("score", path);
+			return;
+		}
+		// A FILE THAT HAS GONE COMES OFF THE LIST. Offering it a second time would be offering
+		// to fail again.
+		if (!system::isFile(path))
+			px::forgetFile("score", path);
+		osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK,
+			("That file could not be read.\n\n" + why).c_str());
+	}
+
+	/** THE LOAD BUTTON OPENS A MENU rather than a chooser.
+
+	WHAT IS BEING PLAYED IS USUALLY WHAT WAS PLAYED A MOMENT AGO — a passage is marked up, heard,
+	marked up again — and walking a file chooser to the same place every time is the long way
+	round. The chooser is still the first item; the twenty most recent are under it.
+
+	THE NAME AND THE FOLDER IT IS IN, because a dozen movements of the same sonata are a dozen
+	files with nearly the same name, and the folder is what tells them apart. One that has been
+	moved or deleted is shown greyed rather than hidden: it says where something went rather
+	than quietly losing it. */
+	void offerLoad() {
+		if (!module)
+			return;
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuItem("Open a score\u2026", "", [=]() { choose(); }));
+		const std::vector<std::string>& recent = px::recentFiles("score");
+		if (recent.empty())
+			return;
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuLabel("Recent"));
+		for (size_t i = 0; i < recent.size(); i++) {
+			const std::string path = recent[i];
+			std::string name = path, folder;
+			const size_t slash = name.find_last_of('/');
+			if (slash != std::string::npos) {
+				folder = name.substr(0, slash);
+				name = name.substr(slash + 1);
+				const size_t up = folder.find_last_of('/');
+				if (up != std::string::npos)
+					folder = folder.substr(up + 1);
+			}
+			const bool there = system::isFile(path);
+			ui::MenuItem* item = createMenuItem(name, there ? folder : "missing",
+				[=]() { loadPath(path); });
+			item->disabled = !there;
+			menu->addChild(item);
+		}
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuItem("Forget the recent list", "",
+			[]() { px::forgetAll("score"); }));
+	}
+
 	void choose() {
 		if (!module)
 			return;
@@ -1386,14 +1445,9 @@ struct SongTitle : widget::OpaqueWidget {
 		osdialog_filters_free(filters);
 		if (!path)
 			return;
-		px::rememberFolder("score", path);
-		std::string why;
-		const bool ok = module->setSongFile(path, &why);
+		const std::string picked = path;
 		std::free(path);
-		if (!ok) {
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK,
-				("That file could not be read.\n\n" + why).c_str());
-		}
+		loadPath(picked);
 	}
 
 	/** WHERE THE SONG IS, all in one plate: its name, and how far through it the band has got.
@@ -1879,7 +1933,7 @@ struct SongWidget : ModuleWidget {
 		{
 			const float now = module->params[SongModule::P_LOAD].getValue();
 			if (now > 0.5f && lastLoad <= 0.5f && titleDisplay)
-				titleDisplay->choose();
+				titleDisplay->offerLoad();
 			lastLoad = now;
 		}
 

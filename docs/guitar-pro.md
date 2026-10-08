@@ -82,6 +82,16 @@ Reaching CV is mpxOut on whichever tracks are wanted, which is how MPX reaches C
 
 It stands beside mpxChart rather than replacing it. A chart is where a part is invented from nothing; a song is where a part already exists and is played, and then varied.
 
+## The Load button
+
+It opens a menu, not a chooser. What is being played is usually what was played a moment ago — a passage is marked up, heard, marked up again — and walking a file chooser to the same place every time is the long way round.
+
+**Open a score** is the first item and still opens the chooser. Under it are the **twenty most recently loaded**, newest first, each showing the file's name with the folder it sits in beside it: a dozen movements of the same sonata are a dozen files with nearly the same name, and the folder is what tells them apart.
+
+A file that has been moved or deleted is shown greyed and marked *missing* rather than hidden, so the list says where something went instead of quietly losing it — and a load that fails because the file has gone takes it off the list, since offering it again would be offering to fail again. **Forget the recent list** empties it.
+
+The list is kept per kind of file beside the folder memory, in the plugin's own folder, so it outlives the patch. See `LastFolder.hpp`.
+
 ## Where the file chooser opens
 
 Rack opens a chooser in the folder the patch was last saved to, which is right for a patch and wrong for everything else — saving a patch moves the starting folder of every chooser in the rack, so a score fetched from the same place a dozen times is still a walk from wherever the patches happen to live.
