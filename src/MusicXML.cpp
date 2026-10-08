@@ -1036,7 +1036,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 			for (size_t b = 0; b < track.bars.size() && b < barStarts.size(); b++) {
 				for (size_t i = 0; i < track.bars[b].beats.size(); i++) {
 					GpBeat& beat = track.bars[b].beats[i];
-					beat.dynamic = std::max(0.05f, std::min(1.f,
+					// NO FLOOR ANY MORE. This kept a twentieth so that nothing could be
+					// silent, back when a level was something like an amplitude and nought
+					// meant no sound. A level is a decibel scale now and nought is ppp,
+					// twenty-two decibels down and perfectly audible — so the guard did
+					// nothing but put the bottom rung of the ladder out of reach.
+					beat.dynamic = std::max(0.f, std::min(1.f,
 						levelAt(curve, barStarts[b] + (double) beat.start)));
 				}
 			}
