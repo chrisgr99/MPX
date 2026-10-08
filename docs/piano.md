@@ -118,6 +118,14 @@ Nothing here is random. If the structure alone sounds human, randomness would on
 - **A note under a slur is held forty milliseconds past its length**, which is the overlap between one finger and the next that makes a line sound joined rather than typed. An overlap of TIME and not of proportion: a pianist does not hold a minim ten times as far past the next note as a quaver, and the written notes of a score provide none of it — in the Ballade consecutive melody notes butt exactly end to end. It is capped against the note's own length so a short note cannot run past its neighbour, and mpxScore takes the slur off a note that has a real rest after it, since about silence the notes are a better authority than the engraver's phrasing.
 - **Tenuto is the written length with nothing taken off it**, which is what a note gets anyway, so it changes nothing here and is carried for the modules that will want it.
 
+### The pitch a recording was made at
+
+Every note is pitched by how far it is from the pitch its recording was made at, so that one number decides whether the instrument is in tune.
+
+**The map gets it wrong for middle C.** The Salamander's SFZ gives `pitch_keycenter` on every region except the sixteen for C4, where it is left out because sixty is the default — and whatever produced `map.json` took the bottom of the key span instead, writing fifty-nine. So B3, C4 and C sharp 4 were all pitched from a centre a semitone too low and played a semitone sharp. That span sits exactly where the two staves of a piano meet, so a hand in each clef was a semitone apart and anything crossing between them jumped.
+
+The names are exact and the map is derived from them, so `keyFromName` wins where the two disagree and the name lands inside the span the region covers. Sixteen regions are corrected and nothing else is touched; a disagreement is written to the log, so a set that needs more than this says so rather than quietly detuning.
+
 ### One key is one string
 
 A key struck again while it is already sounding does not get a second string: the sound already on it is faded out over four milliseconds and the new note starts on a voice of its own.

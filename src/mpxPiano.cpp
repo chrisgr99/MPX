@@ -164,6 +164,43 @@ static int layerOf(const std::string& file) {
 }
 
 
+/** THE PITCH A RECORDING WAS MADE AT, read from its own name, or minus one where the name is not
+one of the set's.
+
+WHY THE NAME AND NOT THE MAP. Every note is pitched by how far it is from the pitch its recording
+was made at, so that one number decides whether the instrument is in tune. The map gets it wrong
+for middle C: the Salamander's SFZ gives `pitch_keycenter` on every region except the sixteen for
+C4, where it is left out because sixty is the default — and whatever produced the map took the
+bottom of the key span instead, writing fifty-nine. So B3, C4 and C sharp 4 were all pitched from
+a centre a semitone too low and played a semitone sharp, right where the two staves of a piano
+meet. A hand in each clef was a semitone apart.
+
+The names are exact and the map is derived, so the name wins where the two disagree and the name
+lands inside the span the region covers. */
+static int keyFromName(const std::string& file) {
+	static const int STEP[7] = {9, 11, 0, 2, 4, 5, 7};      // A B C D E F G
+	if (file.empty() || file[0] < 'A' || file[0] > 'G')
+		return -1;
+	int at = 1;
+	int semitone = STEP[file[0] - 'A'];
+	if (at < (int) file.size() && file[at] == '#') {
+		semitone++;
+		at++;
+	}
+	else if (at < (int) file.size() && file[at] == 'b') {
+		semitone--;
+		at++;
+	}
+	if (at >= (int) file.size() || file[at] < '0' || file[at] > '9')
+		return -1;
+	const int octave = file[at] - '0';
+	// What follows the octave is the velocity layer: "v" and a number.
+	if (at + 1 >= (int) file.size() || file[at + 1] != 'v')
+		return -1;
+	return (octave + 1) * 12 + semitone;
+}
+
+
 /** Loads the set, keeping only `layers` of the sixteen velocity layers of the strings.
 
 FEWER LAYERS, EVENLY SPACED: eight keeps every other one, four keeps 4, 8, 12 and 16, so the
@@ -205,6 +242,16 @@ static PianoBank* loadBank(const std::string& dir, int layers, std::atomic<float
 		if (json_t* j = json_object_get(rJ, "lokey")) r.lokey = json_integer_value(j);
 		if (json_t* j = json_object_get(rJ, "hikey")) r.hikey = json_integer_value(j);
 		if (json_t* j = json_object_get(rJ, "key")) r.key = json_integer_value(j);
+		// AND THE NAME OVERRULES IT WHERE THE TWO DISAGREE. See keyFromName: the map has
+		// middle C a semitone out, which put a hand in each clef a semitone apart.
+		{
+			const int named = keyFromName(file);
+			if (named >= 0 && named != r.key && named >= r.lokey && named <= r.hikey) {
+				WARN("mpxPiano: %s is recorded at %d and the map says %d; taking the name",
+					file, named, r.key);
+				r.key = named;
+			}
+		}
 		if (json_t* j = json_object_get(rJ, "lovel")) r.lovel = json_integer_value(j);
 		if (json_t* j = json_object_get(rJ, "hivel")) r.hivel = json_integer_value(j);
 		r.undamped = json_is_true(json_object_get(rJ, "undamped"));
