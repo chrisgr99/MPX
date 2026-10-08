@@ -45,15 +45,17 @@ static const int BUS_RING = 256;
 /** WHAT A LEVEL OF ONE IS WORTH AT AN INSTRUMENT'S OUTPUT, as a peak in volts, with that module's
 volume control where it starts and one note sounding.
 
-FIVE VOLTS IS RACK'S OWN NOMINAL FULL SCALE for audio, so the loudest single note an instrument
-plays reaches the top of the scale and everything above it — a chord, a dense texture — is using
-the headroom between there and the hard limit.
+A SINGLE NOTE AND NOT THE LOUDEST THING THE MODULE MAKES. A chord is louder than one note even
+after its dynamic has been shared out — about four and a half decibels at the thickest — and
+nothing may pass ten volts, which is where the audio interface stops. So the figure here is set
+so that the loudest texture reaches ten and a single note sits below it, rather than putting one
+note at the top and clipping every chord above it.
 
 WHY IT IS WRITTEN DOWN AT ALL. Two modules playing the same part from the same cable were once
 twenty decibels apart, which is not a thing anybody can hear as a fault: it reads as one of them
 being the wrong instrument for the music. A number on the cable has to mean the same thing at
 every module that reads it. See test/leveltest.cpp, which measures each of them against this. */
-static const float MPX_FULL_VOLTS = 5.f;
+static const float MPX_FULL_VOLTS = 6.f;
 
 /** HOW FAR BELOW THAT THE QUIETEST MARKING IS, in decibels: the whole dynamic range of the
 written dynamics, from ppp to fff.
@@ -66,11 +68,14 @@ A MARKING IS AN ABSOLUTE LOUDNESS AND NOT A PLACE IN A SCORE'S OWN RANGE. Forte 
 thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly
 is meant to be quieter. Nothing normalises a score against itself.
 
-TWENTY-TWO AND NOT TWENTY-NINE, which is what the Salamander recordings span on their own. That
-is a piano in a quiet room, and in a rack, with the loud end set where it belongs, it puts
-pianissimo close to inaudible. The instrument's DYNAMICS control scales this down further for a
-piece that wants less. */
-static const float MPX_RANGE_DB = 22.f;
+EIGHTEEN, AND NOT THE TWENTY-NINE THE RECORDINGS SPAN ON THEIR OWN. That is a piano in a quiet
+room. A rack has nowhere near that much room: the loudest texture has to fit under ten volts, so
+every decibel of range is a decibel taken off the bottom, and at twenty-two the ppp and pp of
+a real score were not perceptible. Settled by listening to test/ladder.py, which plays the whole
+ladder with no music in the way — the figure is what puts ppp a little above where pp used to be.
+
+The instrument's DYNAMICS control narrows it further for a piece that wants less. */
+static const float MPX_RANGE_DB = 18.f;
 
 /** WHAT A LEVEL IS WORTH, in decibels below MPX_FULL_VOLTS. Nought at fff, negative everywhere
 else. The one conversion every instrument should use, so that a marking is the same loudness

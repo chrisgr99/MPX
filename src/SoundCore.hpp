@@ -39,7 +39,7 @@ ONE FIGURE FOR A WHOLE BANK, which cannot be exact. The programs inside a SoundF
 at whatever level their samples happened to have: at this scale the grand piano lands two decibels
 under the standard, the steel guitar on it, and the nylon guitar two over. That spread is the
 bank's and not something a constant here can take out. `make leveltest` measures all three. */
-static const float SOUND_VOLTS = 98.f;
+static const float SOUND_VOLTS = 117.6f;
 
 
 /** How many notes of one instant are taken as a chord. See mpxShare. */

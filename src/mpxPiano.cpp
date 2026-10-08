@@ -1700,7 +1700,8 @@ static float partGain(int part) {
 			outR += R;
 		}
 
-		const float volume = params[P_VOLUME].getValue() * 5.f;
+		// MPX_FULL_VOLTS at the knob's default: see NoteBus.hpp.
+		const float volume = params[P_VOLUME].getValue() * MPX_FULL_VOLTS;
 		float left = outL * volume, right = outR * volume;
 
 		// THE LAST FEW DECIBELS, CAUGHT RATHER THAN SQUARED OFF.

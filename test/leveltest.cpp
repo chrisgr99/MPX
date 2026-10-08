@@ -44,10 +44,10 @@ using namespace px;
 /** AS SoundCore.hpp, mpxGuitar.cpp AND mpxPiano.cpp HAVE THEM, kept here by hand since those
 files need Rack. Change them together: a scale changed there and not here leaves this measuring
 the old one. */
-static const float SOUND_VOLTS = 98.f;
-static const float GUITAR_VOLTS = 6.47f;
+static const float SOUND_VOLTS = 117.6f;
+static const float GUITAR_VOLTS = 7.76f;
 /** mpxPiano's output stage: the volume knob, which starts at one, times five. */
-static const float PIANO_VOLTS = 5.f;
+static const float PIANO_VOLTS = 6.f;
 /** The set's own velocity tracking, from its SFZ. mpxPiano::noteOn. */
 static const float PIANO_VELOCITY_TRACKING = 0.73f;
 static const float RATE = 48000.f;

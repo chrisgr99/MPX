@@ -39,7 +39,7 @@ static std::string rulesPath() {
 MPX_FULL_VOLTS, which `make leveltest` measures and holds it to. It was four, which put the same
 note four decibels under every other instrument on the cable — not a difference anybody hears as
 a fault, just one that makes the guitar sound like the wrong instrument for the music. */
-static const float OUTPUT_VOLTS = 6.47f;
+static const float OUTPUT_VOLTS = 7.76f;
 /** How many notes of one instant are taken as a chord. More than this at one moment is not a
 chord any hand could play, and the rest are started unshared rather than dropped. */
 static const int MAX_TOGETHER = 16;

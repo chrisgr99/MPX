@@ -6,16 +6,19 @@ How loud a note is, from the mark on the page to the volts at an instrument's ou
 
 **A marking names a number of decibels, and it names the same number in every score.** Forte means the same thing in a piece that never leaves mezzo-forte as in one that reaches fff; a piece written quietly is meant to be quieter. Nothing normalises a score against itself.
 
-`MPX_RANGE_DB` in `NoteBus.hpp` is 22: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds 22 times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
+`MPX_RANGE_DB` in `NoteBus.hpp` is 18: the whole span from ppp to fff. **Level is a decibel scale** — a note sounds `MPX_RANGE_DB` times `(1 - level)` decibels below `MPX_FULL_VOLTS` — so the eight markings are the eight levels evenly spread from nought to one, one seventh of the range apart, and `mpxDecibels` and `mpxLoudness` are the one conversion every instrument should use.
 
 | | ppp | pp | p | mp | mf | f | ff | fff |
 |---|---|---|---|---|---|---|---|---|
 | level | 0 | 1/7 | 2/7 | 3/7 | 4/7 | 5/7 | 6/7 | 1 |
-| dB | -22.0 | -18.9 | -15.7 | -12.6 | -9.4 | -6.3 | -3.1 | 0 |
+| dB | -18.0 | -15.4 | -12.9 | -10.3 | -7.7 | -5.1 | -2.6 | 0 |
+| volts | 0.76 | 1.02 | 1.37 | 1.84 | 2.47 | 3.32 | 4.46 | 6.00 |
 
 `sf` sits between f and ff, `sfz` at ff, and `fp` strikes at f — the drop that follows is not read, so it is the f that is kept.
 
-Twenty-two decibels and not the twenty-nine the recordings span on their own, which is a piano in a quiet room and leaves pianissimo close to inaudible in a rack. **mf and fff are where they were before this table**, deliberately: the eighteen scores carrying no dynamics at all sit at mf and should not move, and the top of an instrument should not move either.
+**Eighteen decibels, and not the twenty-nine the recordings span on their own.** That is a piano in a quiet room, and a rack has nowhere near that much room — the loudest texture has to fit under ten volts, so every decibel of range is a decibel taken off the bottom. At twenty-two the ppp and pp of a real score were not perceptible. Settled by listening to `test/ladder.py`, which plays the whole ladder with no music in the way.
+
+**`MPX_FULL_VOLTS` is six, and that is a single note rather than the loudest thing the module makes.** A chord is louder than one note even after its dynamic has been shared out — about four and a half decibels at the thickest — and nothing may pass ten volts, where the audio interface stops. Six puts the loudest texture at ten and a single fff note below it. Putting one note at ten instead would clip every chord above it.
 
 A mark is a point and not a property of a note: it holds until the next one. A hairpin is a ramp whose destination is whatever mark comes after it, which may be bars away, so the loudness of every note is worked out after the whole part has been read. A ramp with nothing after it travels `HAIRPIN_REACH`, one seventh — one step of the ladder — and may not arrive below ppp.
 
@@ -33,7 +36,7 @@ Left out deliberately: *sotto voce* and *mezza voce* say how to play rather than
 
 ## What a level is worth
 
-**`MPX_FULL_VOLTS`, in `NoteBus.hpp`: a single note at level 1, with the module's volume control where it starts, peaks at five volts.** That is Rack's nominal full scale for audio, so the loudest single note an instrument plays reaches the top of the scale, and a chord uses the headroom above it.
+**`MPX_FULL_VOLTS`, in `NoteBus.hpp`: a single note at level 1, with the module's volume control where it starts, peaks at six volts.** Not ten, which is where the interface stops — a chord is louder than one note, so six is what puts the loudest texture at the top of the scale rather than clipping it.
 
 This is a statement about every instrument on the cable, not about one of them. The same number has to be the same loudness wherever it is read, or handing a part to a different instrument changes the music rather than the colour. Two modules playing the same part were once twenty decibels apart, which nobody hears as a fault — it reads as one of them being the wrong instrument for the music.
 
@@ -43,12 +46,12 @@ As measured, all six now within the three decibels it allows:
 
 | | peak | from the standard |
 |---|---|---|
-| mpxGuitar, steel | 5.01 V | 0.0 dB |
+| mpxGuitar, steel | 6.00 V | 0.0 dB |
 | mpxPiano | 5.00 V | 0.0 dB |
-| mpxGuitar, nylon | 4.93 V | -0.1 dB |
-| the band, steel guitar | 4.88 V | -0.2 dB |
-| the band, grand piano | 4.01 V | -1.9 dB |
-| the band, nylon guitar | 6.40 V | +2.1 dB |
+| mpxGuitar, nylon | 5.91 V | -0.1 dB |
+| the band, steel guitar | 5.85 V | -0.2 dB |
+| the band, grand piano | 4.81 V | -1.9 dB |
+| the band, nylon guitar | 7.68 V | +2.1 dB |
 
 mpxPiano is exact because it aims at the figure rather than arriving at one. The band's spread of four decibels is the SoundFont's own: its programs were recorded at whatever level their samples happened to have, and one scale factor cannot take that out.
 
