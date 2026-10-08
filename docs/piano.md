@@ -146,6 +146,14 @@ Theirs wins. They chose the speed, where this would have used its own fixed figu
 
 **The written note is then cut back to where theirs begins**, which is what makes one rule cover the two ways engravers do it. In bar 44 of the Tempest the hidden voice holds only the upper note and the resolution, and the visible note is itself the first note of the figure: it has to stop when the hidden G arrives rather than ring on for its full written eighth. In bar 43 the hidden voice holds all three and starts on the same instant, so the cut takes the written note to nothing and it goes.
 
+### Rolled chords
+
+The wavy stroke down the front of a chord says to play it from the bottom up, or from the top down where the arrow points that way. It overrides the spread entirely, because the two disagree: the melody lead puts the top note first and a roll puts it last.
+
+Thirty-five milliseconds a note, so a four-note roll takes a little over a tenth of a second. The score does not say — MusicXML's arpeggiate sign carries a direction and nothing else, no speed — so how long the hand takes over it is the player's, which is where it belongs.
+
+**By the module's own pitch order, not by the index on the cable.** That index is counted within one voice of one staff, and a pianist rolls a chord through both hands: the two staves arrive as separate beats, each numbering its own notes from nought, so the published index starts again halfway up the chord. What is wanted is the order across everything struck at that instant, which is the order the notes have already been sorted into.
+
 ### Where the weight of the bar goes
 
 Nothing in a score says this and every player does it. A score says forte once and means it for twenty bars; what happens inside those bars is that a player leans very slightly on the strong positions. Its absence is a good part of why a sequenced performance sounds mechanical even when every marked dynamic is right.

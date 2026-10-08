@@ -533,16 +533,31 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					// high to low coming up, so the order the hand reaches the strings is the
 					// order the notes speak in.
 					if (brush != 0) {
+						// A PIANO HAS NO STRINGS TO COUNT. The order of a brush is the order the
+						// hand reaches the strings, which on a fingerboard is a string number —
+						// and a rolled chord in a piano score has none, since MusicXML.cpp sets
+						// every string to nought for music with no fingerboard. Every note of
+						// every rolled chord therefore scored the same and came out first, so
+						// the roll was read, carried and then played flat. Ordered by pitch
+						// where there are no strings, which is what the sign means anyway: up
+						// the chord or down it.
+						bool byString = false;
+						for (size_t o = 0; o < beat.notes.size(); o++)
+							if (beat.notes[o].string > 0)
+								byString = true;
 						int before = 0, total = 0;
 						for (size_t o = 0; o < beat.notes.size(); o++) {
 							if (beat.notes[o].tied)
 								continue;
 							total++;
 							// One is the highest string, so a downstroke starts at the largest
-							// number and an upstroke at the smallest.
-							const bool earlier = (brush > 0)
-								? (beat.notes[o].string > note.string)
-								: (beat.notes[o].string < note.string);
+							// number and an upstroke at the smallest; by pitch, a stroke up the
+							// chord starts at the lowest note.
+							const bool earlier = byString
+								? ((brush > 0) ? (beat.notes[o].string > note.string)
+								               : (beat.notes[o].string < note.string))
+								: ((brush > 0) ? (beat.notes[o].midi < note.midi)
+								               : (beat.notes[o].midi > note.midi));
 							if (earlier)
 								before++;
 						}

@@ -784,6 +784,14 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	down in about a fiftieth of a second and inaudible as a separate event. */
 	static constexpr float RESTRIKE_FADE = 0.004f;
 
+	/** HOW LONG A ROLLED CHORD TAKES, per note, in seconds.
+
+	THE SCORE DOES NOT SAY. MusicXML's arpeggiate sign carries a direction and nothing else — no
+	speed — so how long the hand takes over it is the player's, which is where it belongs. Thirty
+	five milliseconds a note puts a four-note roll a little over a tenth of a second, which reads
+	as a roll rather than as a chord played badly, and a ballad's spread chords want about that. */
+	static constexpr float ROLL_PER_NOTE = 0.035f;
+
 	PianoVoice* allocate(bool noise, float sampleRate) {
 		const int lo = noise ? MAX_VOICES - NOISE_VOICES : 0;
 		const int hi = noise ? MAX_VOICES : std::min(polyphony, MAX_VOICES - NOISE_VOICES);
@@ -1524,12 +1532,36 @@ static float partGain(int part) {
 				// notes were struck together, so they are in the same place in the metre.
 				Harmony now;
 				const bool timed = reader.harmony(now);
+				// A ROLLED CHORD IS NOT A CHORD THAT MISSED. The wavy stroke down the front of
+				// one says to play it from the bottom up — or from the top down where the arrow
+				// points that way — and it is a gesture, not an untidiness, so it overrides the
+				// spread entirely. The melody lead would otherwise fight it: that puts the top
+				// note first and a roll puts it last.
+				//
+				// BY THIS MODULE'S OWN PITCH ORDER AND NOT BY strumIndex, which is counted
+				// within one voice of one staff. A pianist rolls a chord through both hands and
+				// the two staves arrive as separate beats, each numbering its own notes from
+				// nought, so the published index would start again halfway up the chord. What
+				// is wanted is the order across everything struck at this instant, which is
+				// exactly the order these have already been sorted into.
+				int rolling = 0;
+				for (int a = 0; a < chord; a++)
+					if (struck[a].strum != 0)
+						rolling = struck[a].strum;
+
 				for (int a = 0; a < chord; a++) {
 					// WHEN EACH NOTE OF THE CHORD SPEAKS: see the constants above.
-					float late = (loudest - levels[a]) * SPREAD_PER_LEVEL;
-					if (chord >= 4 && a < chord - 1)
-						late += (float) a * SPREAD_INNER;
-					late = math::clamp(late, 0.f, SPREAD_MOST);
+					float late;
+					if (rolling != 0 && chord > 1) {
+						const int step = (rolling > 0) ? a : (chord - 1 - a);
+						late = (float) step * ROLL_PER_NOTE;
+					}
+					else {
+						late = (loudest - levels[a]) * SPREAD_PER_LEVEL;
+						if (chord >= 4 && a < chord - 1)
+							late += (float) a * SPREAD_INNER;
+						late = math::clamp(late, 0.f, SPREAD_MOST);
+					}
 					// A NOTE THAT SPEAKS LATE STILL STOPS WHEN IT WAS WRITTEN TO, so the delay
 					// comes off its length rather than pushing its end along with it.
 					float held = lengths[a];
