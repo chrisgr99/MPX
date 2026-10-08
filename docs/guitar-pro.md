@@ -82,6 +82,28 @@ Reaching CV is mpxOut on whichever tracks are wanted, which is how MPX reaches C
 
 It stands beside mpxChart rather than replacing it. A chart is where a part is invented from nothing; a song is where a part already exists and is played, and then varied.
 
+## Swing, which the score does not say
+
+A knob on mpxScore, two-sided: clockwise swings late, anticlockwise early, the middle is even. Nought by default, so nothing already patched starts swinging.
+
+**The amount and the ratio are different things.** The knob is an amount; what it means at the tempo being played comes from `Swing.hpp`, measured over 456 jazz solos and 22,574 eighth pairs, and it varies with tempo in both directions. The module publishes the amount and both ratios on the cable as the chart does, so anything playing alongside divides the beat the same way.
+
+**A score has to move its own notes.** mpxChart publishes the swing and the modules downstream place their notes where it says — but those modules are inventing rhythm, and this one is playing rhythm that is already written. Nothing downstream will move a written note, so `swung()` moves it here.
+
+**Only the off-half and the off-quarter of a beat are touched**, and that one rule does the work of three. A triplet sits on a third of a beat and is left alone, which is right — a triplet is already a three-way division, and swinging it would be swinging a swing. An ornament's small notes have their own fast timing and are not on the grid either. And anything written off the grid stays where it was put.
+
+It also picks the level without being told: a note on the half-beat takes the eighth ratio and one on the quarter-beat the sixteenth, so a piece that mixes the two needs no mode set.
+
+**A swung note keeps its written end**, so the first half of a divided beat grows and the second shrinks, which is the whole shape of it.
+
+Simple metres only. A ratio divides a beat in two and a compound metre has already divided its beat in three, which is the thing swing imitates. The bar lines and the beats themselves never move.
+
+**It is gentler at slow tempos, and that is the corpus and not a fault.** Players swing their eighths hardest around 140 to 180 beats a minute and much less at a ballad tempo, where the dividing happens at the sixteenth level instead. At the knob's full travel:
+
+| | 60 | 80 | 120 | 160 | 200 | 260 bpm |
+|---|---|---|---|---|---|---|
+| off-beat eighth lands at | 52.8% | 54.2% | 57.3% | 58.8% | 58.2% | 55.9% |
+
 ## What it does not read
 
 A file using something the reader does not know is imported as far as it goes, and what was skipped is written to Rack's log. Nothing is said on the panel: a song that plays is useful even where a bend or an unusual tuplet did not survive, and a panel full of warnings about things the listener cannot hear is worth less than the music.

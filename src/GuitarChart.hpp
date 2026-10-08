@@ -35,6 +35,7 @@ synthesiser leaves it alone.
 #include "ScoreFollow.hpp"
 #if CHART_AUDIO
 #include "SoundCore.hpp"
+#include "Swing.hpp"
 #include "MusicXML.hpp"
 #include "ScoreWindow.hpp"
 #endif
@@ -162,6 +163,7 @@ struct SongModule : Module, NoteSource {
 #else
 		P_LOAD = P_GAIN,
 #endif
+		P_SWING,
 		NUM_PARAMS
 	};
 
@@ -255,6 +257,9 @@ struct SongModule : Module, NoteSource {
 	SongModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configButton(P_LOAD, "Load a score");
+		// SWING, WHICH THE SCORE DOES NOT SAY. Two-sided: see swingRatios and docs/notation.md.
+		// Nought by default, so nothing already patched starts swinging.
+		configParam(P_SWING, -1.f, 1.f, 0.f, "Swing", "%", 0.f, 100.f);
 
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		//? Starts the song again from its first bar. It does not stop it.
@@ -379,6 +384,50 @@ struct SongModule : Module, NoteSource {
 
 	void onReset() override {
 		rewind();
+	}
+
+	/** WHERE A NOTE FALLS ONCE THE MUSIC SWINGS, in quarter notes.
+
+	A SCORE HAS TO MOVE ITS OWN NOTES. The chart publishes the swing and the modules downstream
+	place their notes where it says — but those modules are inventing rhythm, and this one is
+	playing rhythm that is already written. Nothing downstream is going to move a written note,
+	so it is moved here.
+
+	ONLY THE NOTES ON THE OFF-HALF AND THE OFF-QUARTER OF A BEAT ARE TOUCHED, and that one rule
+	does the work of three. A triplet sits on a third of a beat and is left alone, which is right:
+	a triplet is already a three-way division and swinging it would be swinging a swing. The small
+	notes of an ornament have their own fast timing and are not on the grid either, so they are
+	left alone too. And anything written off the grid — a tied-over syncopation, a note placed by
+	hand — stays where it was put.
+
+	IT ALSO CHOOSES THE LEVEL WITHOUT BEING TOLD. A note on the half-beat takes the eighth ratio
+	and one on the quarter-beat the sixteenth, which is how Phrasing already picks and means
+	there is no mode to set and nothing to get wrong on a piece that mixes the two.
+
+	SIMPLE METRES ONLY. A ratio divides a beat in two, and a compound metre has already divided
+	its beat in three — which is the thing swing is imitating. Nothing is moved in six eight.
+
+	THE BAR LINES AND THE BEATS DO NOT MOVE. Only what is between them. */
+	double swung(double startQuarters, const GpMasterBar& written) {
+		const float amount = params[P_SWING].getValue();
+		if (std::fabs(amount) < 0.001f || written.beatUnit >= 8)
+			return startQuarters;
+		float r8 = 1.f, r16 = 1.f;
+		swingRatios(amount, 60.f / std::fmax(0.0001f, (float) quarterSeconds), r8, r16);
+		const double beat = std::floor(startQuarters);
+		const double u = startQuarters - beat;          // Where in the beat, nought to one.
+		// The point a divided beat is divided AT: a ratio of one is a half, and more than one
+		// puts it later.
+		const double m8 = (double) r8 / ((double) r8 + 1.0);
+		const double m16 = (double) r16 / ((double) r16 + 1.0);
+		static const double CLOSE = 1e-4;
+		if (std::fabs(u - 0.5) < CLOSE)
+			return beat + m8;                           // The off-beat eighth.
+		if (std::fabs(u - 0.25) < CLOSE)
+			return beat + m8 * m16;                     // The off-quarter inside the first half.
+		if (std::fabs(u - 0.75) < CLOSE)
+			return beat + m8 + (1.0 - m8) * m16;        // And inside the second.
+		return startQuarters;
 	}
 
 	void rewind() {
@@ -885,6 +934,12 @@ struct SongModule : Module, NoteSource {
 		h.valid = false;
 		h.timingValid = true;
 		h.beat = quarters;
+		// AND HOW HARD IT SWINGS, so anything playing alongside divides the beat the same way.
+		// The amount is the knob; the two ratios are what it means at this tempo, worked out
+		// once here from the measured curve so two modules cannot convert it differently.
+		h.swing = params[P_SWING].getValue();
+		swingRatios(h.swing, 60.f / std::fmax(0.0001f, (float) quarterSeconds),
+			h.swingEighth, h.swingSixteenth);
 		// THE KEY, WHICH THE SCORE SAYS ON EVERY BAR. The chords are not known — a transcription
 		// is notes, not symbols — but the key is written down, and a module choosing pitches
 		// would far rather have it than nothing. Fifths round the circle: nought is C major and
@@ -1008,7 +1063,17 @@ struct SongModule : Module, NoteSource {
 #else
 			const float cableGain = 1.f;
 #endif
-			while (cursor[r] < notes.size() && notes[cursor[r]].startQuarters <= quarters) {
+			// NOTHING SOUNDS WHILE THE TRANSPORT IS STOPPED, which wants saying out loud
+			// because the clock being stopped is not enough on its own.
+			//
+			// THE CLOCK ONLY MOVES WHEN THE MUSIC IS RUNNING, but this loop ran every sample
+			// whatever the transport was doing — and a note written at the very start satisfies
+			// "has its moment come" the instant the position is nought. So loading a score, or
+			// rewinding one, sounded its first note immediately and stepped the cursor past it.
+			// Pressing play then began at the second note. Misty opens with a two-eighth pickup
+			// and the pickup was heard on the rewind and never again.
+			while (running && !awaitPulse && cursor[r] < notes.size()
+					&& swung(notes[cursor[r]].startQuarters, written) <= quarters) {
 				const GpPlayedNote& n = notes[cursor[r]];
 				cursor[r]++;
 				// THE ROW'S LIGHT FLASHES MUTED OR NOT, so a muted row shows what would be heard
@@ -1043,7 +1108,15 @@ struct SongModule : Module, NoteSource {
 				e.level = math::clamp(n.dynamic * cableGain, 0.f, 1.f);
 				// The length at the tempo it is being played at, which is the clock's when one
 				// is patched and the file's when none is.
-				e.duration = math::clamp((float) n.lengthQuarters * quarterSeconds,
+				//
+				// AND A SWUNG NOTE KEEPS ITS WRITTEN END. Moving a start without its end is
+				// exactly what swing is: the first half of a divided beat grows and the second
+				// shrinks, which is the whole shape of it. Measured to where the note was
+				// written to stop rather than to where it now starts, so a late off-beat does
+				// not run over the next beat. See swung.
+				const double ends = swung(n.startQuarters + n.lengthQuarters, written);
+				const double lasts = ends - swung(n.startQuarters, written);
+				e.duration = math::clamp((float) std::fmax(0.02, lasts) * quarterSeconds,
 					MIN_SECONDS, MAX_SECONDS);
 				describe(e, n, L.song.tracks[(size_t) t].letRingThroughout);
 				// A SLUR ONLY MEANS LEGATO WHERE THERE IS SOMETHING TO BE LEGATO TO. The mark
@@ -1487,6 +1560,14 @@ static Layout songLayout(int rows) {
 	label("p.tempo.label", 34.f, 42.f, "BPM", Panel::CENTRE, true, 0.f, "p.tempo");
 
 
+
+	// SWING, beside the tempo: both are how the music is being played rather than what it says,
+	// and the beat is divided by one and counted by the other.
+	Item swing;
+	swing.key = "p.swing"; swing.kind = Item::PARAM; swing.id = SongModule::P_SWING;
+	swing.x = 49.f; swing.y = 35.5f;
+	L.items.push_back(swing);
+	label("p.swing.label", 49.f, 42.f, "SWING", Panel::CENTRE, true, 0.f, "p.swing");
 
 	Item lamp;
 	lamp.key = "lamp.beat"; lamp.kind = Item::LIGHT; lamp.id = SongModule::L_BEAT;

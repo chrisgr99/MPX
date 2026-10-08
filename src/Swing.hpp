@@ -71,10 +71,20 @@ inline float swingLookup(const SwingPoint* pts, int n, float bpm) {
 
 /** THE RATIOS FOR ONE AMOUNT AT ONE TEMPO. The amount runs from nought, which is even, to one,
 which is what the corpus measured at that tempo — never a literal two to one, because that is not
-what was played. */
+what was played. Negative runs the same distance the other way: see below.
+
+A MODULE MAY OFFER ONLY PART OF THAT RANGE. mpxChart's knob is nought to one, since a chart
+drives rhythm modules that place their own notes; mpxScore's is two-sided, since it is deforming
+written notes and a score played against the beat is a thing somebody may want. */
 inline void swingRatios(float amount, float bpm, float& eighth, float& sixteenth) {
-	if (amount < 0.f)
-		amount = 0.f;
+	// NEGATIVE IS THE OTHER WAY ROUND, and the arithmetic below already does it: a ratio under
+	// one makes the first half of a divided beat the SHORTER one, so the note off the beat comes
+	// early instead of late. Nothing in the corpus measures that — players swing late — but it
+	// is a real feel and worth having under the same control rather than a second one. At minus
+	// one against a measured 1.43 the ratio is 0.57, which puts the off-beat at thirty-six per
+	// cent of the beat instead of fifty.
+	if (amount < -1.f)
+		amount = -1.f;
 	if (amount > 1.f)
 		amount = 1.f;
 	int n8 = 0, n16 = 0;
