@@ -812,7 +812,9 @@ struct SongModule : Module, NoteSource {
 		// STOPPED MEANS STOPPED, whatever the clock is doing: this is a transport and not a
 		// mute. The beat is still published, so anything following the song knows where it was
 		// stopped rather than losing it.
-		const bool running = params[P_PLAY].getValue() > 0.5f;
+		// NOT CONST: the end of the piece stops the transport, and the rest of this sample has
+		// to know. See below.
+		bool running = params[P_PLAY].getValue() > 0.5f;
 		if (running && !wasRunning)
 			awaitPulse = true;
 		wasRunning = running;
@@ -844,8 +846,16 @@ struct SongModule : Module, NoteSource {
 			// below brings the music back to its start, and stopping here would get in first.
 			int from = -1, to = -1;
 			if (!scoreFollowLoop(id, from, to, NULL)) {
-				rewind();
 				params[P_PLAY].setValue(0.f);
+				rewind();
+				// AND STOPPED FOR THE REST OF THIS SAMPLE TOO, which is the whole point.
+				// `running` was read at the top of this call, so clearing the parameter alone
+				// leaves it true until the next one — and the music is now back at nought,
+				// where the first note of the piece is waiting with its moment apparently
+				// come. It sounded, and the cursor stepped past it, so the next press of play
+				// began at the second note. The same fault as the one below in the firing
+				// loop, arriving by a different road.
+				running = false;
 			}
 		}
 
