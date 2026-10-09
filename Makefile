@@ -426,6 +426,12 @@ leveltest:
 		-L$(RACK_DIR) -lRack -o build/leveltest
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/leveltest $(ARGS)
 
+# One modelled bowed string: tuning, the split loop, decay, moving the contact point. No Rack.
+bowtest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/bowtest.cpp src/BowedString.cpp -o build/bowtest
+	@./build/bowtest
+
 # The fretting hand: the shapes it finds against the familiar ones. No Rack in it.
 fretboardtest:
 	@mkdir -p build
@@ -548,7 +554,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is

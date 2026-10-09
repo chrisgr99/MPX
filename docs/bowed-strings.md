@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: designed, nothing built.
+Status: phase 1 built — the string, with no bow. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -129,7 +129,7 @@ Build one module first. Add the others through the pattern `mpxGuitarChart` and 
 
 Slugs are permanent, so do not mint four of them for an engine whose shape may still change.
 
-**Start with the cello.** At 48 kHz its periods run from 218 to 734 samples, where the violin's top string gives 73 and its high positions 18. Get the physics right where it is easiest to observe, then scale up and find out what the violin additionally needs. The Fauré quartet provides a cello part to test against.
+**The violin ships first, but the engine is exercised at cello pitches until the physics is right.** At 48 kHz a cello's periods run from 218 to 734 samples, where the violin's top string gives 73 and its high positions 18. Every measurement is easier to read an octave or two down. The constants are parameters, so this costs nothing: see the phases below.
 
 The physical constants are parameters, not four hardcoded sets, so that a five-string bass or an unusual viola is possible.
 
@@ -151,6 +151,90 @@ Benches before the module, as the piano model's were:
 - Guettler sweep: for a grid of bow acceleration and force, does the attack start cleanly, with multiple slips, or with a scratch.
 - Oversampling: both sweeps at one, two, four and eight times, to decide the schedule.
 - Tuning and decay, as for the other string models.
+
+## Phases
+
+The violin ships first. The engine's physical constants are parameters rather than four hardcoded sets, so which instrument ships first decides only which slug is minted, not how the engine is written — but it does decide where the early benches run, and running them at violin pitches from the start would be a mistake. A violin's top string gives 73 samples a period at 48 kHz and its high positions 18, where a cello's lowest string gives 734. Every measurement below is easier to read, and every fault easier to see, an octave or two down. So the engine is exercised at cello pitches through phase 3 and raised to violin pitches in phase 4, which is also where the oversampling schedule is decided. Nothing is thrown away by doing it in that order, and the cello module in phase 9 then arrives already tested.
+
+Each phase ends with something measurable, and most of them with something to listen to. The piano model reached a usable design and never reached a usable sound, so each phase states what would make it worth stopping.
+
+### 1. The string, with no bow — built
+
+`BowedString.hpp` and `.cpp`. Four one-way delay lines, a pair each side of the contact point, so the travelling waves are available where the bow will go. The loss filter and the dispersion allpasses sit in the bridge reflection, crossed once a round trip as `GuitarString`'s are; the nut reflects 0.995 of what reaches it. Velocity waves, so phase 2 can add the bow's velocity to both outgoing waves. Excited by a pluck — the guitar's triangle, halved into the two outgoing waves — which is also the pizzicato.
+
+`make bowtest` measures it. In tune within 0.8 cents over both instruments' ranges including high positions. The partials land on whole multiples within a tenth of a cent to the seventh, which Helmholtz motion will want and which there was no reason to assume. The contact point moves the fundamental by at most 0.06 cents anywhere from 0.02 of the length to the midpoint, and the partial with a node under the contact point is 33 to 45 dB down, so the split is a place on the string and not only an arithmetic division. Decay within 2.3 per cent of the time asked for. Sweeping the contact point while the string rings stays bounded, in tune, and shows no jump between samples bigger than the waveform's own slope.
+
+Two things it cost. The round trip meets each end once, not twice, and counting the nut's reflection for both of the segments it borders left a string asked for six seconds ringing for nearly nine. And autocorrelation is the wrong way to measure this: it reads the lag at which the whole waveform repeats, which moves with whichever partials are loud, so it showed 1.4 cents of error at the midpoint where the fundamental had not moved at all.
+
+The bench also prints how close to the bridge the contact point can be had, which is the figure phase 4 needs. At 48 kHz, with the shortest segment the interpolated read allows: cello C2 reaches 0.006 of the length, cello A3 0.019, violin G3 0.017, violin A4 0.039, violin E5 0.059, violin E6 0.125, violin E7 0.288. So a cello can be bowed anywhere a player would, and a violin cannot be bowed near the bridge above about the A string without oversampling.
+
+### 2. The bow
+
+The nonlinear junction at the contact point, solved once per sample, with the classical friction curve that depends on sliding speed alone. Bow force, bow speed and sounding point as explicit inputs.
+
+This is the first bowed sound. It will be thin, because there is no body, and it should already be recognisably a bowed string rather than a synthesiser, because Helmholtz motion is a strong attractor.
+
+Bench: a held note at a plausible force and speed reaches Helmholtz motion and stays there; the velocity at the bow is a sawtooth; the fundamental is the string's pitch and not half or double it.
+
+Worth stopping if: Helmholtz motion cannot be reached at any setting. That would mean the junction is wrong, not the parameters.
+
+### 3. The acceptance benches
+
+Schelleng's sweep and Guettler's sweep, as command-line tests that print the playable region as a grid.
+
+This is the gate the whole design rests on, and it is the reason this is a better prospect than the piano was. A model that reproduces both diagrams is playable whatever it sounds like; one that does not is unplayable however good a single note sounds. Both are pass or fail per combination, so the bench reports a region and the region either has the published shape or it does not.
+
+Expect to spend the time here rather than in phase 2. Getting a note to sound is not the same as getting the limits right at both ends.
+
+Worth stopping if: the playable region cannot be made to resemble the published one. Everything after this assumes a player can be given force and speed and get a note.
+
+### 4. Pitch, and the oversampling schedule
+
+Raise the benches to violin pitches, including high positions, and run both sweeps at one, two, four and eight times oversampled. Find where the playable region starts to deform, and from that write the schedule: how much oversampling at which pitch.
+
+Internal to the module, following the pitch being played, so a low note costs nothing.
+
+Worth stopping if: eight times is not enough at the top of the E string. Then the violin is the wrong instrument to ship first after all, and the cello is.
+
+### 5. The body
+
+A modal bank, the bridge resonance, and a radiation filter, as in the deprecated piano's soundboard, where that approach was measured and did work. Constants per instrument.
+
+This is the first phase whose result is judged by ear as well as by measurement, and the first point at which it is worth you listening properly.
+
+### 6. The instrument
+
+Four strings on a shared bridge. Which string plays a given note, open against stopped, and sympathetic coupling between the free strings, which the piano model showed is cheap once the strings share a bridge.
+
+Pizzicato comes free here from phase 1.
+
+### 7. The player
+
+The bowing, in the performer library beside the guitarist. A slur is a bow stroke; within one slur the bow has a fixed length to spend across the notes under it, so bow speed is bow remaining over time remaining. Force follows from the dynamic and the sounding point, bounded by the Schelleng limits phase 3 measured. Direction is inferred, down-bow on a strong beat, with the slur grouping deciding where alternation resumes.
+
+Pressure and timbre on the cable map onto bow force and sounding point, continuously through each note.
+
+`pizz` and `arco` arrive as words rather than as elements, which is the reading problem already solved for the worded crescendos.
+
+This is the phase where the thing stops sounding like a test tone and starts sounding like a part being played, and it is the one most likely to need several passes by ear.
+
+### 8. The module
+
+mpxViolin: panel, layout file, controls, help text from the `//?` lines, MPX in, stereo out, level lamp. The guitar's pattern throughout.
+
+Which controls reach the panel is decided here and not before, because until phase 7 it is not known which of them a player actually moves.
+
+### 9. The other three
+
+Viola, cello and double bass as short source files over the shared engine, in the pattern `mpxGuitarChart` and `mpxGuitarChart6` use. Four slugs, four entries in the browser, because somebody looking for a cello searches for a cello.
+
+The double bass needs its own parameter set rather than the same one scaled: tuned in fourths where the others are in fifths, a far higher impedance, and a different bow.
+
+Not before this point, because slugs are permanent and the engine's shape must be settled first.
+
+### 10. A quartet
+
+The Fauré piano quartet, first movement, already measured for its markings, played with violin, viola and cello parts against the piano. Four modules in one patch is also where the oversampling schedule gets its real test, since the cost that matters is the cost of all of them at once.
 
 ## Still to come
 
