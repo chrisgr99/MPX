@@ -55,7 +55,7 @@ WHY IT IS WRITTEN DOWN AT ALL. Two modules playing the same part from the same c
 twenty decibels apart, which is not a thing anybody can hear as a fault: it reads as one of them
 being the wrong instrument for the music. A number on the cable has to mean the same thing at
 every module that reads it. See test/leveltest.cpp, which measures each of them against this. */
-static const float MPX_FULL_VOLTS = 8.f;
+static constexpr float MPX_FULL_VOLTS = 8.f;
 
 /** HOW FAR BELOW THAT THE QUIETEST MARKING IS, in decibels: the whole dynamic range of the
 written dynamics, from ppp to fff.
@@ -77,7 +77,7 @@ choice about where ppp sits: a step of two and two thirds decibels from one mark
 puts it a little under a volt, which is as quiet as a piano can usefully be here.
 
 The instrument's DYNAMICS control narrows it further for a piece that wants less. */
-static const float MPX_RANGE_DB = 18.5f;
+static constexpr float MPX_RANGE_DB = 18.5f;
 
 /** WHAT A LEVEL IS WORTH, in decibels below MPX_FULL_VOLTS. Nought at fff, negative everywhere
 else. The one conversion every instrument should use, so that a marking is the same loudness
@@ -116,7 +116,7 @@ ONE IS LEFT ALONE, so this pulls dense textures down to meet sparse ones and nev
 quieter than it was. It is a gain and must stay one: put through `level` instead it would move
 the whole note down the decibel scale, and a six-note chord at forte then comes out quieter than
 a single forte note. See docs/dynamics.md. */
-static const float MPX_DENSITY_POWER = 0.35f;
+static constexpr float MPX_DENSITY_POWER = 0.35f;
 
 /** WHERE AN OUTPUT STOPS GETTING LOUDER, and where it starts to be curved on the way there.
 
@@ -135,8 +135,8 @@ and a half decibels of rounding on the loudest moment of a piece and nothing any
 
 A TANGENT, because it meets the straight part with the same slope: no corner at the knee, so the
 curve does not announce itself as the signal crosses it. */
-static const float MPX_CLIP_FROM = 8.5f;
-static const float MPX_CLIP_TO = 10.f;
+static constexpr float MPX_CLIP_FROM = 8.5f;
+static constexpr float MPX_CLIP_TO = 10.f;
 
 inline float mpxSoftClip(float v) {
 	const float size = (v < 0.f) ? -v : v;

@@ -101,46 +101,133 @@ static int pianoVelocity(float level) {
 
 /** The peak of a 16-bit stereo PCM WAV, as a fraction of full scale. Only what the set contains
 is understood, which is the same restriction mpxPiano::readWav makes. */
-static double wavPeak(const std::string& path) {
+/** HOW LOUD A RECORDING IS, by two measures that disagree.
+
+PEAK is the tallest sample, and on a piano note that is a few milliseconds of hammer. LOUD is the
+root mean square of the first second, which is nearer what the ear weighs over a note of musical
+length. Dividing a note by one of these is what makes a marking a number; which one is chosen
+decides what comes out even and what is left to vary. */
+struct WavLevel { double peak = -1.0, loud = -1.0, heard = -1.0; };
+
+/** HOW LONG THE EAR TAKES TO DECIDE HOW LOUD SOMETHING IS, near enough: a seventh of a second.
+A fixed window from the start will not do — the top octave has died well inside a second, so its
+root mean square over one is mostly silence, and dividing by that sent the treble to seventy
+volts. The loudest such window anywhere in the note is what is wanted. */
+static const double HEARD_WINDOW = 0.15;
+
+/** mpxPiano::CREST_BLEND and CREST_REFERENCE. Kept here because this program does not link the
+module; if they drift apart the bench stops describing the instrument. */
+static const double PIANO_CREST_BLEND = 0.5;
+static const double PIANO_CREST_REFERENCE = 3.3;
+
+static WavLevel wavLevel(const std::string& path) {
+	WavLevel bad;
 	std::ifstream f(path, std::ios::binary);
 	if (!f)
-		return -1.0;
+		return bad;
 	char riff[12];
 	if (!f.read(riff, 12) || std::memcmp(riff, "RIFF", 4) != 0
 			|| std::memcmp(riff + 8, "WAVE", 4) != 0)
-		return -1.0;
-	int bits = 0;
+		return bad;
+	int bits = 0, channels = 2;
 	while (f) {
 		char id[4];
 		uint32_t size = 0;
 		if (!f.read(id, 4) || !f.read((char*) &size, 4))
-			return -1.0;
+			return bad;
 		if (std::memcmp(id, "fmt ", 4) == 0) {
 			std::vector<char> fmt(size);
 			if (!f.read(fmt.data(), size) || size < 16)
-				return -1.0;
+				return bad;
+			std::memcpy(&channels, fmt.data() + 2, 2);
+			channels &= 0xffff;
+			if (channels < 1)
+				channels = 1;
 			std::memcpy(&bits, fmt.data() + 14, 2);
 			bits &= 0xffff;
 		}
 		else if (std::memcmp(id, "data", 4) == 0) {
 			if (bits != 16)
-				return -1.0;
+				return bad;
 			std::vector<int16_t> pcm(size / 2);
 			if (!f.read((char*) pcm.data(), size))
-				return -1.0;
+				return bad;
 			int peak = 0;
+			double sum = 0.0;
+			size_t n = 0;
+			const size_t second = (size_t) RATE * (size_t) channels;
 			for (size_t i = 0; i < pcm.size(); i++) {
 				const int a = (pcm[i] < 0) ? -pcm[i] : pcm[i];
 				if (a > peak)
 					peak = a;
+				if (i < second) {
+					const double v = (double) pcm[i] / 32768.0;
+					sum += v * v;
+					n++;
+				}
 			}
-			return (double) peak / 32768.0;
+			WavLevel out;
+			out.peak = (double) peak / 32768.0;
+			out.loud = n ? std::sqrt(sum / (double) n) : 0.0;
+			// THE LOUDEST SEVENTH OF A SECOND ANYWHERE IN THE NOTE, by a running sum.
+			const size_t w = (size_t) (HEARD_WINDOW * RATE) * (size_t) channels;
+			double running = 0.0, best = 0.0;
+			for (size_t i = 0; i < pcm.size(); i++) {
+				const double v = (double) pcm[i] / 32768.0;
+				running += v * v;
+				if (i >= w) {
+					const double old = (double) pcm[i - w] / 32768.0;
+					running -= old * old;
+				}
+				if (i + 1 >= w && running > best)
+					best = running;
+			}
+			out.heard = (w > 0) ? std::sqrt(best / (double) w) : 0.0;
+			return out;
 		}
 		else {
 			f.seekg(size + (size & 1), std::ios::cur);
 		}
 	}
-	return -1.0;
+	return bad;
+}
+
+
+
+/** The samples themselves, for summing a chord. */
+static std::vector<int16_t> wavPcm(const std::string& path) {
+	std::vector<int16_t> out;
+	std::ifstream f(path, std::ios::binary);
+	if (!f)
+		return out;
+	char riff[12];
+	if (!f.read(riff, 12))
+		return out;
+	int bits = 0;
+	while (f) {
+		char id[4];
+		uint32_t size = 0;
+		if (!f.read(id, 4) || !f.read((char*) &size, 4))
+			return out;
+		if (std::memcmp(id, "fmt ", 4) == 0) {
+			std::vector<char> fmt(size);
+			if (!f.read(fmt.data(), size) || size < 16)
+				return out;
+			std::memcpy(&bits, fmt.data() + 14, 2);
+			bits &= 0xffff;
+		}
+		else if (std::memcmp(id, "data", 4) == 0) {
+			if (bits != 16)
+				return out;
+			out.resize(size / 2);
+			f.read((char*) out.data(), size);
+			return out;
+		}
+		else {
+			f.seekg(size + (size & 1), std::ios::cur);
+		}
+	}
+	return out;
 }
 
 
@@ -159,6 +246,71 @@ would reach in volts, or -1 when the set is not installed.
 
 mpxPiano::squeeze, repeated: the layer follows the written dynamic, and the knob multiplies how
 far below the loudest this key can play the note sits. */
+/** FIVE RECORDINGS SUMMED AS THEY WOULD ACTUALLY SOUND, to find what a chord really peaks at.
+`anchor` is what one note of this chord comes out at, and each note is scaled to the same figure
+and shared down by mpxShare as the module does. `offsets` in milliseconds, or NULL for all at
+once. Returns the peak volts over the first half second. */
+static double pianoChord(const int* keys, const double* offsets, int n, double anchor) {
+	const std::string dir = pianoDir();
+	json_error_t err;
+	json_t* rootJ = json_load_file((dir + "/map.json").c_str(), 0, &err);
+	if (!rootJ)
+		return -1.0;
+	const int vel = pianoVelocity(1.f);
+	std::vector<std::vector<int16_t> > takes(n);
+	std::vector<double> gains(n, 0.0);
+	for (int c = 0; c < n; c++) {
+		std::string file;
+		int bestGap = -1;
+		json_t* regionsJ = json_object_get(rootJ, "regions");
+		for (size_t i = 0; i < json_array_size(regionsJ); i++) {
+			json_t* rJ = json_array_get(regionsJ, i);
+			const char* name = json_string_value(json_object_get(rJ, "file"));
+			const char* part = json_string_value(json_object_get(rJ, "part"));
+			if (!name || !part || std::string(part) != "strings")
+				continue;
+			const int lokey = (int) json_integer_value(json_object_get(rJ, "lokey"));
+			const int hikey = (int) json_integer_value(json_object_get(rJ, "hikey"));
+			const int lovel = (int) json_integer_value(json_object_get(rJ, "lovel"));
+			const int hivel = (int) json_integer_value(json_object_get(rJ, "hivel"));
+			if (keys[c] < lokey || keys[c] > hikey)
+				continue;
+			if (vel >= lovel && vel <= hivel) { file = name; break; }
+			const int gap = std::abs(vel - (lovel + hivel) / 2);
+			if (file.empty() && (bestGap < 0 || gap < bestGap)) { bestGap = gap; file = name; }
+		}
+		if (file.empty())
+			continue;
+		takes[c] = wavPcm(dir + "/samples/" + file);
+		const WavLevel lv = wavLevel(dir + "/samples/" + file);
+		if (lv.peak <= 0.0)
+			continue;
+		// EACH NOTE AIMED AT THE SAME FIGURE and then shared down, exactly as noteOn does it:
+		// the marking's worth times this recording's own lift, over its own peak.
+		const double crest = lv.peak / std::max(lv.heard, 1e-5);
+		const double lift = std::pow(crest / PIANO_CREST_REFERENCE, PIANO_CREST_BLEND);
+		gains[c] = anchor * lift / lv.peak * (double) mpxShare(n);
+	}
+	json_decref(rootJ);
+	const size_t len = (size_t) (0.5 * RATE) * 2;
+	double worst = 0.0;
+	for (size_t i = 0; i < len; i++) {
+		double sum = 0.0;
+		for (int c = 0; c < n; c++) {
+			if (takes[c].empty())
+				continue;
+			const size_t skip = offsets ? (size_t) (offsets[c] * 0.001 * RATE) * 2 : 0;
+			if (i < skip)
+				continue;
+			const size_t at = i - skip;
+			if (at < takes[c].size())
+				sum += (double) takes[c][at] / 32768.0 * gains[c];
+		}
+		worst = std::fmax(worst, std::fabs(sum));
+	}
+	return worst;
+}
+
 static double pianoNote(float level, int key, float dyn = 1.f) {
 	const std::string dir = pianoDir();
 	json_error_t err;
@@ -209,17 +361,81 @@ static double pianoNote(float level, int key, float dyn = 1.f) {
 	if (file.empty())
 		return -1.0;
 
-	const double peak = wavPeak(dir + "/samples/" + file);
-	if (peak < 0.0)
+	const WavLevel lv = wavLevel(dir + "/samples/" + file);
+	if (lv.peak < 0.0)
 		return -1.0;
 	// mpxPiano::noteOn: amp = ((1 - vt) + vt * x * x), with the soft pedal up.
 	const double x = (double) vel / 127.0;
 	const double amp = (1.0 - PIANO_VELOCITY_TRACKING) + PIANO_VELOCITY_TRACKING * x * x;
 	(void) amp;
-	// mpxPiano::aimedAt — the marking's own loudness, with the recording's divided back out.
+	// mpxPiano::aimedAt — the marking's own loudness, with the recording's divided back out,
+	// part by its peak and part by what is heard. Keep CREST_BLEND and CREST_REFERENCE the same
+	// in both places: this is the only model of the module there is.
 	const double want = std::pow(10.0, -(1.0 - (double) level) * (double) MPX_RANGE_DB
 		* (double) dyn / 20.0);
-	return want * (double) PIANO_VOLTS;
+	const double crest = lv.peak / std::max(lv.heard, 1e-5);
+	const double lift = std::pow(crest / PIANO_CREST_REFERENCE, PIANO_CREST_BLEND);
+	return want * lift * (double) PIANO_VOLTS;
+}
+
+
+/** WHAT THE NOTE ACTUALLY COMES OUT AT, by both measures and under both normalisations.
+
+WHY THIS IS NOT pianoNote. That one divides the recording's peak out and then multiplies it back
+in, so it returns the figure asked for whatever the recording does — which is why the register
+spread it reports has always been nought. It is an identity, not a measurement, and it could not
+have seen this. Here the recording's own peak and loudness are kept apart, so the spread that is
+left after normalising shows up. */
+struct PianoOut { double byPeakPeak, byPeakHeard, byHeardPeak, byHeardHeard; };
+
+static bool pianoOut(float level, int key, PianoOut& out, float dyn = 1.f) {
+	const std::string dir = pianoDir();
+	json_error_t err;
+	json_t* rootJ = json_load_file((dir + "/map.json").c_str(), 0, &err);
+	if (!rootJ)
+		return false;
+	const int vel = pianoVelocity(level);
+	std::string file;
+	int bestGap = -1;
+	json_t* regionsJ = json_object_get(rootJ, "regions");
+	const size_t count = json_array_size(regionsJ);
+	for (size_t i = 0; i < count; i++) {
+		json_t* rJ = json_array_get(regionsJ, i);
+		const char* name = json_string_value(json_object_get(rJ, "file"));
+		const char* part = json_string_value(json_object_get(rJ, "part"));
+		if (!name || !part || std::string(part) != "strings")
+			continue;
+		const int lokey = (int) json_integer_value(json_object_get(rJ, "lokey"));
+		const int hikey = (int) json_integer_value(json_object_get(rJ, "hikey"));
+		const int lovel = (int) json_integer_value(json_object_get(rJ, "lovel"));
+		const int hivel = (int) json_integer_value(json_object_get(rJ, "hivel"));
+		if (key < lokey || key > hikey)
+			continue;
+		if (vel >= lovel && vel <= hivel) {
+			file = name;
+			break;
+		}
+		const int gap = std::abs(vel - (lovel + hivel) / 2);
+		if (file.empty() && (bestGap < 0 || gap < bestGap)) {
+			bestGap = gap;
+			file = name;
+		}
+	}
+	json_decref(rootJ);
+	if (file.empty())
+		return false;
+	const WavLevel lv = wavLevel(dir + "/samples/" + file);
+	if (lv.peak <= 0.0 || lv.heard <= 0.0)
+		return false;
+	const double want = std::pow(10.0, -(1.0 - (double) level) * (double) MPX_RANGE_DB
+		* (double) dyn / 20.0) * (double) PIANO_VOLTS;
+	// Dividing the peak out, which is what the module does now.
+	out.byPeakPeak = want;
+	out.byPeakHeard = want * lv.heard / lv.peak;
+	// Dividing the loudest seventh of a second out instead.
+	out.byHeardHeard = want;
+	out.byHeardPeak = want * lv.peak / lv.heard;
+	return true;
 }
 
 
@@ -331,20 +547,112 @@ int main(int argc, char** argv) {
 		{"mf", 4.f / 7.f}, {"f", 5.f / 7.f}, {"ff", 6.f / 7.f}, {"fff", 1.f},
 	};
 	static const float DYNS[] = {1.f, 0.85f, 0.7f, 0.55f, 0.4f};
-	std::printf("     a marking is the same loudness wherever it is played:\n");
+	// WHAT A MARKING COMES OUT AT ACROSS THE KEYBOARD, by both measures and under both
+	// normalisations. The peak column under "by peak" is level by construction — that is what
+	// dividing the peak out means — so the column that matters is the loudness beside it.
 	{
 		static const int KEYS[] = {33, 45, 57, 60, 66, 78, 90, 102};
-		double lo = 1e9, hi = 0.0;
+		std::printf("     forte across eight registers, dividing out each recording's...\n");
+		std::printf("       %-6s %10s %10s   %10s %10s\n", "key",
+			"peak: V", "its heard", "heard: V", "its peak");
+		double pLo = 1e9, pHi = 0, plLo = 1e9, plHi = 0;
+		double lLo = 1e9, lHi = 0, lpLo = 1e9, lpHi = 0;
 		for (size_t k = 0; k < sizeof(KEYS) / sizeof(KEYS[0]); k++) {
-			const double v = pianoNote(5.f / 7.f, KEYS[k]);
-			if (v <= 0.0)
+			PianoOut o;
+			if (!pianoOut(5.f / 7.f, KEYS[k], o))
 				continue;
-			lo = std::fmin(lo, v);
-			hi = std::fmax(hi, v);
+			std::printf("       %-6d %10.3f %10.4f   %10.4f %10.3f\n", KEYS[k],
+				o.byPeakPeak, o.byPeakHeard, o.byHeardHeard, o.byHeardPeak);
+			pLo = std::fmin(pLo, o.byPeakPeak); pHi = std::fmax(pHi, o.byPeakPeak);
+			plLo = std::fmin(plLo, o.byPeakHeard); plHi = std::fmax(plHi, o.byPeakHeard);
+			lLo = std::fmin(lLo, o.byHeardHeard); lHi = std::fmax(lHi, o.byHeardHeard);
+			lpLo = std::fmin(lpLo, o.byHeardPeak); lpHi = std::fmax(lpHi, o.byHeardPeak);
 		}
-		if (hi > 0.0)
-			std::printf("       forte across eight registers: %.3f to %.3f V, a spread of %.1f dB\n\n",
-				lo, hi, decibels(hi / lo));
+		// AND THE GROUND BETWEEN THEM. Dividing out peak to the power (1 - k) times the heard
+		// level to the power k is one knob from today's behaviour at nought to pure loudness at
+		// one. Neither end is usable: at nought the ear hears an 8.7 dB slope up the keyboard,
+		// and at one the top octave's crest factor throws its peaks far past the ceiling. The
+		// column that decides it is the last: what the loudest marking would peak at, against
+		// the eight volts a single note is allowed.
+		{
+			static const int KEYS2[] = {33, 45, 57, 60, 66, 78, 90, 102};
+			std::printf("       %-6s %12s %12s %14s\n",
+				"blend", "heard dB", "peak dB", "fff peak, worst");
+			for (double k = 0.0; k <= 1.0001; k += 0.25) {
+				double hLo = 1e9, hHi = 0, qLo = 1e9, qHi = 0, worst = 0;
+				// The reference is set on middle C, so the blend changes the balance across the
+				// keyboard without moving the instrument's overall level.
+				double refRatio = 1.0;
+				for (size_t j = 0; j < sizeof(KEYS2) / sizeof(KEYS2[0]); j++) {
+					if (KEYS2[j] != 60)
+						continue;
+					PianoOut o;
+					if (pianoOut(5.f / 7.f, 60, o))
+						refRatio = std::pow(o.byHeardPeak / o.byPeakPeak, k);
+				}
+				for (size_t j = 0; j < sizeof(KEYS2) / sizeof(KEYS2[0]); j++) {
+					PianoOut o;
+					if (!pianoOut(5.f / 7.f, KEYS2[j], o))
+						continue;
+					// peak^(1-k) heard^k normalisation, scaled to leave middle C where it is.
+					const double crest = o.byHeardPeak / o.byPeakPeak;   // peak over heard
+					const double pk = o.byPeakPeak * std::pow(crest, k) / refRatio;
+					const double hd = pk / crest;
+					qLo = std::fmin(qLo, pk); qHi = std::fmax(qHi, pk);
+					hLo = std::fmin(hLo, hd); hHi = std::fmax(hHi, hd);
+					// forte is 5/7; fff is the whole range above it.
+					const double atFff = pk * std::pow(10.0,
+						(double) MPX_RANGE_DB * (2.0 / 7.0) / 20.0);
+					worst = std::fmax(worst, atFff);
+				}
+				std::printf("       %-6.2f %12.1f %12.1f %12.1f V   %s\n", k,
+					decibels(hHi / hLo), decibels(qHi / qLo), worst,
+					(std::fabs(k - PIANO_CREST_BLEND) < 0.01) ? "<- in force" : "");
+			}
+			std::printf("\n");
+		}
+		if (pHi > 0.0) {
+			std::printf("\n       dividing the PEAK out  (what it does now):"
+				"  peak %.1f dB,  heard %.1f dB\n", decibels(pHi / pLo), decibels(plHi / plLo));
+			std::printf("       dividing the LOUDEST SEVENTH OF A SECOND out:"
+				"  peak %.1f dB,  heard %.1f dB\n\n", decibels(lpHi / lpLo),
+				decibels(lHi / lLo));
+		}
+	}
+	// WHAT THE BLEND COST IN HEADROOM, which is the one thing it made worse. Peaks now vary by
+	// 4.3 dB across the keyboard, so the question is what the loudest writing reaches.
+	//
+	// A CHORD IS SUMMED AND NOT MULTIPLIED. Five times one note is an upper bound nobody plays:
+	// five recordings do not line their peaks up sample for sample, and the player spreads the
+	// inner notes behind the melody anyway. Multiplying said twenty-four volts; summing the
+	// actual recordings is the measurement, and it is the one the ceiling has to be set by.
+	{
+		static const int KEYS3[] = {33, 60, 90};
+		std::printf("     the loudest writing, against the %.1f V ceiling:\n", (double) MPX_CLIP_TO);
+		std::printf("       %-16s %11s %11s %11s\n",
+			"", "one note", "chord, flat", "chord, spread");
+		for (size_t k = 0; k < sizeof(KEYS3) / sizeof(KEYS3[0]); k++) {
+			PianoOut o;
+			if (!pianoOut(1.f, KEYS3[k], o))
+				continue;
+			const double crest = o.byHeardPeak / o.byPeakPeak;
+			const double one = o.byPeakPeak * std::pow(crest / PIANO_CREST_REFERENCE,
+				PIANO_CREST_BLEND);
+			// FIVE NOTES UNDER ONE HAND, their own recordings summed. Flat is every hammer at
+			// the same instant, which is a machine; spread is the player's own, the inner notes
+			// a few milliseconds behind the top one.
+			const int chord[5] = {KEYS3[k], KEYS3[k] + 4, KEYS3[k] + 7,
+				KEYS3[k] + 12, KEYS3[k] + 16};
+			const double spreadMs[5] = {0.0, 9.0, 14.0, 5.0, 0.0};
+			double flat = pianoChord(chord, NULL, 5, one);
+			double spread = pianoChord(chord, spreadMs, 5, one);
+			std::printf("       keys %-11d %11.1f %11.1f %11.1f\n", KEYS3[k], one, flat, spread);
+		}
+		// mpxPiano::LIMIT_VOLTS is MPX_CLIP_FROM, so the limiter takes the gain down and the
+		// curve only rounds the millisecond before it has taken hold.
+		std::printf("       the limiter holds the gain at %.1f V; the curve bends %.1f to %.1f\n"
+			"       and now sees only the front of a transient.\n\n",
+			(double) MPX_CLIP_FROM, (double) MPX_CLIP_FROM, (double) MPX_CLIP_TO);
 	}
 	std::printf("     %-4s %7s", "", "level");
 	for (size_t d = 0; d < sizeof(DYNS) / sizeof(DYNS[0]); d++)

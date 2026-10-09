@@ -85,7 +85,23 @@ The piano does not let a note land where the recording leaves it. It picks the v
 
 **That is what makes the register stop mattering.** The Salamander set was recorded note by note and never normalised. The same marking varied by **7.5 dB across the keyboard**, with 3.8 dB of it between A3 and middle C — neighbours in the same set, where middle C is simply a louder performance. A piece whose loud writing happened to sit around F sharp 4 came out four decibels under one whose loud writing sat on middle C, both marked forte.
 
-Measured across eight registers from A1 to F sharp 7, forte now spans **0.0 dB**. The bench checks it.
+**And what that first went wrong on.** The peak is the wrong quantity to divide out. It is a few milliseconds of hammer, where the ear weighs a note over a seventh of a second or so, and the two disagree by a factor of two and a half in the bass against nearly seven in the top octave — a treble note is almost all attack. Dividing the peak out made every attack transient the same height from the bottom of the keyboard to the top, and left what is actually heard running **8.7 dB downhill towards the treble**. A melody climbing the keyboard faded as it went, with an identical click under every note of it. That is a good part of the mechanical quality the piano was reported to have, and the correction put it there rather than finding it.
+
+The bench could not see any of this, which is the more useful lesson. `pianoNote` in `leveltest` divided the recording's peak out and multiplied it straight back in, so the register spread it reported was **an identity, not a measurement** — it would have printed 0.0 dB whatever the samples did. It now reads the recording and reports both measures.
+
+**Nor can the loudness simply be divided out instead.** Made equally loud, the top octave's crest factor sends its peaks where the bass's cannot follow: a single fff note there would reach seventeen volts against the eight a single note is allowed, which is not a transient to be rounded off but a note half as loud again as the instrument's whole range.
+
+**So the error is shared**, by `CREST_BLEND`: each recording is divided by its peak to the power one minus the blend, times what is heard to the power of the blend, anchored on `CREST_REFERENCE` so that moving it tilts the keyboard without moving the instrument. `leveltest` prints the whole trade so the figure can be moved on evidence:
+
+| blend | heard spans | peak spans | worst single fff peak | |
+|---|---|---|---|---|
+| 0.00 | 8.7 dB | 0.0 dB | 8.0 V | every attack alike, the treble quiet |
+| 0.25 | 6.5 | 2.2 | 9.7 | |
+| 0.50 | 4.3 | 4.3 | 11.7 | where it is set |
+| 0.75 | 2.2 | 6.5 | 14.1 | |
+| 1.00 | 0.0 | 8.7 | 17.0 | equally loud, and far over the ceiling |
+
+At a half, middle C stays within a quarter of a decibel of where it was, so nothing about the instrument's overall level moves — only the slope across the keyboard, which halves.
 
 It also replaced the set's velocity tracking of seventy-three per cent, taken from its SFZ. That is a reasonable guess at how a piano behaves, but it is not a target: it could say how a note would scale, never what it would come out at.
 
@@ -121,22 +137,54 @@ It also keeps the share out of the two other things computed from those levels: 
 
 Measured as dB below each instrument's own fff, which is what the bench prints:
 
-| | wanted | piano | guitar | band's piano |
-|---|---|---|---|---|
-| ppp | -22.0 | -22.0 | -22.0 | -23.5 |
-| pp | -18.9 | -18.9 | -18.9 | -19.6 |
-| p | -15.7 | -15.7 | -15.7 | -15.9 |
-| mp | -12.6 | -12.6 | -12.6 | -12.6 |
-| mf | -9.4 | -9.4 | -9.4 | -9.3 |
-| f | -6.3 | -6.3 | -6.3 | -6.3 |
-| ff | -3.1 | -3.1 | -3.1 | -3.1 |
-| fff | 0 | 0 | 0 | 0 |
+| | wanted | piano | guitar steel | guitar nylon | band's piano |
+|---|---|---|---|---|---|
+| ppp | -18.5 | -18.5 | -18.5 | -18.5 | -19.0 |
+| pp | -15.9 | -15.9 | -15.9 | -15.9 | -15.9 |
+| p | -13.2 | -13.2 | -13.2 | -13.2 | -13.0 |
+| mp | -10.6 | -10.6 | -10.6 | -10.6 | -10.7 |
+| mf | -7.9 | -7.9 | -7.9 | -7.9 | -7.8 |
+| f | -5.3 | -5.3 | -5.3 | -5.3 | -5.2 |
+| ff | -2.6 | -2.6 | -2.6 | -2.6 | -2.5 |
+| fff | 0 | 0 | 0 | 0 | 0 |
 
-Worst deviation 1.5 dB, at the band's quiet end.
+Worst deviation 0.5 dB, at the band's quiet end.
 
 **A level is a loudness and a velocity is not**, which is the trap here and it cost the quiet end of every score. ppp is nought on a decibel scale; handed to a string as a pluck strength it is no pluck at all, and handed to a synthesiser as a velocity it is silence. Both now convert through `mpxLoudness`.
 
 The band needs one more step, because a velocity is not a loudness either. The SoundFont specification says amplitude follows the square of the velocity; swept through GeneralUser-GS the exponent is nearer **1.57**, and taking the specification at its word left pianissimo four decibels louder than asked. The bench prints the sweep the constant came from, so it can be refitted if the bank changes.
+
+## What the band cannot do, and why that is accepted
+
+The band plays a quiet string part far too softly, and the cause is not the table. Measured on the Fauré piano quartet, second movement, which is 48 per cent pp and never passes ff:
+
+Every level arrives correctly. A violin at ppp peaks at 0.94 V, which is where the piano's ppp sits. Energy above 500 Hz tracks full-band energy within 0.1 dB at every level, so the patch is not going dull at low velocity either.
+
+What is wrong is how long the programs take to speak. Time for a held note to reach 3 dB under its peak: grand piano 3 to 14 ms, flute 55 to 67 ms, violin 274 ms, cello 366 to 464 ms. The median note in that movement is 125 ms, 86 per cent of its notes are shorter than the violin's attack and 96 per cent shorter than the cello's.
+
+So a note of the length the music actually has, at pp, reaches: piano 0.890 V, flute 1.577 V, violin 0.673 V, cello 0.566 V, string ensemble 0.565 V. The strings lose 8 to 9.5 dB that the keyboard and the wind do not.
+
+It cannot be corrected from outside the bank. CC 73, attack time, does nothing in this FluidSynth build — identical to three decimals at every setting. Setting GEN_VOLENVATTACK directly does work for the string ensemble, taking a 125 ms note from 0.93 V to 2.34 V against a held 2.73, and does nothing at all for violin, cello, flute or piano, because in those programs the slow onset is in the recorded sample rather than in the envelope.
+
+**This is left alone deliberately.** The band is for checking that a score reads and plays, not for performance, and the fixes available are all worse than the fault: raising the level of short notes would paper over an articulation the samples cannot produce, and holding them longer would turn détaché into legato. A sampled bank of this size does not have a quiet short bowed note in it. It is the reason for `bowed-strings.md`.
+
+Two things follow for the benches. `leveltest` measures held notes at one key on three programs, so it cannot see any of this; a note of a realistic length, on a sustained instrument, is the measurement that was missing. And a loudness measure rather than a peak would have shown it sooner, which is the LUFS bench still listed below.
+
+## The limiter, and what is left for the soft clip
+
+**They were the wrong way round.** The limiter held at twelve volts and the soft clip bent from eight and a half, so everything between the two went through the waveshaper with no gain reduction at all. A waveshaper is distortion; a limiter is a change of gain. The curve should catch the millisecond the limiter cannot reach, not do the work.
+
+**And the note beside it was wrong about the size of the problem.** It said the loudest attack in the scores in use reaches about six volts, so the limiter never acted on an ordinary chord. That came from multiplying one note, which is not how a chord sounds — five recordings do not line their peaks up sample for sample. Summing the actual recordings, a five-note chord at fff peaks at:
+
+| | one note | chord, every hammer at once | chord, spread as a player does |
+|---|---|---|---|
+| A1 | 8.4 V | 13.8 | 12.3 |
+| middle C | 7.9 | 10.2 | 14.0 |
+| F sharp 6 | 9.8 | 20.7 | 19.0 |
+
+So it acts on every loud chord there is, and it is not only the safety net for a pedalled pile-up it was written as. `LIMIT_VOLTS` is now `MPX_CLIP_FROM`: the gain comes down where the curve begins, and the curve sees only the front of a transient.
+
+**What cannot be had.** A single note at eight volts and an unclipped five-note chord do not fit together under a ten-volt ceiling — the chord would need the single note down at about three, which puts ppp back where it was inaudible. Loud chords are limited, and the question was only whether that is done by moving the gain or by bending the waveform.
 
 ## The soft clip, and what is left for the limiter
 

@@ -38,6 +38,14 @@ static const int SAMPLES_EXPECTED = 641;
 faster or slower, the same arithmetic that pitches a note. */
 static const float SAMPLES_RATE = 44100.f;
 
+/** HOW LONG THE EAR TAKES TO DECIDE HOW LOUD SOMETHING IS, near enough. The loudest stretch this
+long anywhere in a recording is PianoRegion::heard.
+
+A FIXED WINDOW FROM THE START WILL NOT DO, which cost an attempt: the top octave has died well
+inside a second, so its root mean square over one is mostly silence, and dividing by that put the
+treble's peaks past seventy volts. The loudest such window, wherever it falls, is the figure. */
+static const float HEARD_SECONDS = 0.15f;
+
 
 static std::string pianoDir() {
 	return asset::user("DreamerMPX/piano");
@@ -75,6 +83,13 @@ struct PianoRegion {
 	was chosen and not of any formula. Without this figure the module cannot know how loud a note
 	it is about to play will be, and so cannot reason about its own dynamic range. See DYNAMICS. */
 	float peak = 1.f;
+	/** AND HOW LOUD IT SOUNDS, which is a different number. The peak is a few milliseconds of
+	hammer; this is the loudest seventh of a second anywhere in the recording, which is nearer
+	what the ear weighs over a note of musical length. The two disagree by a factor of two and a
+	half in the bass and nearly seven in the top octave, because a treble note is all attack and
+	very little else — which is why normalising on one of them leaves the other uneven. See
+	CREST_REFERENCE. */
+	float heard = 1.f;
 	int sample = -1;
 };
 
@@ -263,20 +278,34 @@ static PianoBank* loadBank(const std::string& dir, int layers, std::atomic<float
 			WARN("mpxPiano: could not read %s", file);
 			continue;
 		}
-		// HOW LOUD THE RECORDING IS, measured once here rather than guessed at per note. Only the
-		// first half second is looked at: a piano note's peak is in its attack, and scanning
-		// whole samples would add seconds to a load that already takes a while.
+		// HOW LOUD THE RECORDING IS, by both measures, once here rather than guessed at per note.
+		// A second and a half is looked at: the peak is in the attack and would need far less,
+		// but the loudest seventh of a second has to be searched for, and in the bass it is not
+		// at the start. Scanning whole samples would add seconds to a load that is slow already.
 		{
-			const size_t look = std::min(s.data.size(), (size_t) (SAMPLES_RATE / 2) * 2);
+			const size_t look = std::min(s.data.size(), (size_t) (SAMPLES_RATE * 3 / 2) * 2);
+			const size_t window = (size_t) (HEARD_SECONDS * SAMPLES_RATE) * 2;
 			int loudest = 0;
+			double running = 0.0, best = 0.0;
 			for (size_t k = 0; k < look; k++) {
 				const int a = (s.data[k] < 0) ? -s.data[k] : s.data[k];
 				if (a > loudest)
 					loudest = a;
+				const double v = (double) s.data[k] / 32768.0;
+				running += v * v;
+				if (k >= window) {
+					const double gone = (double) s.data[k - window] / 32768.0;
+					running -= gone * gone;
+				}
+				if (k + 1 >= window && running > best)
+					best = running;
 			}
 			r.peak = (float) loudest / 32768.f;
 			if (r.peak < 0.0001f)
 				r.peak = 0.0001f;
+			r.heard = (window > 0) ? (float) std::sqrt(best / (double) window) : r.peak;
+			if (r.heard < 0.00001f)
+				r.heard = 0.00001f;
 		}
 		r.sample = (int) bank->samples.size();
 		bank->samples.push_back(std::move(s));
@@ -483,9 +512,16 @@ static void libraryRelease() {
 rolled one, after which balancing them against each other stops meaning anything. */
 static const int MAX_CHORD = 16;
 
-static const int MAX_VOICES = 96;
+/** THE MOST STRINGS THAT MAY SOUND AT ONCE, which the Polyphony menu chooses within. */
+static const int STRING_VOICES = 72;
 /** Voices kept back for the mechanical sounds, so a chord never loses a string to a key noise. */
 static const int NOISE_VOICES = 24;
+/** SOMEWHERE FOR A NOTE THAT HAS BEEN TAKEN TO FADE OUT, rather than being cut off where it
+stands. See standAside. They are never allocated to, only moved into, and each is wanted for the
+four milliseconds a fade takes, so a handful is plenty: eight is a whole chord's worth of notes
+all being taken within one fade of each other. */
+static const int FADE_VOICES = 8;
+static const int MAX_VOICES = STRING_VOICES + NOISE_VOICES + FADE_VOICES;
 
 struct PianoVoice {
 	bool active = false;
@@ -546,6 +582,10 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	float sustainWas = 0.f;
 	/** Whether the log has been told that keys are coming up by their own length. */
 	bool saidLifting = false;
+	/** Said once each, because a fault that only shows up on the densest bars is one nobody can
+	reproduce on demand: the log says whether a note was ever taken from a string still sounding,
+	and whether there was ever nowhere to let it down. See standAside. */
+	bool saidStandAside = false, saidNoRoom = false;
 
 	// Menu settings, kept with the patch.
 	int curve = 1;              // 0 soft, 1 normal, 2 hard
@@ -809,11 +849,21 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	static constexpr float PROTECT_SECONDS = 0.05f;
 
 	/** WHERE THE OUTPUT STOPS GETTING LOUDER, in volts, and how quickly it gives way and comes
-	back. Ten is mpxGuitar's figure for the same thing, which is twice Rack's nominal level for
-	audio: by the time a piano is there, something has piled up. A millisecond to take hold is
-	fast enough that only the very front of a transient passes; a sixth of a second to let go is
-	slow enough that the gain moving is not itself heard. */
-	static constexpr float LIMIT_VOLTS = 12.f;
+	back. A millisecond to take hold is fast enough that only the very front of a transient
+	passes; a sixth of a second to let go is slow enough that the gain moving is not itself
+	heard.
+
+	IT SITS AT THE CLIP'S KNEE, AND IT USED TO SIT ABOVE IT. At twelve volts, with the soft clip
+	bending from eight and a half, everything between the two went through the waveshaper with no
+	gain reduction at all — and a waveshaper is distortion, where a limiter is a change of gain.
+	That was the wrong way round: the curve should be catching the millisecond the limiter cannot
+	reach, not doing the work.
+
+	WHAT IT WAS THOUGHT TO BE FOR. The note beside it said the loudest attack in the scores in
+	use reaches about six volts, so it never acted on an ordinary chord. Measured by summing the
+	recordings rather than multiplying one of them, a five-note chord at fff peaks between twelve
+	and twenty-one volts depending on the register. It acts on every loud chord there is. */
+	static constexpr float LIMIT_VOLTS = MPX_CLIP_FROM;
 	static constexpr float LIMIT_ATTACK = 0.001f;
 	static constexpr float LIMIT_RELEASE = 0.15f;
 	/** How much the limiter is holding back now, one when it is doing nothing. */
@@ -839,9 +889,57 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	as a roll rather than as a chord played badly, and a ballad's spread chords want about that. */
 	static constexpr float ROLL_PER_NOTE = 0.035f;
 
+	/** A NOTE ABOUT TO BE TAKEN, MOVED SOMEWHERE IT CAN FADE.
+
+	WHAT THIS IS FOR. A voice chosen to be taken is usually still sounding — `allocate` picks the
+	quietest, not a silent one, because when every voice is busy there is no silent one. Setting
+	it up for the new note where it stands replaced its output with the first sample of a fresh
+	recording, which is near nought, between one sample and the next. That is a step, and a step
+	holds every frequency at once: a click, as loud as whatever the taken note was doing. It only
+	happens once the pool is full, so it arrived on the loudest, most pedalled passages and
+	nowhere else, which is exactly how it was described — a strange attack on some notes.
+
+	THE SAME ANSWER THE RE-STRUCK STRING ALREADY HAD. There, the old sound is let down over four
+	milliseconds and the new note takes a different voice. Here there is no different voice to be
+	had, so the old sound is moved into one of the voices kept back for this and let down there
+	while the new note takes the slot it came from. See FADE_VOICES.
+
+	It stops being anybody's note on the way: the key is up, nothing is waiting on its duration,
+	and nothing can look it up by source, so the four milliseconds it has left are only sound. */
+	bool standAside(PianoVoice& taken, float sampleRate) {
+		if (!saidStandAside) {
+			saidStandAside = true;
+			INFO("mpxPiano: a note was taken from a string still sounding "
+				"(first at key %d, %.1f dB under its own loudest); letting it down over %.0f ms",
+				taken.key, 20.0 * std::log10((double) std::max(taken.follow, 1e-9f)
+					/ (double) std::max(taken.peak, 1e-9f)), 1000.0 * (double) RESTRIKE_FADE);
+		}
+		for (int i = STRING_VOICES + NOISE_VOICES; i < MAX_VOICES; i++) {
+			if (voices[i].active)
+				continue;
+			voices[i] = taken;
+			voices[i].keyDown = false;
+			// NOT ANY SOURCE'S NOTE ANY MORE. `update` matches a bend or a timbre change on the
+			// handle alone, without asking whether the key is still down, so the copy is given
+			// a handle nothing can send: nought is a number a source could really have.
+			voices[i].source = -1;
+			voices[i].endsIn = 0;
+			voices[i].releasing = true;
+			voices[i].decay = std::exp(-6.9f / (RESTRIKE_FADE * sampleRate));
+			return true;
+		}
+		if (!saidNoRoom) {
+			saidNoRoom = true;
+			INFO("mpxPiano: every fading voice in use, so a note was taken where it stood. "
+				"If this is common, FADE_VOICES is too few.");
+		}
+		return false;
+	}
+
 	PianoVoice* allocate(bool noise, float sampleRate) {
-		const int lo = noise ? MAX_VOICES - NOISE_VOICES : 0;
-		const int hi = noise ? MAX_VOICES : std::min(polyphony, MAX_VOICES - NOISE_VOICES);
+		const int lo = noise ? STRING_VOICES : 0;
+		const int hi = noise ? STRING_VOICES + NOISE_VOICES
+			: std::min(polyphony, STRING_VOICES);
 		const int64_t protect = (int64_t) ((double) PROTECT_SECONDS * (double) sampleRate);
 		PianoVoice* quietest = NULL;
 		PianoVoice* anything = NULL;
@@ -859,7 +957,12 @@ struct PianoModule : Module, NoteSink, NoteSource {
 			if (!quietest || heard < quietest->follow * quietest->env)
 				quietest = &voices[i];
 		}
-		return quietest ? quietest : anything;
+		PianoVoice* taken = quietest ? quietest : anything;
+		// AND IT IS LET DOWN RATHER THAN CUT OFF. Nothing is lost when there is nowhere to put
+		// it: the note is taken where it stands, as it always was.
+		if (taken && taken->active)
+			standAside(*taken, sampleRate);
+		return taken;
 	}
 
 /** THE LEVELS THE SET ITSELF ASKS FOR, which were lost on the way in.
@@ -1154,9 +1257,49 @@ static float partGain(int part) {
 		// knob. One at fff, and that is MPX_FULL_VOLTS out once the volume stage has it.
 		const float want = mpxLoudness(level, params[P_DYNAMICS].getValue());
 		// AND THE RECORDING'S OWN LOUDNESS DIVIDED BACK OUT, which is what makes the marking a
-		// number rather than an accident of which performance got sampled.
-		return want / r->peak;
+		// number rather than an accident of which performance got sampled. Which loudness, by
+		// how much, is CREST_BLEND.
+		const float crest = r->peak / std::max(r->heard, 1e-5f);
+		const float lift = std::pow(crest / CREST_REFERENCE, CREST_BLEND);
+		return want * lift / r->peak;
 	}
+
+	/** HOW MUCH OF THE WAY FROM EQUAL PEAKS TO EQUAL LOUDNESS, nought to one.
+
+	WHAT WAS WRONG WITH EQUAL PEAKS. Dividing each recording's peak out made every note's attack
+	transient the same height from the bottom of the keyboard to the top — and a peak is a few
+	milliseconds of hammer, not what the ear weighs. Measured over eight registers at forte, the
+	peaks came out level to a tenth of a decibel and what was actually HEARD ran 8.7 dB downhill
+	towards the treble. A melody climbing the keyboard faded as it went, every attack the same
+	size underneath it. That is the mechanical quality, and it was put there by the correction
+	rather than found and left by it.
+
+	WHY NOT SIMPLY DIVIDE THE LOUDNESS OUT. Because the treble's crest factor is nearly seven
+	against the bass's two and a half: made equally loud, the top octave's peaks go where the
+	bass's cannot follow. Measured, a single fff note in the top octave would reach seventeen
+	volts against the eight a single note is allowed, which is not a transient for the soft clip
+	to round off but a note half as loud again as the instrument's whole range.
+
+	SO IT IS SHARED. The exponent divides the error between the two: a half leaves 4.3 dB of
+	slope where there was 8.7, and puts the worst single fff peak at about 11.7 volts, which the
+	soft clip does round off. The whole table is in test/leveltest.cpp, which prints it at every
+	setting from nought to one so this can be moved on evidence.
+
+		blend   heard    peak    worst fff peak
+		 0.00   8.7 dB   0.0 dB     8.0 V          every attack the same, the treble quiet
+		 0.25   6.5      2.2        9.7
+		 0.50   4.3      4.3       11.7            here
+		 0.75   2.2      6.5       14.1
+		 1.00   0.0      8.7       17.0            equally loud, and far over the ceiling
+	*/
+	static constexpr float CREST_BLEND = 0.5f;
+
+	/** THE CREST FACTOR THE BLEND IS MEASURED AGAINST, so that moving it tilts the keyboard
+	without moving the instrument. The set's middle is about three and a third: a recording
+	peakier than that is lifted and a smoother one let down, and middle C — where most music
+	sits — stays within a quarter of a decibel of where it was at any blend. Without an anchor
+	the whole piano would get quieter every time the exponent went up. */
+	static constexpr float CREST_REFERENCE = 3.3f;
 
 	/** `share` is a gain on the string's amplitude and nothing else: see density, and the comment
 	on v->amp for why it cannot be folded into `level`. One for a note standing on its own. */
@@ -1224,7 +1367,7 @@ static float partGain(int part) {
 		// sixty decibels down before the next ornament note arrives and frees itself — so a
 		// trill holds two voices rather than the twenty-three it used to.
 		float carried = 0.f;
-		for (int i = 0; i < MAX_VOICES - NOISE_VOICES; i++) {
+		for (int i = 0; i < STRING_VOICES; i++) {
 			PianoVoice& old = voices[i];
 			if (!old.active || old.part != PART_STRINGS || old.key != key)
 				continue;
@@ -1757,10 +1900,11 @@ static float partGain(int part) {
 		// top of the waveform and what that sounds like is distortion, arriving exactly on the
 		// loudest chord of the piece and on nothing else.
 		//
-		// IT IS A SAFETY NET AND NOT A TONE CONTROL. Measured over the scores in use, the loudest
-		// attack reaches about six volts, so this never acts on an ordinary chord. What it is for
-		// is the pile-up: the pedal holds the dampers off, notes keep their voices, and twenty of
-		// them ringing together go somewhere no single marking asked for.
+		// IT ACTS ON LOUD CHORDS, which the note here used to deny. A five-note chord at fff,
+		// measured by summing the recordings, peaks between twelve and twenty-one volts — so this
+		// is not only the safety net for a pedalled pile-up it was written as. It is what keeps
+		// the loudest writing in the piece in bounds, and it does it by moving the gain, which
+		// is why it now sits at the clip's knee rather than above it.
 		//
 		// BOTH CHANNELS BY THE SAME AMOUNT, so a loud note on one side cannot pull the image
 		// across. Fast to take hold and slow to let go, which is what makes it inaudible: coming
@@ -1774,10 +1918,10 @@ static float partGain(int part) {
 		left *= limitGain;
 		right *= limitGain;
 
-		// AND THE LAST VOLT AND A HALF IS A CURVE RATHER THAN A WALL. See mpxSoftClip: below
-		// the knee nothing is touched, so a single note at fff never reaches it and only the
-		// loudest chords are rounded. It bends towards ten and never arrives, which is why
-		// there is nothing left for the clamp to do.
+		// AND WHAT GETS PAST IT IN THE FIRST MILLISECOND is a curve rather than a wall. See
+		// mpxSoftClip. With the limiter at the same knee this is reached only by the front of a
+		// transient, which is all a waveshaper should ever be given: it bends towards ten and
+		// never arrives, so there is nothing left for the clamp to do.
 		left = mpxSoftClip(left);
 		right = mpxSoftClip(right);
 
@@ -1802,7 +1946,7 @@ static float partGain(int part) {
 		if (json_t* j = json_object_get(rootJ, "reference")) reference = json_number_value(j);
 		if (json_t* j = json_object_get(rootJ, "stretch")) stretch = json_is_true(j);
 		if (json_t* j = json_object_get(rootJ, "polyphony"))
-			polyphony = math::clamp((int) json_integer_value(j), 8, MAX_VOICES - NOISE_VOICES);
+			polyphony = math::clamp((int) json_integer_value(j), 8, STRING_VOICES);
 		if (json_t* j = json_object_get(rootJ, "pedalNoise"))
 			pedalNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
 		if (json_t* j = json_object_get(rootJ, "hammerNoise"))
