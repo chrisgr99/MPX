@@ -130,7 +130,7 @@ The names are exact and the map is derived from them, so `keyFromName` wins wher
 
 A key struck again while it is already sounding does not get a second string: the sound already on it is faded out over four milliseconds and the new note starts on a voice of its own.
 
-**Faded and not cut.** Rewinding the recording to the start of a fresh attack jumps the output from wherever the waveform happened to be, and a step in a waveform is a click. It is loudest where re-strikes are closest — an inverted mordent in the Tempest strikes F5 twice inside a fifteenth of a second. Four milliseconds is long enough to be a fade and short enough to be gone before the next note of an ornament arrives, so the string still does not accumulate: a trill holds two voices rather than twenty-three. There is one string per key on a piano, and a hammer meeting a string that is already moving partly re-excites and partly disturbs the motion that is there; what comes out is about another strike's worth of amplitude, not another strike added to the last eleven.
+**Faded and not cut.** Rewinding the recording to the start of a fresh attack jumps the output from wherever the waveform happened to be, and a step in a waveform is a click. It is loudest where re-strikes are closest — an inverted mordent in the Tempest strikes F5 twice inside a fifteenth of a second. Thirty milliseconds, to sixty decibels down, is long enough to be a fade and short enough to be gone before the same key is struck again in a trill, so the string still does not accumulate: a trill holds two voices rather than twenty-three. It was four, and four was itself a click: the fade is exponential, so most of it happens in the first millisecond, and a mordent strikes its main note again while that note is still at full strength. Rendered through `make pianobench`, the first movement of the Pathétique had sixty-three such jumps at four milliseconds and none at thirty. There is one string per key on a piano, and a hammer meeting a string that is already moving partly re-excites and partly disturbs the motion that is there; what comes out is about another strike's worth of amplitude, not another strike added to the last eleven.
 
 What is still ringing is carried into the new strike rather than thrown away, so a repeated note under the pedal does grow, up to half again as loud as a single strike would be. A string driven over and over settles at a steady amplitude; it does not keep climbing.
 
@@ -143,6 +143,14 @@ The bloom that a pedalled passage should have belongs mostly to the *other* stri
 When every voice is in use the quietest is taken, since a piano's notes decay and the one that has faded most is the one least missed. A note that has only just been struck has made no sound yet, so by that measure it is the quietest voice in the pool and the first one taken — a note was being judged on its loudness before it had produced any. Measuring a run of the Nocturne showed the melody note after the trill taken ten milliseconds after it started, by an accompaniment note at a third of its level.
 
 A voice is therefore passed over for its first fifty milliseconds, unless every voice in the pool is that new and something has to go.
+
+### A note nobody can hear gives its voice back
+
+With the pedal down there is no damper, so a voice used to be held for the whole length of its recording — many seconds — long after the note had died away. The fast pedalled passages of the Pathétique filled thirty-two voices with notes that could not be heard, and the ones that could were taken for the next notes; when the voices kept for fading those out ran out as well, notes were cut off where they stood, and each was a click.
+
+A note sixty decibels below its own loudest, a quarter of a second or more after it was struck, is now let down over thirty milliseconds and its voice freed. A note taken for another fades over twenty milliseconds rather than four, into one of thirty-two voices kept for it; if those are all in use, the fade furthest gone is cut short instead of the note being taken.
+
+The log says what the pool is doing, every ten seconds while notes are being taken from strings still sounding: how many were taken, how many fades were cut short, how many silent notes were let go, and the most strings sounding at once.
 
 ### Notes not on the page
 
@@ -271,7 +279,7 @@ For what is set once.
 - **Reference pitch**: A440 by default.
 - **Stretch tuning**: on by default. Pianos are tuned slightly wide at the extremes, and an exactly tempered piano sounds faintly wrong.
 - **Velocity layers loaded**: 4, 8 or 16.
-- **Polyphony**: how many notes sound at once. When they are all in use, the QUIETEST is taken for the new note: a piano's notes decay, so the one that has faded most is the one least missed.
+- **Polyphony**: how many notes sound at once, 32 to 128, 96 to start. When they are all in use, the QUIETEST is taken for the new note: a piano's notes decay, so the one that has faded most is the one least missed.
 - **The samples**: download, location, remove.
 
 **16 HP to start**, drawn with the same layout tools as the other MPX modules. With the inputs moved to mpxIn it has room to spare, and a narrower panel may follow once the layout has been tried.

@@ -512,15 +512,21 @@ static void libraryRelease() {
 rolled one, after which balancing them against each other stops meaning anything. */
 static const int MAX_CHORD = 16;
 
-/** THE MOST STRINGS THAT MAY SOUND AT ONCE, which the Polyphony menu chooses within. */
-static const int STRING_VOICES = 72;
-/** Voices kept back for the mechanical sounds, so a chord never loses a string to a key noise. */
-static const int NOISE_VOICES = 24;
+/** THE MOST STRINGS THAT MAY SOUND AT ONCE, which the Polyphony menu chooses within. A piano has
+eighty-eight keys and a re-struck one sounds twice for the few milliseconds its old sound takes to
+fade, so with the pedal down a fast passage can want nearly all of them. */
+static const int STRING_VOICES = 128;
+/** What a new module starts with. */
+static const int DEFAULT_POLYPHONY = 96;
+/** Voices kept back for the mechanical sounds, so a chord never loses a string to a key noise.
+Every note brings a hammer's noise and its key's release, and twenty-four were being taken from
+each other in the fast passages of the Pathétique. */
+static const int NOISE_VOICES = 48;
 /** SOMEWHERE FOR A NOTE THAT HAS BEEN TAKEN TO FADE OUT, rather than being cut off where it
 stands. See standAside. They are never allocated to, only moved into, and each is wanted for the
-four milliseconds a fade takes, so a handful is plenty: eight is a whole chord's worth of notes
-all being taken within one fade of each other. */
-static const int FADE_VOICES = 8;
+twenty milliseconds a fade takes. Eight ran out in the fast pedalled passages of the Pathétique,
+and a note with nowhere to fade is cut off where it stands, which is a click. */
+static const int FADE_VOICES = 32;
 static const int MAX_VOICES = STRING_VOICES + NOISE_VOICES + FADE_VOICES;
 
 struct PianoVoice {
@@ -613,7 +619,7 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	counterpoint and strong for a Romantic texture, and nothing can tell which from the notes. */
 	float melodyBalance = 0.35f;
 
-	int polyphony = 32;
+	int polyphony = DEFAULT_POLYPHONY;
 	/** HOW LOUD THE PEDAL'S OWN MECHANISM IS. A knob until the knob was wanted for the pedalling
 	itself, and a thing nobody adjusts twice, so it lives in the menu now. */
 	float pedalNoise = 1.f;
@@ -821,7 +827,7 @@ struct PianoModule : Module, NoteSink, NoteSource {
 		curve = 1;
 		reference = 440.f;
 		stretch = true;
-		polyphony = 32;
+		polyphony = DEFAULT_POLYPHONY;
 	}
 
 	// ---- turning a note into a voice ----
@@ -894,11 +900,58 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	for a sustained trill to bloom under the pedal, not enough to swallow what follows it. */
 	static constexpr float BLOOM_MOST = 1.5f;
 
-	/** HOW LONG THE OLD SOUND ON A RE-STRUCK STRING TAKES TO GET OUT OF THE WAY, in seconds.
-	Long enough that it is a fade and not a step — a step is a click — and short enough that it
-	is gone well before the next note of an ornament arrives. Four milliseconds is sixty decibels
-	down in about a fiftieth of a second and inaudible as a separate event. */
-	static constexpr float RESTRIKE_FADE = 0.004f;
+	/** HOW LONG A STRING MUST HAVE BEEN SOUNDING BEFORE A NEW STRIKE CARRIES ITS RING, in seconds.
+
+	A mordent strikes its main note again a few hundredths of a second after the first time, and a
+	grace note leans on its main note as quickly. The old sound fading out under the new strike is
+	all the continuity there is to be had in that time, and adding what is left of it to the new
+	strike as well counted the same energy twice: every mordent's last note came out louder than its
+	first, up to twice as loud, and in the forte of the Pathétique's bars 86 to 88 that took the
+	output into the soft clip on every one, heard as a metallic edge. A trill comes back to each of
+	its keys about a sixth of a second apart and still blooms. */
+	static constexpr float BLOOM_AFTER = 0.15f;
+
+	/** HOW LONG THE OLD SOUND ON A RE-STRUCK STRING TAKES TO GET OUT OF THE WAY, in seconds, to
+	sixty decibels down. Long enough that it is a fade and not a step, and short enough that it is
+	gone before the same key is struck again in a trill, a sixth of a second later.
+
+	IT WAS FOUR MILLISECONDS, and that was a click. The decay is exponential, so most of the drop
+	is in the first millisecond, and a mordent strikes its main note again a twelfth of a second
+	after the first time, while that is still sounding at full strength: a loud tone taken away
+	in a millisecond. Rendered through test/pianobench.cpp, the first movement of the Pathétique
+	had sixty-three such jumps at four milliseconds and none at thirty, every one of them on a
+	re-struck key in its mordents and trills. */
+#ifdef BENCH_RESTRIKE_FADE
+	static constexpr float RESTRIKE_FADE = BENCH_RESTRIKE_FADE;
+#else
+	static constexpr float RESTRIKE_FADE = 0.03f;
+#endif
+
+	/** HOW LONG A NOTE TAKEN FOR ANOTHER TAKES TO FADE, in seconds. Longer than a re-strike's,
+	because the note taken is not being struck again — it is still sounding, a few tens of
+	decibels down, and four milliseconds from there to nothing is quick enough to tick. */
+	static constexpr float STEAL_FADE = 0.02f;
+
+	/** A NOTE NOBODY CAN HEAR ANY MORE, LET GO: this far below its own loudest, as a fraction.
+	Sixty decibels.
+
+	WHY VOICES RAN OUT. A voice was freed only when its damper had finished it or its recording
+	ran out, and with the pedal down there is no damper: every note struck kept its voice for the
+	whole length of its recording, many seconds, long after it had died away to nothing. A fast
+	pedalled passage filled the pool with notes that could not be heard, and the ones that could
+	were then taken for the next. A note sixty decibels under its own attack is inaudible under
+	anything else that is playing, so it is let down over INAUDIBLE_FADE and its voice freed. */
+	static constexpr float INAUDIBLE = 0.001f;
+	static constexpr float INAUDIBLE_FADE = 0.03f;
+	/** And not before its attack is well behind it, so a note's level is judged against a peak
+	it has actually reached. */
+	static constexpr float INAUDIBLE_AFTER = 0.25f;
+
+	/** WHAT THE POOL HAS BEEN DOING, for the log: notes taken from strings still sounding, notes
+	cut off with nowhere to fade, silent notes let go, and the most strings sounding at once. Said
+	every ten seconds while anything is being taken, and not otherwise. */
+	int tookSince = 0, cutSince = 0, letGoSince = 0, mostSince = 0;
+	int64_t poolReportIn = 0;
 
 	/** HOW LONG A ROLLED CHORD TAKES, per note, in seconds.
 
@@ -931,28 +984,44 @@ struct PianoModule : Module, NoteSink, NoteSource {
 			INFO("mpxPiano: a note was taken from a string still sounding "
 				"(first at key %d, %.1f dB under its own loudest); letting it down over %.0f ms",
 				taken.key, 20.0 * std::log10((double) std::max(taken.follow, 1e-9f)
-					/ (double) std::max(taken.peak, 1e-9f)), 1000.0 * (double) RESTRIKE_FADE);
+					/ (double) std::max(taken.peak, 1e-9f)), 1000.0 * (double) STEAL_FADE);
 		}
+		tookSince++;
+		// A FREE ONE, or failing that the fade furthest gone: cutting short what is already
+		// nearly silent is better than cutting off the note being taken.
+		int into = -1;
+		float faintest = 0.f;
 		for (int i = STRING_VOICES + NOISE_VOICES; i < MAX_VOICES; i++) {
-			if (voices[i].active)
-				continue;
-			voices[i] = taken;
-			voices[i].keyDown = false;
-			// NOT ANY SOURCE'S NOTE ANY MORE. `update` matches a bend or a timbre change on the
-			// handle alone, without asking whether the key is still down, so the copy is given
-			// a handle nothing can send: nought is a number a source could really have.
-			voices[i].source = -1;
-			voices[i].endsIn = 0;
-			voices[i].releasing = true;
-			voices[i].decay = std::exp(-6.9f / (RESTRIKE_FADE * sampleRate));
-			return true;
+			if (!voices[i].active) {
+				into = i;
+				break;
+			}
+			const float heard = voices[i].follow * voices[i].env;
+			if (into < 0 || heard < faintest) {
+				into = i;
+				faintest = heard;
+			}
 		}
-		if (!saidNoRoom) {
-			saidNoRoom = true;
-			INFO("mpxPiano: every fading voice in use, so a note was taken where it stood. "
-				"If this is common, FADE_VOICES is too few.");
+		if (into >= 0 && voices[into].active) {
+			cutSince++;
+			if (!saidNoRoom) {
+				saidNoRoom = true;
+				INFO("mpxPiano: every fading voice in use, so the faintest fade was cut short. "
+					"If this is common, FADE_VOICES is too few.");
+			}
 		}
-		return false;
+		if (into < 0)
+			return false;
+		voices[into] = taken;
+		voices[into].keyDown = false;
+		// NOT ANY SOURCE'S NOTE ANY MORE. `update` matches a bend or a timbre change on the
+		// handle alone, without asking whether the key is still down, so the copy is given a
+		// handle nothing can send: nought is a number a source could really have.
+		voices[into].source = -1;
+		voices[into].endsIn = 0;
+		voices[into].releasing = true;
+		voices[into].decay = std::exp(-6.9f / (STEAL_FADE * sampleRate));
+		return true;
 	}
 
 	PianoVoice* allocate(bool noise, float sampleRate) {
@@ -1397,7 +1466,8 @@ static float partGain(int part) {
 			// measure the release resonance is given. See damp.
 			const float left = (old.peak > 0.f) ? math::clamp(old.follow / old.peak, 0.f, 1.f)
 				: 0.f;
-			carried = old.amp * left;
+			// NOTHING CARRIED FROM A STRIKE A MOMENT AGO. See BLOOM_AFTER.
+			carried = (old.struckAgo >= (int64_t) (BLOOM_AFTER * sampleRate)) ? old.amp * left : 0.f;
 			old.keyDown = false;
 			old.endsIn = 0;
 			old.releasing = true;
@@ -1891,10 +1961,16 @@ static float partGain(int part) {
 		// turned while a sound is ringing affects the next one rather than jumping this one.
 		const float bright = params[P_BRIGHT].getValue();
 		const float followK = 1.f - std::exp(-1.f / (0.02f * sr));
+		const int64_t inaudibleAfter = (int64_t) (INAUDIBLE_AFTER * sr);
+		const float inaudibleDecay = std::exp(-6.9f / (INAUDIBLE_FADE * sr));
+		int sounding = 0;
 		float outL = 0.f, outR = 0.f;
-		for (PianoVoice& v : voices) {
+		for (int vi = 0; vi < MAX_VOICES; vi++) {
+			PianoVoice& v = voices[vi];
 			if (!v.active)
 				continue;
+			if (vi < STRING_VOICES)
+				sounding++;
 			const PianoSample& s = *v.sample;
 			const int i = (int) v.pos;
 			if (i + 2 >= s.frames || v.env < 0.0001f) {
@@ -1938,11 +2014,29 @@ static float partGain(int part) {
 			const float level = std::fabs(L) + std::fabs(R);
 			v.follow += (level - v.follow) * followK;
 			v.peak = std::max(v.peak, v.follow);
+			// GONE TO NOTHING, LET GO. See INAUDIBLE.
+			if (v.struckAgo > inaudibleAfter && v.follow < v.peak * INAUDIBLE
+					&& !(v.releasing && v.decay <= inaudibleDecay)) {
+				v.releasing = true;
+				v.decay = inaudibleDecay;
+				letGoSince++;
+			}
 			// HOW LONG THIS ONE HAS BEEN GOING, which is what keeps a note that has not been
 			// heard yet from being the one taken for the next. See PROTECT_SECONDS.
 			v.struckAgo++;
 			outL += L;
 			outR += R;
+		}
+
+		// WHAT THE POOL HAS BEEN DOING, said every ten seconds while notes are being taken.
+		mostSince = std::max(mostSince, sounding);
+		if (--poolReportIn <= 0) {
+			poolReportIn = (int64_t) (10.f * sr);
+			if (tookSince > 0)
+				INFO("mpxPiano: in ten seconds, %d notes taken from strings still sounding, %d fades "
+					"cut short, %d silent notes let go; at most %d of %d strings sounding",
+					tookSince, cutSince, letGoSince, mostSince, std::min(polyphony, STRING_VOICES));
+			tookSince = cutSince = letGoSince = mostSince = 0;
 		}
 
 		// MPX_FULL_VOLTS at the knob's default: see NoteBus.hpp.
@@ -2326,7 +2420,7 @@ struct PianoWidget : ModuleWidget {
 						[=]() { m->hammerNoise = v; }));
 			}));
 		menu->addChild(createSubmenuItem("Polyphony", string::f("%d", m->polyphony), [=](ui::Menu* sub) {
-			const int counts[] = {16, 32, 48, 64, 72};
+			const int counts[] = {32, 64, 96, 128};
 			for (int c : counts)
 				sub->addChild(createCheckMenuItem(string::f("%d notes", c), "",
 					[=]() { return m->polyphony == c; }, [=]() { m->polyphony = c; }));

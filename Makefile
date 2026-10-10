@@ -554,7 +554,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pianobench bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -567,3 +567,14 @@ pathread:
 
 
 
+
+# mpxScore playing into mpxPiano from a command line, with the clicks found. See test/pianobench.cpp.
+BENCH_OBJS = $(filter-out build/src/plugin.cpp.o build/src/mpxPiano.cpp.o build/src/mpxScore.cpp.o,$(wildcard build/src/*.o))
+pianobench:
+	@mkdir -p build
+	@$(CXX) -std=c++20 -O2 -g $(BENCH_FLAGS) -I dep/include -I dep/include/verovio -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		-Wno-deprecated-this-capture -march=armv8-a+fp+simd -funsafe-math-optimizations \
+		test/pianobench.cpp test/pianobench_piano.cpp test/pianobench_score.cpp $(BENCH_OBJS) \
+		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
+		-L$(RACK_DIR) -lRack -o build/pianobench
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/pianobench $(ARGS)
