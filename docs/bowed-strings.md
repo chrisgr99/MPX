@@ -40,9 +40,9 @@ The classical model makes friction a function of the sliding speed alone: a curv
 
 Build the velocity curve first because it is a known quantity and the rest of the model can be exercised against it. Treat the thermal model as the planned replacement rather than as an improvement that may never come.
 
-The string has two friction models, and which plays by default is open (phase 3).
+The string has two friction models. The friction curve plays; the bristles stay for comparison on the benches. Starting notes cleanly is the player's job, as it is a cellist's (phase 7).
 
-**The friction curve**, the default: Woodhouse and Galluzzo's hyperbola, static 0.8 falling to 0.4, halfway at 0.2 m/s, which they fitted to steady bowing. It plays held notes where cellos play them and does not start them as cellists do; the steeper curve Smith and Woodhouse measured for rosin sliding steadily starts them better and holds them worse.
+**The friction curve**: Woodhouse and Galluzzo's hyperbola, static 0.8 falling to 0.4, halfway at 0.2 m/s, which they fitted to steady bowing. It plays held notes where cellos play them and does not start them as cellists do; the steeper curve Smith and Woodhouse measured for rosin sliding steadily starts them better and holds them worse.
 
 **The bristles** (`BowedString::setBristles`): the elasto-plastic model of Dupont and colleagues (2002), as Serafin, Avanzini and Rocchesso put it at a waveguide's bow (2003) and Matusiak and Chatziioannou fitted it to a cello string (2024). The rosin contact is a field of elastic bristles whose mean bend is the model's memory: while the bend is small they only bend and the string moves with the bow, past a breakaway bend they start to break, and at the steady bend for the sliding speed all are broken and the string slides at the friction of a Stribeck curve. So whether the string sticks depends on how the contact got where it is, which a curve cannot say. The bow hair's own give, a spring and damper between the stick and the rosin, is part of it. Solved each sample for the bend's rate by Newton's method kept inside a bracket, the bend stepped by backward Euler because the bristles settle in microseconds. Under a heavy, slow bow it lets the string creep, a few centimetres a second behind the bow at the static friction, before it flies back — which a curve does not do.
 
@@ -226,7 +226,13 @@ The bristles put the playable region where the measurement has it: heavy bow, ge
 
 `build/bowed-attacks.wav`: the cleanest start on the D3 grid a tenth of the way from the bridge, a creaky one and a slipping one. `build/bowed-attacks-friction.wav`: three attacks the robot found playable on the cello G, each with the curve and then the bristles; with the curve none starts, with the bristles all three within two periods.
 
-**Open**: which model plays, or a friction whose parameters move with the bowing. The player of phase 7 can also choose attacks inside the wedge, as players do, which Guettler's equations make possible.
+**Decided: the curve plays, and the player starts the notes.** The curve meets the diagram that can be checked exactly, and a player can be built to stay inside it; an attack the string will not start can be avoided, a held note the string plays wrongly cannot. How hard that makes the player's job (`make bowplay ARGS=rehearse`), measured on the cello's four strings and the violin's G, A and E at five bow positions from 0.06 to 0.15 and six forces across the upper half of each position's band, 210 notes:
+
+- one acceleration for every note, scaled from string to string as Guettler's limits scale: at best about a quarter start within the listening limits, the rate Galluzzo's simulations of this friction found;
+- a player that listens and corrects the force or the bow's acceleration as the slips come: no better;
+- a player that rehearses, trying twelve accelerations at four starting forces up to four times the intended one on a copy of the string, and playing the best: 170 of the 210 start within ten periods and 77 within five, and 154 of those 170 are still in Helmholtz motion after easing back to the intended force over a tenth of a second. The violin's strings and the cello's A almost always find a start; the cello's G misses a third of the time and its C more than half.
+
+See phase 7.
 
 Worth stopping if: the playable region cannot be made to resemble the published one. Everything after this assumes a player can be given force and speed and get a note.
 
@@ -255,6 +261,8 @@ Pizzicato comes free here from phase 1.
 The bowing, in the performer library beside the guitarist. A slur is a bow stroke; within one slur the bow has a fixed length to spend across the notes under it, so bow speed is bow remaining over time remaining. Force follows from the dynamic and the sounding point, bounded by the Schelleng limits phase 3 measured. Direction is inferred, down-bow on a strong beat, with the slur grouping deciding where alternation resumes.
 
 Pressure and timbre on the cable map onto bow force and sounding point, continuously through each note.
+
+**It starts each note by rehearsing it.** Before a note from rest, the player tries a set of attacks — bow accelerations, and starting forces up to four times the one the dynamic asks for, as a cellist bites into a note and eases off — on a copy of the string, and plays the one that reaches Helmholtz motion soonest; once four regular periods are heard it eases to the intended force. Phase 3 measured what this buys (above). It costs computing in bursts at note starts, tens of milliseconds for a low string, so it runs ahead of the sound: on another thread, with the note delayed by the rehearsal, or from the score's knowing the note is coming. Which, and how few candidates suffice when the best ones are tried first, is this phase's to settle.
 
 `pizz` and `arco` arrive as words rather than as elements, which is the reading problem already solved for the worded crescendos.
 

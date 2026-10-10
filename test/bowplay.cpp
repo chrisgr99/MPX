@@ -19,6 +19,8 @@ WHAT EACH SECTION TESTS AGAINST.
              Galluzzo's measured limits for a cello D string.
   measured   Attacks on Matusiak and Chatziioannou's cello G string, against the Guettler diagram they
              measured with a robot arm and a real bow.
+  rehearse   How hard starting notes is for a player under the friction the string plays with, and
+             what a player who rehearses each attack on a copy of the string gets.
   listen     A clean start, a creaky one and a slipping one, to hear.
 
     make bowplay                      all of it
@@ -698,6 +700,108 @@ static void measuredSection() {
 }
 
 
+// ---- A PLAYER WHO REHEARSES ------------------------------------------------------------------
+
+/** HOW HARD STARTING NOTES IS FOR A PLAYER, under the friction the string plays with: 210 notes, the
+cello's four strings and the violin's G, A and E, at five bow positions and six forces across the
+upper half of each position's Schelleng band at 0.2 m/s (Galluzzo's limits, scaled by impedance).
+First one acceleration for every note, scaled as Guettler's limits scale, beta (1 - beta) F / (T Z);
+then a player who rehearses each note on a copy of the string, twelve accelerations at four
+starting forces up to four times the intended one, and plays the best; then that best attack played
+through, easing to the intended force once four regular periods are heard. */
+static void rehearseSection() {
+	std::printf("\nA PLAYER WHO REHEARSES: 210 notes from rest, seven strings, beta 0.06 to 0.15, six forces each.\n");
+	struct Note { double hz; const char* name; };
+	const Note notes[] = {{65.41, "cello C2"}, {98.0, "cello G2"}, {146.83, "cello D3"}, {220.0, "cello A3"},
+	                      {196.0, "violin G3"}, {440.0, "violin A4"}, {659.26, "violin E5"}};
+	const float betas[] = {0.06f, 0.08f, 0.1f, 0.125f, 0.15f};
+	const int accelerations = 12, forces = 4;
+	auto kAt = [&](int k) { return 0.006 * std::pow(15.0, k / (double) (accelerations - 1)); };
+	auto biteAt = [&](int b) { return std::pow(4.0, b / 3.0); };
+	int fixedGood = 0, within5 = 0, within10 = 0, kept = 0, all = 0;
+	for (const Note& n : notes) {
+		int missed = 0;
+		for (float beta : betas)
+			for (int fi = 0; fi < 6; fi++) {
+				const double z = impedanceOf((float) n.hz), zBow = z * 3.27 / 4.27, T = 1.0 / n.hz;
+				const double upper = 4.0 * 0.13 / beta * (z / 0.67);
+				const double lower = 4.0 * 0.00086 / (beta * beta) * (z / 0.67) * (z / 0.67);
+				const double middle = std::sqrt(lower * upper);
+				const double f = middle * std::pow(upper / middle, fi / 6.0);
+				auto accel = [&](double k, double force) { return (float) (k * beta * (1.0 - beta) * force / (T * zBow)); };
+				all++;
+				{
+					BowedString s = cello((float) n.hz, beta);
+					const Grade g = grade(attack(s, (float) f, accel(0.024, f), n.hz, 25));
+					fixedGood += (g == PERFECT || g == ACCEPTABLE);
+				}
+				int best = 999, bestK = 0, bestB = 0;
+				for (int b = 0; b < forces; b++)
+					for (int k = 0; k < accelerations; k++) {
+						BowedString s = cello((float) n.hz, beta);
+						const double force = f * biteAt(b);
+						const Attack r = attack(s, (float) force, accel(kAt(k), force), n.hz, 20, nullptr, 0.2f);
+						if (r.periodsBefore >= 0 && r.periodsBefore < best) {
+							best = r.periodsBefore;
+							bestK = k;
+							bestB = b;
+						}
+					}
+				within5 += best <= 5;
+				within10 += best <= 10;
+				if (best > 10) {
+					missed++;
+					continue;
+				}
+				// THE BEST ATTACK PLAYED THROUGH: bite, then ease to the intended force over 0.1 s once
+				// four regular periods are heard; held to a second, the last 0.3 s read.
+				const double bite = f * biteAt(bestB);
+				const float a = accel(kAt(bestK), bite);
+				BowedString s = cello((float) n.hz, beta);
+				const double period = RATE / n.hz;
+				std::vector<size_t> slips;
+				std::vector<uint8_t> stuck((size_t) RATE);
+				double easeFrom = -1.0;
+				bool was = true;
+				for (size_t i = 0; i < stuck.size(); i++) {
+					const double t = i / RATE;
+					const double force = easeFrom < 0.0 ? bite : bite + (f - bite) * std::fmin(1.0, (t - easeFrom) / 0.1);
+					s.setBow((float) force, (float) std::fmin(a * t, 0.2));
+					s.process();
+					stuck[i] = s.sticking() ? 1 : 0;
+					if (i && was && !stuck[i]) {
+						slips.push_back(i);
+						if (easeFrom < 0.0 && slips.size() >= 5) {
+							bool regular = true;
+							for (size_t q = slips.size() - 4; q < slips.size(); q++)
+								regular = regular && std::fabs((double) (slips[q] - slips[q - 1]) - period) <= 0.1 * period;
+							if (regular)
+								easeFrom = t;
+						}
+					}
+					was = stuck[i] != 0;
+				}
+				bool held = true;
+				for (double t0 = 0.7 * RATE; t0 + period <= RATE; t0 += period) {
+					int k = 0;
+					for (size_t i = (size_t) t0 + 1; i < (size_t) (t0 + period); i++)
+						if (stuck[i - 1] && !stuck[i])
+							k++;
+					held = held && k == 1;
+				}
+				kept += held;
+			}
+		std::printf("  %-10s rehearsed, no start within ten periods: %d of 30\n", n.name, missed);
+	}
+	std::printf("  one acceleration for every note: %d of %d within the listening limits\n", fixedGood, all);
+	std::printf("  rehearsed: %d start within five periods, %d within ten; of those, %d still in Helmholtz\n"
+		"  motion after easing to the intended force\n", within5, within10, kept);
+	check(within10 >= (3 * all) / 4, "  rehearsed notes that start within ten periods, share", (double) within10 / all);
+	check(kept >= (9 * within10) / 10, "  of those, share that keep Helmholtz motion at the intended force",
+		within10 ? (double) kept / within10 : 0.0);
+}
+
+
 // ---- TO LISTEN TO -----------------------------------------------------------------------------
 
 static void listenSection() {
@@ -791,6 +895,7 @@ int main(int argc, char** argv) {
 	if (run("attacks")) attacksSection();
 	if (run("schelleng")) schellengSection();
 	if (run("measured")) measuredSection();
+	if (run("rehearse")) rehearseSection();
 	if (run("listen")) listenSection();
 	std::printf("\n%s\n", failures ? "SOME CHECKS FAILED" : "all passed");
 	return failures ? 1 : 0;
