@@ -110,6 +110,14 @@ struct VoiceModule : Module, NoteSink {
 		O_PRESSURE,
 		O_TIMBRE,
 		O_PAN,
+		/** THE SUSTAIN PEDAL, nought to ten volts for up to down, with half-pedalling between.
+		Added last, so every cable a saved patch already has keeps the output it was plugged into.
+
+		ONE CHANNEL, NOT ONE PER VOICE. A pedal belongs to the player, not to a note: a polyphonic
+		copy of it would be the same voltage on every channel, and a synthesiser reading it per
+		voice would see a pedal that changes when the polyphony does. What reads it — Host's sustain
+		pedal, a VCA on a release, an envelope's hold — wants the one figure. */
+		O_SUSTAIN,
 		NUM_OUTPUTS
 	};
 	enum LightId {
@@ -151,8 +159,35 @@ struct VoiceModule : Module, NoteSink {
 		int64_t ended = 0;
 		int remaining = 0;
 		int gateLow = 0;
+		/** WHAT THE GATE SAID ON THE LAST SAMPLE, which is not the same as whether the voice is
+		active. A note-off and the next note-on can arrive in the same sample: the voice is free
+		by the time the new note looks for one, so it is taken as fresh, but its gate never fell,
+		and a gate that never falls has no rising edge. Nothing downstream sees a new note. */
+		bool gateUp = false;
 	};
 	Slot slots[16];
+
+	/** THE LEVEL AS A VELOCITY: at the note's level from the sample its gate rises on, instead of
+	climbing to it from nothing over ten milliseconds.
+
+	THE CLIMB IS RIGHT FOR A VCA and wrong for MIDI. Into an amplifier with no envelope in front of
+	it, a level that stepped would click, which is what the climb is for. But an instrument that
+	reads a velocity — VCV Host turning gate and level into a MIDI note-on, a MIDI-CV bridge, a
+	sampler — reads it at the instant the gate rises, and at that instant the climb has only just
+	left nought. A note-on at velocity nought is a note-off, so Pianoteq in Host played nothing at
+	all with the level patched to its velocity and played at its own default with it unpatched.
+
+	Off by default, so every patch built on the fade keeps it. */
+	bool levelAsVelocity = false;
+
+	/** THE TIMBRE OUTPUT CARRIES THE SOFT PEDAL, on one channel, in place of each note's timbre.
+
+	WHERE THE SOFT PEDAL BELONGS ON A PIANO. Una corda changes the tone, not the loudness — fewer
+	strings struck, by a softer part of the felt — so the timbre output is the one a piano reads it
+	from, and the jack sits beside the sustain pedal's. A piano has no timbre per note to lose.
+
+	Off by default, because on anything that is not a piano the timbre per note is the point. */
+	bool softOnTimbre = false;
 
 	BusReader reader;
 	/** Set on the main thread when the patching changes, acted on by the audio thread, so the
@@ -180,15 +215,41 @@ struct VoiceModule : Module, NoteSink {
 		configOutput(O_PRESSURE, "Pressure");
 		configOutput(O_TIMBRE, "Timbre");
 		configOutput(O_PAN, "Pan");
+		configOutput(O_SUSTAIN, "Sustain pedal");
 	}
 
 	void onReset() override {
 		for (Slot& s : slots)
 			s = Slot();
+		levelAsVelocity = false;
+		softOnTimbre = false;
+		nameTimbre();
 	}
 
 	bool isMPXInputId(int inputId) override {
 		return inputId == I_NOTE;
+	}
+
+	/** The timbre jack's tooltip says what it carries. Main thread only: called from the menu and
+	from loading a patch, never from process. */
+	void nameTimbre() {
+		if (outputInfos.size() > (size_t) O_TIMBRE && outputInfos[O_TIMBRE])
+			outputInfos[O_TIMBRE]->name = softOnTimbre ? "Soft pedal" : "Timbre";
+	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "levelAsVelocity", json_boolean(levelAsVelocity));
+		json_object_set_new(rootJ, "softOnTimbre", json_boolean(softOnTimbre));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		if (json_t* j = json_object_get(rootJ, "levelAsVelocity"))
+			levelAsVelocity = json_boolean_value(j);
+		if (json_t* j = json_object_get(rootJ, "softOnTimbre"))
+			softOnTimbre = json_boolean_value(j);
+		nameTimbre();
 	}
 
 	/** Called from the widget once a frame with whatever the cable says. */
@@ -241,6 +302,8 @@ struct VoiceModule : Module, NoteSink {
 				outputs[o].setChannels(1);
 				outputs[o].setVoltage(0.f);
 			}
+			for (Slot& s : slots)
+				s.gateUp = false;
 			return;
 		}
 
@@ -248,8 +311,11 @@ struct VoiceModule : Module, NoteSink {
 		const int rollover = (int) std::round(params[P_ROLLOVER].getValue());
 		const int retrig = std::max(1, (int) (RETRIG_MS * 0.001f * args.sampleRate));
 
-		for (int o = 0; o < NUM_OUTPUTS; o++)
-			outputs[o].setChannels(voices);
+		const bool softHere = softOnTimbre;
+		for (int o = 0; o < NUM_OUTPUTS; o++) {
+			const bool pedal = o == O_SUSTAIN || (o == O_TIMBRE && softHere);
+			outputs[o].setChannels(pedal ? 1 : voices);
+		}
 		// A voice left sounding above a lowered POLY would reappear when POLY was raised again.
 		for (int i = voices; i < 16; i++)
 			slots[i].active = false;
@@ -285,21 +351,42 @@ struct VoiceModule : Module, NoteSink {
 			const float pressure = s.pressure.tick();
 			const float timbre = s.timbre.tick();
 
-			outputs[O_GATE].setVoltage((s.active && s.gateLow == 0) ? 10.f : 0.f, i);
+			s.gateUp = s.active && s.gateLow == 0;
+			outputs[O_GATE].setVoltage(s.gateUp ? 10.f : 0.f, i);
 			// PITCH INCLUDES THE BEND, because where the note is now is what an oscillator wants
 			// and summing the two outside was a cable everybody had to remember. A guitar note
 			// bent up a semitone after it starts is one signal, not a note plus a correction.
 			outputs[O_PITCH].setVoltage(pitch + bend, i);
-			outputs[O_LEVEL].setVoltage(s.level.tick() * 10.f, i);
+			// AS A VELOCITY, the MIDI number the level stands for and never nought: ppp is level
+			// nought, and a note-on at velocity nought is a note-off, so the quietest marking in
+			// the score would play nothing. The same straight velocity mpxPiano plays, one plus 126
+			// times the level, so the two are sent the same note. Put a quarter step above the
+			// whole number, so it is that number whether the far end rounds or truncates.
+			const float lv = s.level.tick();
+			if (levelAsVelocity) {
+				const float vel = std::round(1.f + 126.f * clamp(lv, 0.f, 1.f));
+				outputs[O_LEVEL].setVoltage(std::fmin(10.f, (vel + 0.25f) / 127.f * 10.f), i);
+			}
+			else
+				outputs[O_LEVEL].setVoltage(lv * 10.f, i);
 			// The control voltage runs to five volts at full deflection, scaled by the bend
 			// range the note was sent with, and clamped there as a wheel at its stop is.
 			const float full = std::max(1e-4f, s.bendRange / 12.f);
 			outputs[O_BEND].setVoltage(clamp(bend / full, -1.f, 1.f) * 5.f, i);
 			outputs[O_PRESSURE].setVoltage(pressure * 10.f, i);
-			outputs[O_TIMBRE].setVoltage(timbre * 10.f, i);
+			if (!softHere)
+				outputs[O_TIMBRE].setVoltage(timbre * 10.f, i);
 			outputs[O_PAN].setVoltage(s.pan.tick() * 5.f, i);
 		}
 
+		// THE PEDAL AS THE SOURCE HAS IT, read every sample rather than when it moves: a module
+		// patched in while the pedal is already down has to know at once, which is why the bus
+		// carries the pedals as state and not as events. See BusReader::pedals.
+		float sustain = 0.f, soft = 0.f;
+		reader.pedals(sustain, soft);
+		outputs[O_SUSTAIN].setVoltage(clamp(sustain, 0.f, 1.f) * 10.f);
+		if (softHere)
+			outputs[O_TIMBRE].setVoltage(clamp(soft, 0.f, 1.f) * 10.f);
 	}
 
 	void noteOn(const Event& e, int voices, int rollover, int retrig, const ProcessArgs& args) {
@@ -319,9 +406,15 @@ struct VoiceModule : Module, NoteSink {
 				// every note of a legato line: a joined line, audibly re-struck on every note.
 				s.level.set(levelWas);
 				s.level.to(e.level, std::max(RISE_MIN, (int) (RISE_MS * 0.001f * args.sampleRate)));
+				if (levelAsVelocity)
+					s.level.set(e.level);
 			}
 			else {
 				s.pitch.set(e.pitch);
+				// The last note ended in this same sample, so the gate is still up. Fed to a MIDI
+				// instrument that is no new note at all; break it so there is one.
+				if (levelAsVelocity && s.gateUp)
+					s.gateLow = retrig;
 			}
 			return;
 		}
@@ -411,9 +504,15 @@ struct VoiceModule : Module, NoteSink {
 				}
 			}
 			Slot& s = slots[take];
+			// A VOICE STILL UP — at one voice, or a pair outrun by notes faster than the fade — is
+			// held through the change here, and the level climbing from nothing is what marks the
+			// new note. As a velocity there is no climb, so a MIDI instrument would hear no new
+			// note. Break the gate instead.
+			if (levelAsVelocity && s.gateUp)
+				s.gateLow = retrig;
 			adopt(s, e, args.sampleRate);
 			s.fading = 0;
-			if (fade > 0) {
+			if (fade > 0 && !levelAsVelocity) {
 				// FROM SILENCE, over the same span the other one is taking to reach it. The
 				// two halves have to be the same length or what you hear is not a crossfade.
 				s.level.set(0.f);
@@ -449,12 +548,14 @@ struct VoiceModule : Module, NoteSink {
 			}
 			if (take < 0)
 				take = 0;
-			// Taken from under a note that was still sounding, so the gate breaks for a
-			// moment: a millisecond, which is enough for any trigger and too short to hear.
-			slots[take].gateLow = retrig;
 		}
 
 		Slot& s = slots[take];
+		// TAKEN WHILE ITS GATE IS UP, so the gate breaks for a moment: a millisecond, which is
+		// enough for any trigger and too short to hear. Either taken from under a note still
+		// sounding, or free only because its note ended in this same sample.
+		if (s.gateUp)
+			s.gateLow = retrig;
 		adopt(s, e, args.sampleRate);
 		s.fading = 0;
 		s.pitch.set(e.pitch);
@@ -480,8 +581,14 @@ struct VoiceModule : Module, NoteSink {
 		// A new note has no history. Starting at nothing and rising to its own velocity gives the
 		// same protection against a jump into a bare amplifier, and smears no part of the note
 		// before it into this one.
-		s.level.set(0.f);
-		s.level.to(e.level, rise);
+		if (levelAsVelocity) {
+			// AS A VELOCITY, there from the sample the gate rises on. See levelAsVelocity.
+			s.level.set(e.level);
+		}
+		else {
+			s.level.set(0.f);
+			s.level.to(e.level, rise);
+		}
 		// PAN IS SET RATHER THAN TRAVELLED, now that the level starts from nothing: the note is
 		// silent while it would have been sliding, so the slide is inaudible and a pattern that
 		// alternates hard left and hard right is where it says it is from its first sample.
@@ -549,12 +656,12 @@ bool isMPXInput(engine::Module* module, int inputId) {
 // Written here rather than in a file that ships, so the default cannot fall out of step with
 // the module. What a person moves is saved over the top of it — see Layout.hpp.
 
-// YOUR ARRANGEMENT, TIDIED. The positions are the ones you set in the editor; what changed is
-// that the control column now agrees on one x rather than four within a millimetre of each
-// other, the jack column steps by exactly its pitch, and every value is on a half millimetre.
+// YOUR ARRANGEMENT. The positions are the ones set in the editor and written back here: the
+// control column on one x, and the jack column in the order and at the heights it was given,
+// which is not an even step — the gap between pan and bend is part of the arrangement.
 
 /** EIGHT HP, and every number below is one that was arrived at by moving the thing on the panel
-and then written back here. The column of nine lanes and the column of controls sit as close as
+and then written back here. The column of nine jacks and the column of controls sit as close as
 their names allow, and a name that would have set the panel wider — the two that read 1V/oct —
 is set over two lines instead. */
 /** THE CONTROL COLUMN. Not quite one axis: the jack, the readout and the knob are different
@@ -566,7 +673,6 @@ static const float JACK_X = 34.f;        /**< The lanes, one column. */
 static const float JACK_LABEL_DX = -5.5f;/**< Their names, ending just short of them. */
 static const float JACK_LABEL_SIZE = 7.f;
 static const float JACK_TOP = 21.5f;
-static const float JACK_PITCH = 11.3f;
 
 static Layout mpxOutLayout() {
 	Layout L;
@@ -589,14 +695,14 @@ static Layout mpxOutLayout() {
 			Panel::RIGHT, false, JACK_LABEL_SIZE, key);
 	};
 
-	// THE ENVELOPE COMING BACK, at the foot of the lane column where the two retired jacks used
-	// to be — an input among outputs, which is why it is the only one there and why it sits
-	// below the gap rather than continuing the list.
+	// THE ENVELOPE COMING BACK, in the column between the level and the pan: an input among the
+	// outputs, ringed as one so it reads as the odd one out. Placed there in the editor, and
+	// written back here so the default is the arrangement in use.
 	Item back;
 	back.key = "in.sounding"; back.kind = Item::PORT_IN; back.id = VoiceModule::I_SOUNDING;
-	back.x = JACK_X; back.y = 111.9f; back.ring = SIG_CV;
+	back.x = JACK_X; back.y = 55.5f; back.ring = SIG_CV;
 	L.items.push_back(back);
-	label("in.sounding.label", JACK_X + JACK_LABEL_DX, 111.9f, "env\nback", Panel::RIGHT,
+	label("in.sounding.label", JACK_X + JACK_LABEL_DX, 55.5f, "env\nback", Panel::RIGHT,
 		false, JACK_LABEL_SIZE, "in.sounding");
 
 	// The cable in at the top of the control column, above everything it feeds.
@@ -662,14 +768,18 @@ static Layout mpxOutLayout() {
 	// because pitch now carries the bend, which is what an oscillator wants; the Bend output
 	// stays, because a scaled deflection is what an effect wants and a pitch in volts per octave
 	// is far too small a number to modulate anything with.
-	float y = JACK_TOP;
-	outJack("out.gate", y, VoiceModule::O_GATE, "gate", SIG_GATE);           y += JACK_PITCH;
-	outJack("out.pitch", y, VoiceModule::O_PITCH, "Pitch\nV/oct", SIG_PITCH); y += JACK_PITCH;
-	outJack("out.bend", y, VoiceModule::O_BEND, "bend", SIG_CV);             y += JACK_PITCH;
-	outJack("out.level", y, VoiceModule::O_LEVEL, "level", SIG_CV);          y += JACK_PITCH;
-	outJack("out.pan", y, VoiceModule::O_PAN, "pan", SIG_CV);                y += JACK_PITCH;
-	outJack("out.press", y, VoiceModule::O_PRESSURE, "pressure", SIG_CV);    y += JACK_PITCH;
-	outJack("out.timb", y, VoiceModule::O_TIMBRE, "timbre", SIG_CV);
+	// AS ARRANGED IN THE EDITOR, and written back here so the default is the panel in use: what
+	// starts a note, what pitches it and how hard, then the envelope's return, then what moves
+	// while it sounds, and the two pedals together at the foot — timbre last, beside sustain,
+	// because on a piano it carries the soft pedal. See softOnTimbre.
+	outJack("out.gate", JACK_TOP, VoiceModule::O_GATE, "gate", SIG_GATE);
+	outJack("out.pitch", 32.8f, VoiceModule::O_PITCH, "Pitch\nV/oct", SIG_PITCH);
+	outJack("out.level", 45.f, VoiceModule::O_LEVEL, "level", SIG_CV);
+	outJack("out.pan", 65.5f, VoiceModule::O_PAN, "pan", SIG_CV);
+	outJack("out.bend", 88.5f, VoiceModule::O_BEND, "bend", SIG_CV);
+	outJack("out.press", 100.6f, VoiceModule::O_PRESSURE, "pressure", SIG_CV);
+	outJack("out.sustain", 111.f, VoiceModule::O_SUSTAIN, "sustain", SIG_CV);
+	outJack("out.timb", 122.5f, VoiceModule::O_TIMBRE, "timbre", SIG_CV);
 	L.bindOffsets();
 	return L;
 }
@@ -689,6 +799,16 @@ struct VoiceWidget : ModuleWidget {
 
 	void appendContextMenu(ui::Menu* menu) override {
 		layoutAppendMenu(menu, this, panel, &layout, "mpxOut");
+		VoiceModule* m = dynamic_cast<VoiceModule*>(module);
+		if (!m)
+			return;
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuLabel("Feeding a MIDI instrument"));
+		menu->addChild(createBoolPtrMenuItem("Level is a velocity, there as the gate rises", "",
+			&m->levelAsVelocity));
+		menu->addChild(createBoolMenuItem("Timbre carries the soft pedal, for a piano", "",
+			[=]() { return m->softOnTimbre; },
+			[=](bool on) { m->softOnTimbre = on; m->nameTimbre(); }));
 	}
 
 	/** WHERE THE CABLE BECOMES A LINK. Rack owns the cable; this reads it. A cable whose other

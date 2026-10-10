@@ -177,12 +177,19 @@ The duration is in the note-on as well as being what ends the note at the source
 | Value | On the cable | At mpxOut |
 | --- | --- | --- |
 | Pitch | volts per octave | volts per octave |
-| Level | 0 to 1 | 0 to 10 V |
+| Level | 0 to 1 | 0 to 10 V, climbing from nought over ten milliseconds unless it is set to be a velocity |
 | Duration | seconds | 1 V per second |
 | Pan | -1 to 1 | -5 to 5 V |
 | Bend | volts | -5 to 5 V at the range, and volts per octave unscaled |
 | Pressure | 0 to 1 | 0 to 10 V |
-| Timbre | 0 to 1 | 0 to 10 V |
+| Timbre | 0 to 1 | 0 to 10 V per voice, or the soft pedal on one channel when set to carry it |
+| Sustain pedal | 0 to 1, up to down | 0 to 10 V, one channel |
+
+**Two settings on mpxOut, for feeding a MIDI instrument.** Both are off by default and both are in its right-click menu.
+
+*Level is a velocity, there as the gate rises.* Ordinarily a note's level climbs from nought to its value over ten milliseconds, because into an amplifier with nothing in front of it a step would click. An instrument that turns gate and level into a MIDI note-on — VCV Host, a MIDI-CV bridge — reads the velocity at the instant the gate rises, when the climb has only just left nought, and a note-on at velocity nought is a note-off: nothing sounds. With this on, the level is at its value from the gate's first sample.
+
+*Timbre carries the soft pedal, for a piano.* The timbre jack then puts out the soft pedal on one channel, nought to ten volts, in place of each note's timbre. Una corda changes the tone rather than the loudness, so this is where a piano reads it, and the jack sits beside the sustain pedal's.
 
 At mpxIn the same scales apply to the inputs: level and pressure and timbre are 0 to 10 V, pan is -5 to 5 V, duration is one volt per second.
 
