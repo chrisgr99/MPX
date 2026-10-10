@@ -166,6 +166,25 @@ float BowedBody::process(float bridgeForce) {
 }
 
 
+double BowedBody::velocityPerNewton() const {
+	// Each mode's resonator takes b times the bridge's output, which takes bb0 times the force.
+	double sum = 0.0;
+	for (const Resonator& r : built)
+		sum += r.mobility * r.b;
+	return bb0 * sum;
+}
+
+
+double BowedBody::velocityUnforced() const {
+	const double f = bb1 * bx1 + bb2 * bx2 - ba1 * by1 - ba2 * by2;
+	const double drive = f - f2;
+	double v = 0.0;
+	for (const Resonator& r : built)
+		v += r.mobility * (r.b * drive + r.a1 * r.y1 + r.a2 * r.y2);
+	return v;
+}
+
+
 void BowedBody::resonance(const Resonator& r, double hz, double* re, double* im) const {
 	const double w = 2.0 * PI * hz / rate;
 	// H = b (1 - z^-2) / (1 - a1 z^-1 - a2 z^-2), z = e^jw.

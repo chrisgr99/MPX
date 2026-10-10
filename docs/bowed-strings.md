@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: phases 1, 2, 4 and 5 built — the string, the bow, the pitch range with its oversampling schedule, and the body. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
+Status: phases 1, 2, 4, 5 and 6 built — the string, the bow, the pitch range with its oversampling schedule, the body, and the instrument, four strings on one bridge. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -62,7 +62,7 @@ A model that reproduces both diagrams is playable whatever it sounds like. A mod
 
 `src/BowedBody.hpp`, `.cpp`. The force the strings put on the bridge in, the sound a metre away out — the body's radiativity, in pascals per newton, which is how the measurements describe a violin's voice. As the deprecated piano's soundboard was built: the low modes, the instrument's signature, a resonator each; the dense ones above, where they overlap and no one of them is heard, generated from the body's modal density and damping, deterministically, so an instrument is the same instrument every time it is built. Each mode carries both how much it radiates and how readily it lets the bridge move.
 
-**One way, for now.** The body does not push back on the strings; they keep the bridge their earlier phases were calibrated against, a resistance the same at every frequency. A body that answered would make some notes decay faster than others and give the cello its wolf. The modes already carry their mobility so that it can be added.
+**The body's voice is one way; its low modes move the bridge.** What is heard is the whole body's radiation, driven by the force on the bridge. What the strings not being bowed feel is the bridge moving with the body's low modes, where they are few and each one counts — the signature modes, with their measured mobility (phase 6). The dense modes above stay out of that loop: the strings' own losses were set to what strings on instruments measure, and the dense modes in the loop as well would count those losses twice.
 
 The bridge's own resonance, its rocking at about three kilohertz, makes the bridge hill: the broad rise near 2.4 kHz that much of a violin's brilliance comes from. The violin's measured radiativity has it in already, so there is no bridge filter on top; the body offers one, for an instrument built from its mobility rather than from a measured voice.
 
@@ -264,7 +264,7 @@ Some limits are bimodal — on the violin's G at 0.06 of the length the motion b
 
 **The violin.** The five signature modes as measured: A0 at 275 Hz, CBR at 407, A1 at 469, B1− at 475 and B1+ at 541, frequencies the means over seventeen violins and damping the averages over fourteen (Bissinger 2008, 2012), the B1 modes' radiativity his averages. Above 630 Hz the modes are dense, two in a hundred hertz at Q 50, the density and damping that agree with Woodhouse's modal overlap for a violin being played, and their radiativity follows Bissinger's seventeen-violin average band by band to 3,875 Hz, where his measurements stop, falling 8.5 dB an octave above, as the measured bridge mobility does. Against his measurements: A0, B1− and B1+ within a decibel of his values; the 250 Hz bands within 0.8 dB in the median and 2.6 at worst. The upper modes can be scattered in many ways and each is a different violin, a few decibels from the average here and there as any real one is; this one is the closest of four hundred.
 
-**The cello**, provisional. Measured: the air mode near 97 Hz; the strongest body mode at 175 Hz, Q 18, 0.056 m/(s N), the one that makes the wolf; peaks at 140, 200, 209 and 281 Hz. Not measured anywhere that could be found: a cello's radiativity, the damping of all but the wolf mode, and the density of its upper modes. Those are judgement — the upper modes two and a half times the violin's density for a body about twice its size, shaped as the measured mobility is with a radiation efficiency rising to about 1.5 kHz — to be settled by ear.
+**The cello**, provisional. Measured: the air mode near 97 Hz; the strongest body mode at 175 Hz, Q 18, 0.056 m/(s N), the one that makes a real cello's wolf; peaks at 140, 200, 209 and 281 Hz. Not measured anywhere that could be found: a cello's radiativity, the damping of all but the wolf mode, and the density of its upper modes. Those are judgement — the upper modes two and a half times the violin's density for a body about twice its size, shaped as the measured mobility is with a radiation efficiency rising to about 1.5 kHz — to be settled by ear.
 
 **The filter** runs as its resonators' sum says it should, within a millionth of a decibel, and nothing in it rings on.
 
@@ -272,11 +272,27 @@ Some limits are bimodal — on the violin's G at 0.06 of the length the motion b
 
 This is the first phase whose result is judged by ear as well as by measurement, and the first point at which it is worth you listening properly.
 
-### 6. The instrument
+### 6. The instrument — built
 
-Four strings on a shared bridge. Which string plays a given note, open against stopped, and sympathetic coupling between the free strings, which the piano model showed is cheap once the strings share a bridge.
+`src/BowedInstrument.hpp`, `.cpp`; `make bowinstrument`. Four strings on one bridge, on one body. The violin's and the cello's constants live here, with where every figure came from.
 
-Pizzicato comes free here from phase 1.
+**The bridge moves, and the strings nobody is bowing feel it.** Each string pushes on the bridge; the bridge moves as the body's low modes let it; its motion goes back down every string not being bowed. The push and the motion depend on each other in the same sample, which is solved rather than broken with a delay, as the deprecated piano's soundboard was: each string says what it would push on a still bridge, the body how fast the bridge moves per newton and how fast it would move unpushed, and one line gives the motion. The string's sample is split in two halves for it, and on a bridge that stands still a string in the instrument is exactly a string on its own, which the bench checks to the last bit.
+
+**The bowed string plays against a still bridge.** On a real instrument it feels the bridge too, and the instrument can do that (`setBowedFeelsBridge`). By ear it does not help: on the cello's low notes, with the bridge moving under the bow, the starts sounded rough, and with the bow's string against a still bridge and the other strings still ringing with the bridge, they sounded best. With it on, the model makes no wolf of the cello's F3 on the strongest body mode with this provisional body: started cleanly, the note is as steady as its neighbours at every force tried, from 0.1 N to 1.2 N. (A first measurement seemed to show one; it was a start that had never settled, its attack rehearsed on a string alone and played on a string whose bridge moved.)
+
+**Attacks are confirmed on the instrument.** The player rehearses on a copy of the string alone, which is quick, and tries its best few on a copy of the whole instrument, the other strings as they are, playing the first that starts within three periods there: a string's start is sensitive enough that what starts cleanly alone may not on the instrument.
+
+**One rate for the whole instrument**, the engine's times a factor, since strings that share a bridge sample by sample have to share the sample; the force on the bridge is brought down to the engine's rate for the body's voice. Which factor follows the schedule for the highest note to be played; the module will choose it (phase 8).
+
+**Which string.** A note is played on the string that puts it lowest on the fingerboard, the highest string tuned at or below it. A finger shortens the string, so the bow at the same distance from the bridge is a larger share of what is left, and a finger takes more at each reflection than the nut does: a violin's D measured at Q 281 stopped against 410 open, a finger returning 0.9965 where the nut returns 0.9995.
+
+**Sympathy.** A string nobody plays rings when another plays a note its partials share. On the violin, D4 bowed on the G string sets the open D string moving 34.6 dB more than D sharp does, which shares nothing with it; it rings on after the note; and on a bridge that stands still it does not ring at all.
+
+**Nothing grows.** Every string plucked hard and one bowed, the bridge moving, on both instruments: the bridge's velocity peaks at 0.014 m/s on the violin and 0.021 on the cello, and what is left after the bow lifts dies away.
+
+**To listen to.** `build/bowed-violin-scale-sympathy.wav` and `build/bowed-cello-scale-sympathy.wav`: two octaves up and back, each note on its string and started by the rehearsing player on a copy of the string as it stands; `-still-bridge.wav` the same with the bridge standing still.
+
+Pizzicato comes free from phase 1: `BowedInstrument::pluck`.
 
 ### 7. The player
 

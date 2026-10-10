@@ -169,6 +169,19 @@ struct BowedString {
 	/** One sample. What the string does at the bridge, which is what the body will hear. */
 	float process();
 
+	/** ONE SAMPLE IN TWO HALVES, for strings that share a bridge that moves (BowedInstrument). The
+	first reads what has arrived everywhere and says how hard the string would push on the bridge
+	if the bridge stood still; the instrument works out how the bridge moves under every string's
+	push at once; the second finishes the sample with that motion, which goes back down this string
+	and every other. process() is the two with the bridge still. */
+	float pushOnStillBridge();
+	float finishWithBridge(float bridgeVelocity);
+
+	/** A FINGER STOPS THE STRING, or the nut does. A finger is softer than the nut and takes more
+	away at each reflection: a violin's D measured at Q 281 stopped against 410 open (research/
+	bowed-strings/sources.md), which is a finger returning 0.9965 where the nut returns 0.9995. */
+	void setStopped(bool stopped);
+
 	float frequency() const { return freq; }
 	float sampleRate() const { return rate; }
 	/** The whole loop's delay in samples, for a bench to check against the period. */
@@ -182,6 +195,9 @@ private:
 	float stiffness = 0.f;
 	float beta = 0.12f;
 	bool lossless = false;
+	bool stopped = false;
+	// The first half's reads, kept for the second.
+	float pArrivingBridge = 0.f, pArrivingNut = 0.f, pFromBridge = 0.f, pFromNut = 0.f, pReflect = 0.f;
 
 	// THE FOUR LINES, named for what they carry: written at one end, read at the other.
 	float bowToBridge[MAX_DELAY] = {};

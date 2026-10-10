@@ -6,10 +6,9 @@ move; the moving surfaces push on the air. This takes the force the strings put 
 newtons, and gives back the sound, as the pressure a metre away in pascals — the body's
 radiativity, which is how the measurements describe a violin's voice.
 
-ONE WAY, FOR NOW. The body does not push back on the strings: the strings keep the bridge their
-earlier phases calibrated against, a resistance the same at every frequency. A body that answered
-would make some notes decay faster than others and give the cello its wolf, and the modes here
-already carry how readily the bridge moves (`mobility`) so that it can be added. See the doc.
+ONE WAY. What is heard does not push back on the strings. The bridge the strings feel is a second
+body built from the same kind of modes, the low ones with how readily they let the bridge move
+(`mobility`), which BowedInstrument runs at the strings' rate. See the doc, phase 6.
 
 HOW IT IS BUILT, as the deprecated piano's soundboard was: the low modes, the instrument's
 signature, one resonator each, and the dense ones above, where they overlap and no one of them is
@@ -89,6 +88,14 @@ struct BowedBody {
 
 	/** How fast the bridge is moving, metres a second: what the strings would feel. */
 	float bridgeVelocity() const { return (float) velocity; }
+
+	/** THE BRIDGE'S MOTION THIS SAMPLE IN TWO PARTS, for strings that push on it and are moved by
+	it in the same sample (BowedInstrument): how fast it moves per newton of this sample's force,
+	and how fast it would move with no force this sample, from what its modes already carry. Its
+	velocity is then the one times the force plus the other, exactly, so the instrument can solve
+	for the force and the motion together with no delay between them. */
+	double velocityPerNewton() const;
+	double velocityUnforced() const;
 
 	/** THE RESPONSE AT A FREQUENCY, worked out from the resonators as built: radiativity in pascals
 	per newton, and mobility in metres a second per newton. For a bench. */

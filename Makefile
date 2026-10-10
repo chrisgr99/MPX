@@ -437,8 +437,15 @@ bowtest:
 # response, filter or listen.
 bowbody:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/bowbody.cpp src/BowedString.cpp src/BowedBody.cpp -o build/bowbody
+	@c++ -std=c++11 -O2 -Wall test/bowbody.cpp src/BowedString.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowbody
 	@./build/bowbody $(ARGS)
+
+# A bowed instrument: four strings on one bridge that moves, on one body. Phase 6 of
+# docs/bowed-strings.md. ARGS names one section: still, stable, sympathy, strings or listen.
+bowinstrument:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/bowinstrument.cpp src/BowedString.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowinstrument
+	@./build/bowinstrument $(ARGS)
 
 # Where the bowed string plays and how its notes start: Schelleng's and Guettler's diagrams, phase 3
 # of docs/bowed-strings.md. ARGS names one section: buildup, firstslip, guettler, attacks,
@@ -570,7 +577,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: styletest pianobench bowtest bowplay bowbody scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: styletest pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is

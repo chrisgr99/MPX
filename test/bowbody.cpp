@@ -12,6 +12,7 @@ result is judged by ear as well as by measurement.
 */
 #include "bowbench.hpp"
 #include "../src/BowedBody.hpp"
+#include "../src/BowedInstrument.hpp"
 #include "../src/Decimator.hpp"
 
 #include <algorithm>
@@ -21,89 +22,10 @@ result is judged by ear as well as by measurement.
 
 // ---- THE INSTRUMENTS -------------------------------------------------------------------------
 
-/** THE VIOLIN'S BODY, from research/bowed-strings/body-sources.md. Radiativity is Bissinger's: the
-sound pressure averaged over a sphere per newton at the bridge, measured at 1.2 m and here taken to
-a metre (times 1.2).
-
-THE SIGNATURE MODES: frequencies the means over seventeen violins (Bissinger 2008a), damping the
-fourteen-violin averages (Bissinger 2012), radiativity the averages for B1- and B1+ and read off
-the ensemble figure for A0; CBR's and A1's levels are judgement, CBR a weak radiator and A1 very
-variable. Mobilities read off Woodhouse 2005's measured violin.
-
-ABOVE 630 HZ the modes are dense, two in a hundred hertz at Q 50, the density and damping that
-agree with Woodhouse's modal overlap for a violin being played (hanging free, a violin is
-damped half as much). Their radiativity follows Bissinger's seventeen-violin average band by band
-to 3,875 Hz, where his measurements stop, and falls 8.5 dB an octave above, as the measured bridge
-mobility does. The bridge hill is in that curve already — the peak at 2.4 kHz is it — so there is
-no bridge filter on top of it. */
-static BowedBody::Design violinBody() {
-	BowedBody::Design d;
-	auto mode = [](float hz, float q, float mobility, float radiativity) {
-		BowedBody::Mode m;
-		m.hz = hz;
-		m.q = q;
-		m.mobility = mobility;
-		m.radiativity = radiativity;
-		return m;
-	};
-	d.modes = {mode(275.f, 20.f, 0.022f, 0.444f),     // A0, the air in the box
-	           mode(407.f, 40.f, 0.08f, 0.121f),      // CBR
-	           mode(469.f, 50.f, 0.f, 0.383f),        // A1, air again
-	           mode(475.f, 41.f, 0.17f, 1.212f),      // B1-
-	           mode(541.f, 43.f, 0.19f, 1.140f)};     // B1+
-	d.dense.fromHz = 630.f;
-	d.dense.toHz = 10000.f;
-	d.dense.perHz = 0.02f;
-	d.dense.loss = 0.02f;
-	d.dense.radiativity = {{625.f, -10.5f}, {875.f, -7.1f}, {1125.f, -6.6f}, {1375.f, -7.3f},
-	                       {1625.f, -6.0f}, {1875.f, -3.9f}, {2125.f, -2.6f}, {2375.f, -1.0f},
-	                       {2625.f, -2.6f}, {2875.f, -3.2f}, {3125.f, -4.8f}, {3375.f, -4.3f},
-	                       {3625.f, -4.3f}, {3875.f, -4.8f}, {7750.f, -13.3f}, {10000.f, -16.4f}};
-	d.dense.mobility = {{630.f, -24.f}, {1000.f, -24.f}, {1500.f, -20.f}, {2400.f, -16.f},
-	                    {3000.f, -18.f}, {5000.f, -30.f}, {10000.f, -41.f}};
-	// WHICH VIOLIN: of the first four hundred ways of scattering the upper modes, the one whose
-	// bands come closest to Bissinger's average, within a decibel in the median and 2.6 at worst.
-	// Any one real violin is further from the average than that.
-	d.dense.seed = 44u;
-	d.bridge.hz = 0.f;
-	return d;
-}
-
-/** THE CELLO'S, PROVISIONAL. What is measured: the air mode near 97 Hz, the strongest body mode at
-175 Hz with Q 18 and a mobility of 0.056 m/(s N), the one that makes the wolf (Zhang and
-Woodhouse 2014), and peaks at 140, 200, 209 and 281 Hz. What is not: any measured radiativity, the
-damping of all but the wolf mode, and the density of the upper modes, here two and a half times the
-violin's for a body about twice its size. Their levels are judgement — the upper modes shaped as
-the measured mobility is, times a radiation efficiency that rises up to about 1.5 kHz — to be
-settled by ear. The two bridge hills, near 1 and 2 kHz, are in the mobility's shape. */
-static BowedBody::Design celloBody() {
-	BowedBody::Design d;
-	auto mode = [](float hz, float q, float mobility, float radiativity) {
-		BowedBody::Mode m;
-		m.hz = hz;
-		m.q = q;
-		m.mobility = mobility;
-		m.radiativity = radiativity;
-		return m;
-	};
-	d.modes = {mode(97.f, 20.f, 0.01f, 0.50f),        // A0
-	           mode(140.f, 30.f, 0.03f, 0.71f),       // B1-
-	           mode(175.f, 18.f, 0.056f, 1.0f),       // the wolf's mode
-	           mode(200.f, 30.f, 0.02f, 0.50f),
-	           mode(209.f, 30.f, 0.02f, 0.40f),
-	           mode(281.f, 30.f, 0.015f, 0.40f)};
-	d.dense.fromHz = 320.f;
-	d.dense.toHz = 8000.f;
-	d.dense.perHz = 0.05f;
-	d.dense.loss = 0.025f;
-	d.dense.radiativity = {{320.f, -16.f}, {600.f, -12.f}, {1000.f, -8.f}, {2000.f, -8.f},
-	                       {4000.f, -20.f}, {8000.f, -32.f}};
-	d.dense.mobility = {{320.f, -28.f}, {430.f, -28.f}, {1000.f, -28.f}, {2000.f, -30.f},
-	                    {4000.f, -44.f}, {8000.f, -55.f}};
-	d.dense.seed = 2207u;
-	d.bridge.hz = 0.f;
-	return d;
-}
+/** THE INSTRUMENTS' BODIES live with the instruments, in src/BowedInstrument.cpp, with where every
+figure in them came from. */
+static BowedBody::Design violinBody() { return BowedInstrument::violin().voice; }
+static BowedBody::Design celloBody() { return BowedInstrument::cello().voice; }
 
 
 // ---- A NOTE, PLAYED ----------------------------------------------------------------------------

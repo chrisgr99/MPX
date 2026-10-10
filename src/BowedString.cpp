@@ -21,6 +21,9 @@ takes the rest of the fundamental's loss, which puts its resistance at about 350
 impedance on a cello's open strings, where measurements put it at 340 to 390. A finger stopping
 the string loses more, which is for the instrument to set. */
 static const float NUT_REFLECT = 0.9995f;
+/** And a finger's: Q 281 stopped against 410 open on a violin's D, an amplitude a period of
+1 - pi/281 against 1 - pi/410, the finger the difference. */
+static const float FINGER_REFLECT = 0.9965f;
 
 
 BowedString::BowedString() {}
@@ -73,6 +76,14 @@ void BowedString::setStiffness(float amount) {
 	amount = std::fmax(0.f, std::fmin(1.5f, amount));
 	if (amount != stiffness) {
 		stiffness = amount;
+		dirty = true;
+	}
+}
+
+
+void BowedString::setStopped(bool on) {
+	if (on != stopped) {
+		stopped = on;
 		dirty = true;
 	}
 }
@@ -279,7 +290,7 @@ void BowedString::tune() {
 		const float disc = std::fmax(0.f, qb * qb - 4.f * qa * qc);
 		return std::fmax(0.f, std::fmin(0.99999f, (-qb + std::sqrt(disc)) / (2.f * qa)));
 	};
-	nutReflect = lossless ? 1.f : NUT_REFLECT;
+	nutReflect = lossless ? 1.f : (stopped ? FINGER_REFLECT : NUT_REFLECT);
 	float nutDelay = 0.f;
 	const float nutGain = through(nutReflect, &nutDelay);
 	const float perPass = std::pow(0.001f, 1.f / (decay * freq));
@@ -732,21 +743,38 @@ THE BOW JUNCTION. What arrives from one side leaves towards the other, as it wou
 touching the string, plus whatever velocity the bow's friction adds, the same to both. See
 bowJunction. */
 float BowedString::process() {
+	pushOnStillBridge();
+	return finishWithBridge(0.f);
+}
+
+
+float BowedString::pushOnStillBridge() {
 	if (dirty)
 		tune();
-
-	const float arrivingAtBridge = read(bowToBridge, toBridgeDelay);
-	const float arrivingAtNut = read(bowToNut, toNutDelay);
-	const float fromBridge = read(bridgeToBow, toBridgeDelay);
-	const float fromNut = read(nutToBow, toNutDelay);
-	atBridge = arrivingAtBridge;
-
-	// THE BRIDGE: the bridge side's share of the string's loss, the round trip's gain, the same at
-	// every frequency, and the sign change a reflection from a near-rigid end makes.
-	const float lossyB = (1.f - lossSB) * arrivingAtBridge + lossSB * lastOutB;
+	pArrivingBridge = read(bowToBridge, toBridgeDelay);
+	pArrivingNut = read(bowToNut, toNutDelay);
+	pFromBridge = read(bridgeToBow, toBridgeDelay);
+	pFromNut = read(nutToBow, toNutDelay);
+	// THE BRIDGE, STANDING STILL: the bridge side's share of the string's loss, the round trip's
+	// gain, the same at every frequency, and the sign change a reflection from a near-rigid end
+	// makes. A bridge that moves adds its own velocity to what goes back down; see the second half.
+	const float lossyB = (1.f - lossSB) * pArrivingBridge + lossSB * lastOutB;
 	lastOutB = lossyB;
 	bridgeLow += (1.f - lowPole) * (lossyB - bridgeLow);
-	bridgeToBow[write] = -(gain * lossyB + (1.f - gain) * bridgeLow);
+	pReflect = -(gain * lossyB + (1.f - gain) * bridgeLow);
+	return z * (pArrivingBridge - pReflect);
+}
+
+
+float BowedString::finishWithBridge(float bridgeVelocity) {
+	const float arrivingAtBridge = pArrivingBridge;
+	const float arrivingAtNut = pArrivingNut;
+	const float fromBridge = pFromBridge;
+	const float fromNut = pFromNut;
+	atBridge = arrivingAtBridge;
+	// The string's end moves with the bridge: what goes back down is the reflection plus the
+	// bridge's own velocity, and the string pushes on the bridge the less for it.
+	bridgeToBow[write] = pReflect + bridgeVelocity;
 	atBridgeForce = z * (arrivingAtBridge - bridgeToBow[write]);
 
 	// THE NUT: the rest of the string's loss, the stiffness allpasses, and the reflection.

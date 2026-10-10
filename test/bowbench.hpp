@@ -533,70 +533,99 @@ the force, and they started harshly.
 
 WHERE NOTHING TURNS REGULAR WITHIN THREE PERIODS, A LITTLE NEARER THE BRIDGE OR FURTHER FROM IT: the
 search again at 0.7, 0.85, 1.2 and 1.4 of the planned bow position, more finely — thirteen forces
-to eight times the note's, forty accelerations — and the soonest attack found anywhere, the
-smoothest of the soonest, played where it was found. Settled by ear on the cello's open C, whose
+to eight times the note's, forty accelerations — and the smoothest of the attacks found anywhere
+that turn regular within three periods, played where it was found. Settled by ear on the cello's open C, whose
 clean starts are so few that at a tenth of the length the best took five periods, about 76 ms;
 at 0.085 one starts at once, and sounded best. At the current RATE, which the caller sets. */
+static inline std::vector<Rehearsed> rehearseShortlist(const BowedString& model, double hz, float beta,
+                                                       float force, float speed);
+
+/** THE PLAYER'S CHOICE: the first of its shortlist. */
+static inline Rehearsed rehearseAttackOn(const BowedString& model, double hz, float beta, float force,
+                                         float speed) {
+	const std::vector<Rehearsed> list = rehearseShortlist(model, hz, beta, force, speed);
+	return list.empty() ? Rehearsed() : list.front();
+}
+
 static inline Rehearsed rehearseAttack(double hz, float impedance, float beta, float force, float speed) {
-	const double z = impedance > 0.f ? impedance : impedanceOf((float) hz);
+	return rehearseAttackOn(cello((float) hz, beta, impedance), hz, beta, force, speed);
+}
+
+/** EVERY ATTACK IT TRIED, BEST FIRST, on a copy of `model`, tuned, stopped and weighted as it will be
+played. The smoothest of those that turn regular within five periods lead, if the best of them is
+regular within three; otherwise the second search, at four other bow positions, runs, and the
+smoothest of its attacks regular within three periods lead. Then the rest by how soon they turned
+regular. A player in an instrument plays the first of these that starts cleanly there, since a
+string on a bridge that moves does not start quite as it does alone. */
+static inline std::vector<Rehearsed> rehearseShortlist(const BowedString& model, double hz, float beta,
+                                                       float force, float speed) {
+	const double z = model.impedance();
 	const double zBow = z * 3.27 / 4.27, T = 1.0 / hz;
-	Rehearsed smoothest, quickest;
+	std::vector<Rehearsed> first, second;
+	int soonest = -1;
+	auto tryOne = [&](float b2, double bite, float a, std::vector<Rehearsed>* into) {
+		BowedString s = model;
+		s.setContact(b2);
+		std::vector<float> bridge;
+		const Attack r = attack(s, (float) (force * bite), a, hz, 20, &bridge, speed);
+		if (r.periodsBefore < 0)
+			return;
+		Rehearsed c;
+		c.beta = b2;
+		c.bite = bite;
+		c.accel = a;
+		c.periods = r.periodsBefore;
+		c.roughness = startRoughness(bridge, r.firstSlip);
+		into->push_back(c);
+	};
 	for (int b = 0; b < 7; b++)
 		for (int k = 0; k < 24; k++) {
 			const double bite = std::pow(4.0, b / 6.0);
 			const double kk = 0.004 * std::pow(30.0, k / 23.0);
-			const float a = (float) (kk * beta * (1.0 - beta) * force * bite / (T * zBow));
-			BowedString s = cello((float) hz, beta, impedance);
-			std::vector<float> bridge;
-			const Attack r = attack(s, (float) (force * bite), a, hz, 20, &bridge, speed);
-			if (r.periodsBefore < 0)
-				continue;
-			const double rough = startRoughness(bridge, r.firstSlip);
-			if (quickest.periods < 0 || r.periodsBefore < quickest.periods) {
-				quickest.bite = bite;
-				quickest.accel = a;
-				quickest.periods = r.periodsBefore;
-				quickest.roughness = rough;
-			}
-			if (r.periodsBefore <= 5 && (smoothest.periods < 0 || rough < smoothest.roughness)) {
-				smoothest.bite = bite;
-				smoothest.accel = a;
-				smoothest.periods = r.periodsBefore;
-				smoothest.roughness = rough;
-			}
+			tryOne(beta, bite, (float) (kk * beta * (1.0 - beta) * force * bite / (T * zBow)), &first);
 		}
-	Rehearsed best = smoothest.periods >= 0 ? smoothest : quickest;
-	best.beta = beta;
-	const int soonest = quickest.periods;
-	if (best.periods < 0 || best.periods > 3) {
-		Rehearsed moved;
+	for (const Rehearsed& c : first)
+		if (soonest < 0 || c.periods < soonest)
+			soonest = c.periods;
+	// Within a limit, smoothest first; beyond it, soonest first.
+	auto rank = [](std::vector<Rehearsed>& v, int limit) {
+		std::stable_sort(v.begin(), v.end(), [limit](const Rehearsed& x, const Rehearsed& y) {
+			const bool xi = x.periods <= limit, yi = y.periods <= limit;
+			if (xi != yi)
+				return xi;
+			if (xi)
+				return x.roughness < y.roughness;
+			return x.periods != y.periods ? x.periods < y.periods : x.roughness < y.roughness;
+		});
+	};
+	rank(first, 5);
+	std::vector<Rehearsed> out;
+	if (!first.empty() && first.front().periods <= 3)
+		out = first;
+	else {
 		for (float shift : {0.85f, 1.2f, 0.7f, 1.4f}) {
 			const float b2 = beta * shift;
 			for (int b = 0; b < 13; b++)
 				for (int k = 0; k < 40; k++) {
 					const double bite = std::pow(8.0, b / 12.0);
 					const double kk = 0.002 * std::pow(100.0, k / 39.0);
-					const float a = (float) (kk * b2 * (1.0 - b2) * force * bite / (T * zBow));
-					BowedString s = cello((float) hz, b2, impedance);
-					std::vector<float> bridge;
-					const Attack r = attack(s, (float) (force * bite), a, hz, 20, &bridge, speed);
-					if (r.periodsBefore < 0)
-						continue;
-					const double rough = startRoughness(bridge, r.firstSlip);
-					if (moved.periods < 0 || r.periodsBefore < moved.periods
-							|| (r.periodsBefore == moved.periods && rough < moved.roughness)) {
-						moved.beta = b2;
-						moved.bite = bite;
-						moved.accel = a;
-						moved.periods = r.periodsBefore;
-						moved.roughness = rough;
-					}
+					tryOne(b2, bite, (float) (kk * b2 * (1.0 - b2) * force * bite / (T * zBow)), &second);
 				}
 		}
-		if (moved.periods >= 0 && (best.periods < 0 || moved.periods < best.periods))
-			best = moved;
+		rank(second, 3);
+		for (const Rehearsed& c : second)
+			if (c.periods <= 3)
+				out.push_back(c);
+		for (const Rehearsed& c : first)
+			out.push_back(c);
+		for (const Rehearsed& c : second)
+			if (c.periods > 3)
+				out.push_back(c);
+		rank(out, 3);
+		// Keep the smoothest-within-three at the front, as ranked; nothing else needs moving.
 	}
-	best.soonest = soonest;
-	return best;
+	for (Rehearsed& c : out)
+		c.soonest = soonest;
+	return out;
 }
 
