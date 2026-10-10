@@ -144,15 +144,13 @@ When every voice is in use the quietest is taken, since a piano's notes decay an
 
 A voice is therefore passed over for its first fifty milliseconds, unless every voice in the pool is that new and something has to go.
 
-### An ornament the writer has already written out
+### Notes not on the page
 
-Scores say the same ornament twice. The visible note carries the sign, for the reader, and a voice of its own carries the notes it stands for, marked not to print, for the player. **183 of the 203 ornaments in the scores in use are engraved that way**, so playing both is not an edge case — it was happening to nine ornaments in ten.
+Scores carry notes nobody can see: marked not to print, or printed with no head. An engraver writes them for another program's playback — a copy of a printed note starting a sixteenth late so it sounds after a rolled chord, as in bar 7 of Chopin's first Ballade, or the notes an ornament stands for, spelled out at the speed that program could not manage itself. **They are not read.** What is played is what a pianist reads, and every ornament is played from what its sign means. See `guitar-pro.md`.
 
-Theirs wins. They chose the speed, where this would have used its own fixed figure, and `GpTimeline.cpp` drops the sign's realisation when it finds one.
+Of the Ballade's 85 hidden notes, 80 are copies of printed notes and the other 5 spell out printed ornaments, and none says anything the page does not. Played, the copies strike keys the printed notes are already holding down: bar 7's melody note would sound on the beat and again a sixteenth later, heard as a melody note arriving late.
 
-**What proves it is a realisation is the neighbour.** Hidden notes are written for all sorts of reasons — a tie across a system, a voice that should sound and not show — so one merely falling inside an ornamented note is no evidence. What every mordent, trill and turn contains is the step above or below, and a hidden note a semitone or a tone away inside the span of an ornamented note is not there by accident.
-
-**The written note is then cut back to where theirs begins**, which is what makes one rule cover the two ways engravers do it. In bar 44 of the Tempest the hidden voice holds only the upper note and the resolution, and the visible note is itself the first note of the figure: it has to stop when the hidden G arrives rather than ring on for its full written eighth. In bar 43 the hidden voice holds all three and starts on the same instant, so the cut takes the written note to nothing and it goes.
+**The engraver's spelling-out is still the check.** Where a score spells an ornament out in hidden notes, those notes say which neighbour the printed edition meant. Across the scores in use, the neighbour chosen from the sign alone agrees with theirs in 133 of 139 cases. Of the six that do not, three are the note below a trill, which a trill here does not use, and three are turns in the Nocturne and the Pathétique where the printed edition raises or lowers a neighbour with a small accidental that the file does not carry.
 
 ### Rolled chords
 
@@ -235,6 +233,8 @@ For what is adjusted while playing.
 - **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full 18.5 decibels from ppp to fff, and 0.7 gives thirteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
 - **Pedalling**: how the piano pedals a passage its score does not mark, from off through a lift every beat, every half bar, every bar, every two bars, to held down. See below.
+- **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.
+
 ### As recorded
 
 A right-click item, first in the menu: **As recorded: no level shaping, no tone filter.** It plays the recordings as the set's own SFZ asks for them and nothing else, so that when the piano sounds wrong beside another instrument it can be told whether the fault is in the samples or in what is done to them.
@@ -244,8 +244,6 @@ With it on, the velocity picks the layer and the amplitude follows the velocity 
 The velocity is the straight one, one plus 126 times the level, whatever the velocity curve menu says. That is what a MIDI instrument receives from mpxOut's level output, so with this on, the piano and an instrument fed from mpxOut on the same score are being sent the same notes, at the same velocities, at the same moments.
 
 It is a check and not a way to play. Quiet passages come out very much quieter than the module normally plays them, because nothing lifts them: the SFZ's own pianissimo is about twenty decibels under its own forte.
-
-- **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.
 
 ### Jacks
 

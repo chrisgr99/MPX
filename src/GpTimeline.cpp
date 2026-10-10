@@ -616,82 +616,27 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 	// the same reason a rolled chord becomes an order of notes rather than a flag.
 	//
 	// A STEP IN THE KEY, not a tone and not a semitone. The Nocturne's trill is on F in E flat
-	// major, where the step above is G; in another key the same F trills to F sharp. The key
-	// signature gives seven notes and the neighbour is the next of them either way.
+	// major, where the step above is G; in another key the same F trills to F sharp. A MusicXML
+	// file spells it outright — the next letter name, with the bar's accidentals and any sharp,
+	// flat or natural printed on the ornament — and the reader works it out there. A Guitar Pro
+	// file spells nothing, and the key signature gives seven notes to take the next of.
+	//
+	// ONLY THE SIGN, NEVER A HIDDEN SPELLING-OUT OF IT. Notes not on the page are not read at all
+	// (see MusicXML.cpp), so every ornament is played from what the sign means.
 	//
 	// A TRILL LASTS THE WHOLE NOTE and starts and ends on the written one, so its count of
 	// alternations is odd. The short ornaments are a flick at the start and then the note itself:
 	// a mordent is main, below, main; an inverted mordent — which is what a short trill is
-	// written as — is main, above, main; a turn is above, main, below, main.
+	// written as — is main, above, main; a turn is above, main, below, main, and an inverted
+	// turn below, main, above, main.
 	for (size_t t = 0; t < out.tracks.size(); t++) {
 		std::vector<GpPlayedNote>& played = out.tracks[t];
 		std::vector<GpPlayedNote> grown;
 		bool any = false;
 		for (size_t i = 0; i < played.size(); i++) {
 			const GpPlayedNote& n = played[i];
-			const bool quick = n.note.mordent || n.note.invertedMordent || n.note.turn;
-
-			// AN ORNAMENT THE WRITER HAS ALREADY WRITTEN OUT IS NOT PLAYED TWICE.
-			//
-			// A SIGN FOR THE READER AND THE NOTES FOR THE PLAYER. An engraver who wants an
-			// ornament to sound a particular way puts the sign on the visible note and the
-			// notes it stands for in a voice of their own, marked not to print — so the file
-			// says the same thing twice and only one of them is to be heard. Beethoven's
-			// seventeenth sonata is engraved this way throughout bars 43 to 49, and playing
-			// both struck the same key four times inside a seventh of a second.
-			//
-			// THEIRS WINS. They chose the speed — here two sixty-fourths and a dotted eighth,
-			// where this would have used its own fixed figure.
-			//
-			// AND THE WRITTEN NOTE IS CUT BACK TO WHERE THEIRS BEGINS, which is what makes one
-			// rule cover the two ways they do it. In bar 44 the hidden voice holds only the
-			// upper note and the resolution, and the visible note is itself the first note of
-			// the figure: it has to stop when the hidden G arrives rather than ring through it
-			// for its full written eighth. In bar 43 the hidden voice holds all three and
-			// starts on the same instant, so cutting the written note back to where theirs
-			// begins cuts it to nothing, and it goes.
-			if ((n.note.trill || quick) && !n.note.hidden && n.note.midi > 0) {
-				// THE NEIGHBOUR IS WHAT PROVES IT IS A REALISATION. Hidden notes are common and
-				// are written for all sorts of reasons — a tie across a system, a voice that
-				// should sound and not show — so a hidden note merely falling inside this one
-				// is no evidence at all. What every mordent, trill and turn contains is the
-				// step above or below, and a hidden note a semitone or a tone away inside the
-				// span of an ornamented note is not there by accident.
-				bool realised = false;
-				double startsAt = -1.0;
-				for (size_t j = 0; j < played.size(); j++) {
-					const GpPlayedNote& other = played[j];
-					if (!other.note.hidden)
-						continue;
-					if (other.startSeconds < n.startSeconds - 0.002
-							|| other.startSeconds >= n.startSeconds + n.lengthSeconds)
-						continue;
-					const int step = std::abs(other.note.midi - n.note.midi);
-					if (step == 1 || step == 2)
-						realised = true;
-					// THE CUT IS TO THE FIRST OF THEM, whichever note of the figure it is: the
-					// main note again where they wrote the whole thing out, the neighbour where
-					// they left the written note to be its first note.
-					if (step <= 12 && (startsAt < 0.0 || other.startSeconds < startsAt))
-						startsAt = other.startSeconds;
-				}
-				if (realised && startsAt >= 0.0) {
-					any = true;
-					const double room = startsAt - n.startSeconds;
-					if (room > 0.002) {
-						GpPlayedNote cut = n;
-						// THE SIGN GOES WITH THE REALISATION, so nothing downstream reads it
-						// and plays the ornament a third time.
-						cut.note.trill = cut.note.mordent = false;
-						cut.note.invertedMordent = cut.note.turn = false;
-						const double was = (n.lengthSeconds > 0.0) ? n.lengthSeconds : 1.0;
-						cut.lengthQuarters = (float) (n.lengthQuarters * (room / was));
-						cut.lengthSeconds = room;
-						grown.push_back(cut);
-					}
-					continue;
-				}
-			}
+			const bool quick = n.note.mordent || n.note.invertedMordent || n.note.turn
+				|| n.note.invertedTurn;
 
 			if ((!n.note.trill && !quick) || n.note.midi <= 0
 					|| n.lengthSeconds < 2.0 * TRILL_SECONDS) {
@@ -709,7 +654,11 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			}
 			const int tonic = ((fifths * 7) % 12 + 12) % 12;
 			static const int MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};
-			int above = n.note.midi + 1, below = n.note.midi - 1;
+			// THE NEAREST NOTE OF THE KEY each way, a semitone first. It used to start from the
+			// semitone as a placeholder and could not tell it from a semitone found, so a key
+			// note a semitone away was passed over for the one beyond: E to F in B flat trilled
+			// to G, and B to C in C major would have trilled to D.
+			int above = -1, below = -1;
 			for (int step = 1; step <= 3; step++) {
 				bool up = false, down = false;
 				const int pu = ((n.note.midi + step) % 12 + 12) % 12;
@@ -718,11 +667,22 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					if (pu == (tonic + MAJOR[d]) % 12) up = true;
 					if (pd == (tonic + MAJOR[d]) % 12) down = true;
 				}
-				if (up && above == n.note.midi + 1 && step > 0 && above <= n.note.midi + step)
+				if (up && above < 0)
 					above = n.note.midi + step;
-				if (down && below == n.note.midi - 1 && step > 0 && below >= n.note.midi - step)
+				if (down && below < 0)
 					below = n.note.midi - step;
 			}
+			if (above < 0)
+				above = n.note.midi + 2;
+			if (below < 0)
+				below = n.note.midi - 2;
+			// AS SPELLED, WHERE THE FILE SPELLS IT, which a MusicXML file does: the next letter
+			// name each way, with the bar's accidentals and any printed on the ornament. The key
+			// alone above is all a Guitar Pro file gives. See GpNote::upper.
+			if (n.note.upper >= 0)
+				above = n.note.upper;
+			if (n.note.lower >= 0)
+				below = n.note.lower;
 			// THE NOTES THE SIGN STANDS FOR, and how many of them are the ornament rather than
 			// the note it is on.
 			// A TRILL ENDS WHERE ITS TERMINATION BEGINS.
@@ -788,6 +748,11 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 				pitches[2] = below; pitches[3] = n.note.midi;
 				count = 4;
 			}
+			else if (n.note.invertedTurn) {
+				pitches[0] = below; pitches[1] = n.note.midi;
+				pitches[2] = above; pitches[3] = n.note.midi;
+				count = 4;
+			}
 			else {
 				pitches[0] = n.note.midi;
 				pitches[1] = n.note.invertedMordent ? above : below;
@@ -822,6 +787,7 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			for (int k = 0; k < count; k++) {
 				GpPlayedNote one = n;
 				one.note.mordent = one.note.invertedMordent = one.note.turn = false;
+				one.note.invertedTurn = false;
 				one.note.midi = pitches[k];
 				one.note.tied = false;
 				one.startSeconds = n.startSeconds + at;
@@ -834,6 +800,7 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			// AND THE REST OF THE NOTE, which is what the ornament was an ornament of.
 			GpPlayedNote rest = n;
 			rest.note.mordent = rest.note.invertedMordent = rest.note.turn = false;
+			rest.note.invertedTurn = false;
 			rest.note.tied = false;
 			rest.startSeconds = n.startSeconds + at;
 			rest.lengthSeconds = n.lengthSeconds - at;

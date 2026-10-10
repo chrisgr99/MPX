@@ -156,9 +156,18 @@ A later phase draws one chosen track as written music, as mpxChart draws a chart
 
 The notes, with everything the file said about how they are played: the string and the fret, and flags for hammer-ons and pull-offs, legato and shift slides, slides into and out of a note, let ring, palm mute, dead notes, ghost notes, accents, harmonics, tapping, staccato and tremolo picking; the vibrato; the grace notes; which way a chord was brushed and where in the stroke each note falls; and the bend as up to four points of offset and cents.
 
-**Ornaments are written out as the notes they stand for.** A trill is the written note and the one a step above it in the key, alternating for the note's whole length, starting and ending on the written note; a mordent is main, below, main; an inverted mordent — which is what a short trill is written as — is main, above, main; a turn is above, main, below, main. The short ones are a flick at the start and then the note itself, never taking more than half of it.
+**Ornaments are written out as the notes they stand for**, in the score module's timeline, so what goes down the cable is notes and every instrument plays the ornament without knowing what the sign means. A trill is the written note and the one a step above it, alternating for the note's whole length, starting and ending on the written note; a mordent is main, below, main; an inverted mordent — which is what a short trill is written as — is main, above, main; a turn is above, main, below, main, and an inverted turn below, main, above, main. The short ones are a flick at the start and then the note itself, never taking more than half of it. The speed is a time and not a fraction of the note, about a dozen a second, because an ornament is fingers rather than tempo.
 
-A step in the key, not a tone and not a semitone: the Nocturne's trill is on F in E flat major, where the step above is G; in another key the same F trills to F sharp. The key signature names seven notes and the neighbour is the next of them either way. The speed is a time and not a fraction of the note, about a dozen a second, because an ornament is fingers rather than tempo.
+**Only the sign is played.** Notes not on the page — marked not to print, or printed with no head — are not read at all, including an engraver's own spelling-out of an ornament. See `piano.md`.
+
+**The neighbour is the next letter name, spelled.** A MusicXML file spells every note, so the note above an F is a G of some kind, and which kind is decided in this order:
+
+- A sharp, flat or natural printed on the ornament itself.
+- An accidental on that letter, in that octave, earlier in the same bar — taken only where it makes a semitone or a tone with the written note. A turn on G sharp after an F natural in the Tempest's first movement would otherwise go down an augmented second.
+- The music around it: however that letter is most often written from the bar before to the bar after, within an octave of the ornament, counting only spellings that make a step. Chopin's first Ballade keeps two flats throughout and writes its A major passage with accidentals, so an inverted mordent on F sharp in bar 119 goes to G sharp, as the passage does, and not to the key signature's G.
+- The key signature, where none of those decides.
+
+A Guitar Pro file spells nothing, so there the neighbour is the nearest note of the key a semitone or a tone away: E in B flat major trills to F.
 
 A wavy line is a trill too, where it STARTS one. The line is drawn as a pair, a start on the note the trill is on and a stop where it ends, and taking either for a trill put one on the note that merely ended it — bar 7 of the Nocturne carries a stop whose start is nowhere in the file, and a trill appeared there that nobody had written.
 

@@ -71,18 +71,23 @@ struct GpNote {
 	bool mordent = false;          /**< Main, the note below, main. */
 	bool invertedMordent = false;  /**< Main, the note above, main — a short trill. */
 	bool turn = false;             /**< Above, main, below, main. */
+	bool invertedTurn = false;     /**< Below, main, above, main. */
+	/** THE NOTES AN ORNAMENT ON THIS ONE GOES TO, as MIDI notes, or -1 where the file did not
+	spell them. The next letter name above and below, sharpened or flattened by an accidental
+	printed on the ornament, one earlier in the bar, or the music around it — all of which a
+	MusicXML file spells and none of which a MIDI number knows. See MusicXML.cpp. A Guitar Pro
+	file spells nothing, and the timeline falls back to the key. */
+	int upper = -1;
+	int lower = -1;
+	/** AS THE FILE SPELLS IT: the letter name from C as nought, and the octave. -1 where nothing
+	is spelled, as in a Guitar Pro file. */
+	int8_t letter = -1;
+	int8_t octave = 0;
 	/** A GRACE NOTE LEADING INTO THIS ONE: nought for none, 1 played before the beat, 2 taking
 	time from it. `graceFret` is where it is fingered, on this note's own string. */
 	uint8_t grace = 0;
 	int graceFret = -1;
 	bool vibrato = false;
-	/** NOT PRINTED: a note that exists for the sound and not for the eye.
-
-	An engraver who wants an ornament to play a particular way writes the sign for the reader and
-	the notes it stands for in a voice of their own, marked not to print. Both are in the file and
-	only one of them is to be heard — see the ornament pass in GpTimeline.cpp, which drops the
-	sign's own realisation when the writer has supplied one. */
-	bool hidden = false;
 	/** A BEND, as points through the note's length: position from nought to one, height in
 	CENTS. The two families of file count both of those in units of their own, and neither is
 	cents; they are converted on the way in, so everything downstream reads one unit. Empty for

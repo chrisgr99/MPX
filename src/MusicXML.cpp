@@ -347,6 +347,156 @@ struct Building {
 };
 
 
+/** A NOTE AS IT IS SPELLED IN A BAR: where it falls, its letter from C as nought, its octave, and
+how far it is sharpened or flattened. An accidental holds for that letter in that octave from the
+note it is on to the bar line, so these are what an ornament's neighbour is looked up in. */
+struct Spelled {
+	long at;
+	int letter;
+	int octave;
+	int alter;
+};
+
+/** A NOTE CARRYING AN ORNAMENT, waiting for the end of its bar. Where it is, how it is spelled,
+and any sharp, flat or natural printed on the ornament above it and below it. */
+struct Ornamented {
+	int voice;
+	size_t beat;
+	size_t note;
+	Spelled spelled;
+	int markAbove;
+	int markBelow;
+};
+
+/** No accidental printed on the ornament. */
+static const int NO_MARK = 99;
+
+static int letterOf(const std::string& step) {
+	static const char* STEPS = "CDEFGAB";
+	const char* at = step.empty() ? NULL : std::strchr(STEPS, step[0]);
+	return at ? (int) (at - STEPS) : 0;
+}
+
+/** WHAT THE KEY SIGNATURE DOES TO A LETTER: sharps go on in the order F C G D A E B, flats in
+the reverse. */
+static int keyAlter(int letter, int fifths) {
+	static const int SHARPS[7] = {3, 0, 4, 1, 5, 2, 6};
+	static const int FLATS[7] = {6, 2, 5, 1, 4, 0, 3};
+	for (int i = 0; i < std::min(7, std::abs(fifths)); i++) {
+		if ((fifths > 0 ? SHARPS[i] : FLATS[i]) == letter)
+			return fifths > 0 ? 1 : -1;
+	}
+	return 0;
+}
+
+/** An accidental printed on an ornament, as MusicXML names it, or NO_MARK. */
+static int alterOfMark(const std::string& said) {
+	if (said == "sharp" || said == "natural-sharp") return 1;
+	if (said == "flat" || said == "natural-flat") return -1;
+	if (said == "natural") return 0;
+	if (said == "double-sharp" || said == "sharp-sharp") return 2;
+	if (said == "flat-flat") return -2;
+	return NO_MARK;
+}
+
+static const int LETTER_SEMITONES[7] = {0, 2, 4, 5, 7, 9, 11};
+
+/** The next letter name `way` of a written one, one up or one down, and the octave it is in. */
+static void stepLetter(int letter, int octave, int way, int& toLetter, int& toOctave) {
+	toLetter = letter + way;
+	toOctave = octave;
+	if (toLetter > 6) {
+		toLetter = 0;
+		toOctave++;
+	}
+	else if (toLetter < 0) {
+		toLetter = 6;
+		toOctave--;
+	}
+}
+
+/** THE NOTE AN ORNAMENT GOES TO, WHERE THE BAR SETTLES IT: the next letter name `way` of the
+written one, sharpened or flattened by what is printed on the ornament, or else by the last
+accidental on that letter and octave earlier in the bar — the two things the page makes binding.
+-1 where neither is there, and the music around it decides: see neighbourInContext.
+
+AN ACCIDENTAL EARLIER IN THE BAR IS TAKEN ONLY WHERE IT MAKES A STEP. In the Tempest's first
+movement a turn on G sharp follows an F natural in the same bar, and taking it put the turn's
+lower note an augmented second down. The engraver's own spelling-out of it goes to F sharp, a
+tone, which is what the music around it gives. A sign printed on the ornament is taken as it is. */
+static int neighbourOf(const Spelled& note, int way, int mark, const std::vector<Spelled>& bar) {
+	int letter, octave;
+	stepLetter(note.letter, note.octave, way, letter, octave);
+	const int natural = (octave + 1) * 12 + LETTER_SEMITONES[letter];
+	if (mark != NO_MARK)
+		return natural + mark;
+	const int written = (note.octave + 1) * 12 + LETTER_SEMITONES[note.letter] + note.alter;
+	int alter = NO_MARK;
+	long latest = -1;
+	for (const Spelled& s : bar) {
+		if (s.letter == letter && s.octave == octave && s.at <= note.at && s.at >= latest) {
+			latest = s.at;
+			alter = s.alter;
+		}
+	}
+	if (alter == NO_MARK)
+		return -1;
+	const int step = (natural + alter - written) * way;
+	return (step == 1 || step == 2) ? natural + alter : -1;
+}
+
+/** THE NOTE AN ORNAMENT GOES TO, FROM THE MUSIC AROUND IT, where the bar did not settle it.
+
+THE KEY SIGNATURE IS NOT ALWAYS THE KEY. A passage that modulates is often written with
+accidentals rather than a new signature: Chopin's first Ballade keeps its two flats for the whole
+piece, and the passage from bar 106 is in A major spelled out sharp by sharp. Its bar 119 has an
+inverted mordent on F sharp with no G written before it in the bar, and read strictly the mordent
+goes to G natural — which no pianist plays in A major, and which the engraver's own spelling-out
+of it did not either. So the letter is spelled as the music around it spells it: whichever way it
+is written most often from the bar before to the bar after. The key signature decides only where
+that is a tie or the letter is not written at all.
+
+IN THE SAME REGISTER, AND A STEP. Counted within an octave of the ornament, since a left hand's
+leading notes two octaves down say nothing about the melody's neighbour — the Tempest's finale
+has G sharps all through its bass under an inverted mordent on F, which goes to G. And only a
+spelling that makes a semitone or a tone with the written note is taken: an ornament is a step,
+and F to G sharp is an augmented second, which none is. */
+static int neighbourInContext(int letter, int octave, int midi, int way, size_t bar, int fifths,
+		const std::vector<std::vector<Spelled> >& bars) {
+	int toLetter, toOctave;
+	stepLetter(letter, octave, way, toLetter, toOctave);
+	const int natural = (toOctave + 1) * 12 + LETTER_SEMITONES[toLetter];
+	auto isStep = [&](int alter) {
+		const int step = (natural + alter - midi) * way;
+		return step == 1 || step == 2;
+	};
+	std::map<int, int> count;
+	for (size_t b = (bar > 0 ? bar - 1 : 0); b <= bar + 1 && b < bars.size(); b++)
+		for (const Spelled& s : bars[b])
+			if (s.letter == toLetter && std::abs(s.octave - toOctave) <= 1 && isStep(s.alter))
+				count[s.alter]++;
+	const int key = keyAlter(toLetter, fifths);
+	int alter = key, most = 0;
+	for (std::map<int, int>::const_iterator it = count.begin(); it != count.end(); ++it) {
+		if (it->second > most || (it->second == most && it->first == key)) {
+			most = it->second;
+			alter = it->first;
+		}
+	}
+	// Nothing written to go by, and the key's own spelling not a step from a chromatic note:
+	// the nearest spelling of the letter that is one.
+	if (most == 0 && !isStep(alter)) {
+		static const int TRY[4] = {0, -1, 1, 2};
+		for (int t = 0; t < 4; t++)
+			if (isStep(TRY[t])) {
+				alter = TRY[t];
+				break;
+			}
+	}
+	return natural + alter;
+}
+
+
 /** THE JUMP MARKS, as MusicXML writes them and as the model names them.
 
 MusicXML says what a direction SOUNDS like — a `sound` element with dacapo or dalsegno set — and
@@ -505,6 +655,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 		// WHETHER THE OPEN PEDAL BRACKET IS THE MIDDLE PEDAL'S, since the mark that closes it
 		// does not say which pedal it releases.
 		bool sostenutoOpen = false;
+		// EVERY BAR'S SPELLINGS, for the ornaments the bar itself does not settle. See
+		// neighbourInContext.
+		std::vector<std::vector<Spelled> > spelledByBar;
 
 		for (pugi::xml_node measure = part.child("measure"); measure;
 				measure = measure.next_sibling("measure"), barNumber++) {
@@ -553,6 +706,11 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 			/** The key the last note was filed under, so a chord note joins the same beat even
 			where that key is not the position — which an ornament's is not. */
 			long lastKey = 0;
+			/** Every note's spelling in this bar, and the notes with an ornament on them, whose
+			neighbours are worked out once the bar is read: the voices come one after another, so
+			an accidental earlier in time can come later in the file. See neighbourOf. */
+			std::vector<Spelled> spelled;
+			std::vector<Ornamented> ornamented;
 
 			for (pugi::xml_node node = measure.first_child(); node;
 					node = node.next_sibling()) {
@@ -806,8 +964,23 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 
 				// ---- a note ----------------------------------------------------------------
 				const bool isChord = (bool) node.child("chord");
-				const bool isRest = (bool) node.child("rest");
 				const bool isGrace = (bool) node.child("grace");
+				// NOT ON THE PAGE, NOT PLAYED. A note marked not to print, or printed with no head,
+				// is something an engraver wrote for another program's playback: a copy of a printed
+				// note starting a little late to sound after a rolled chord, or an ornament spelled
+				// out the way that program could not manage itself. What is played is what a pianist
+				// reads, and the signs are interpreted here and in the timeline from what they mean.
+				// In Chopin's first Ballade every one of its eighty-five hidden notes is a copy of a
+				// printed note or the notes of a printed ornament.
+				//
+				// IT STILL TAKES ITS TIME, read as a rest, so the voice it is in keeps its place and
+				// a printed note written as a chord on it still finds its beat. A hidden chord note
+				// or grace takes no time, and is simply passed over.
+				const bool unprinted = std::string(node.attribute("print-object").as_string()) == "no"
+					|| std::string(node.child_value("notehead")) == "none";
+				if (unprinted && (isChord || isGrace))
+					continue;
+				const bool isRest = (bool) node.child("rest") || unprinted;
 				const int voice = std::max(1, node.child("voice").text().as_int(1));
 				const long duration = (long) node.child("duration").text().as_llong(0);
 
@@ -887,8 +1060,16 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						note.midi = midiOf(unpitched.child_value("display-step"), 0,
 							unpitched.child("display-octave").text().as_int(4));
 					}
-					// WRITTEN FOR THE SOUND AND NOT FOR THE EYE. See GpNote::hidden.
-					note.hidden = std::string(node.attribute("print-object").as_string()) == "no";
+					// AS IT IS SPELLED, for the neighbours of any ornament in the bar.
+					Spelled spelling = {where, -1, 4, 0};
+					if (pitch) {
+						spelling.letter = letterOf(pitch.child_value("step"));
+						spelling.octave = pitch.child("octave").text().as_int(4);
+						spelling.alter = pitch.child("alter").text().as_int(0);
+						spelled.push_back(spelling);
+						note.letter = (int8_t) spelling.letter;
+						note.octave = (int8_t) spelling.octave;
+					}
 					// NO STRING AND NO FRET. This is music with no fingerboard: see the header.
 					note.string = 0;
 					note.fret = -1;
@@ -899,6 +1080,7 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					}
 					const pugi::xml_node marks = node.child("notations");
 					bool opensSlur = false, closesSlur = false;
+					int markAbove = NO_MARK, markBelow = NO_MARK;
 					if (marks) {
 						const pugi::xml_node arts = marks.child("articulations");
 						if (arts) {
@@ -940,8 +1122,25 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							note.invertedMordent = true;
 						if (orn.child("mordent"))
 							note.mordent = true;
-						if (orn.child("turn") || orn.child("inverted-turn"))
+						// A TURN GOES ROUND THE NOTE FROM ABOVE; an inverted one from below. A
+						// delayed turn is played as one, a little late being a nicety this does
+						// not attempt.
+						if (orn.child("turn") || orn.child("delayed-turn"))
 							note.turn = true;
+						if (orn.child("inverted-turn") || orn.child("delayed-inverted-turn"))
+							note.invertedTurn = true;
+						// A SHARP, FLAT OR NATURAL PRINTED ON THE ORNAMENT, above it for the note
+						// above and below it for the note below. It overrides the key and the bar.
+						for (pugi::xml_node am = orn.child("accidental-mark"); am;
+								am = am.next_sibling("accidental-mark")) {
+							const int alter = alterOfMark(am.child_value());
+							if (alter == NO_MARK)
+								continue;
+							if (std::string(am.attribute("placement").as_string()) == "below")
+								markBelow = alter;
+							else
+								markAbove = alter;
+						}
 						// A ROLLED CHORD. The notes are written together and played one after
 						// another from the bottom, which is a brush — the same thing a guitar's
 						// is, and carried by the same field.
@@ -969,6 +1168,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					if (closesSlur)
 						inSlur[useVoice] = false;
 					beat.notes.push_back(note);
+					if (spelling.letter >= 0 && (note.trill || note.mordent || note.invertedMordent
+							|| note.turn || note.invertedTurn)) {
+						Ornamented o = {useVoice, index, beat.notes.size() - 1, spelling,
+							markAbove, markBelow};
+						ornamented.push_back(o);
+					}
 				}
 
 				if (!isChord && !isGrace) {
@@ -979,6 +1184,22 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						filled = cursor;
 				}
 			}
+
+			// THE NOTES EACH ORNAMENT GOES TO, where the bar settles them, now that every
+			// accidental in it is known. The rest wait for the bars either side: see below.
+			for (const Ornamented& o : ornamented) {
+				std::map<int, Building>::iterator v = voices.find(o.voice);
+				if (v == voices.end() || o.beat >= v->second.beats.size())
+					continue;
+				GpBeat& b = v->second.beats[o.beat];
+				if (o.note >= b.notes.size())
+					continue;
+				b.notes[o.note].upper = neighbourOf(o.spelled, 1, o.markAbove, spelled);
+				b.notes[o.note].lower = neighbourOf(o.spelled, -1, o.markBelow, spelled);
+			}
+			if ((int) spelledByBar.size() <= barNumber)
+				spelledByBar.resize((size_t) barNumber + 1);
+			spelledByBar[(size_t) barNumber] = spelled;
 
 			// THE NEXT BAR BEGINS A BAR'S LENGTH LATER, which is the metre's length for an
 			// ordinary bar and the bar's own for a short one.
@@ -1043,6 +1264,25 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					// nothing but put the bottom rung of the ladder out of reach.
 					beat.dynamic = std::max(0.f, std::min(1.f,
 						levelAt(curve, barStarts[b] + (double) beat.start)));
+				}
+			}
+		}
+
+		// THE ORNAMENTS THEIR OWN BAR DID NOT SETTLE, from the music either side of them, now
+		// that every bar of the part has been read. See neighbourInContext.
+		for (size_t b = 0; b < track.bars.size(); b++) {
+			const int fifths = (b < out.masterBars.size()) ? out.masterBars[b].keyAccidentals : 0;
+			for (GpBeat& beat : track.bars[b].beats) {
+				for (GpNote& n : beat.notes) {
+					if (n.letter < 0 || !(n.trill || n.mordent || n.invertedMordent || n.turn
+							|| n.invertedTurn))
+						continue;
+					if (n.upper < 0)
+						n.upper = neighbourInContext(n.letter, n.octave, n.midi, 1, b, fifths,
+							spelledByBar);
+					if (n.lower < 0)
+						n.lower = neighbourInContext(n.letter, n.octave, n.midi, -1, b, fifths,
+							spelledByBar);
 				}
 			}
 		}
