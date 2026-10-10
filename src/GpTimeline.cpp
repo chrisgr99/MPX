@@ -767,29 +767,100 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			}
 
 			const bool terminated = n.note.trill && trilled < n.lengthSeconds - 1e-6;
-			int pitches[8];
-			int count = 0;
+			// THE STYLE'S RULES: where a trill starts and how fast, how quick a mordent and a
+			// turn are, whether a turn is added. See OrnamentStyle.hpp.
+			const OrnamentRules& rules = ornamentRules(song.ornamentStyle);
+			const float lighter = (n.note.mordent || n.note.invertedMordent)
+				? MORDENT_LIGHTER : ORNAMENT_LIGHTER;
+			const double perQuarter = (n.lengthSeconds > 0.0)
+				? n.lengthQuarters / n.lengthSeconds : 0.0;
+			// One note of the figure, at a time and a length in seconds from the written note's
+			// start; the first at the note's own dynamic and the rest lighter.
+			auto emit = [&](int midi, double at, double length, bool first) {
+				GpPlayedNote one = n;
+				one.note.trill = one.note.mordent = one.note.invertedMordent = false;
+				one.note.turn = one.note.invertedTurn = one.note.delayedTurn = false;
+				one.note.midi = midi;
+				one.note.tied = false;
+				if (!first)
+					one.dynamic = std::max(0.f, n.dynamic - lighter);
+				one.startSeconds = n.startSeconds + at;
+				one.lengthSeconds = length;
+				one.startQuarters = n.startQuarters + at * perQuarter;
+				one.lengthQuarters = length * perQuarter;
+				grown.push_back(one);
+			};
+
 			if (n.note.trill) {
-				count = (int) std::lround(trilled / TRILL_SECONDS);
-				if (count < 3)
-					count = 3;
-				// A TRILL ENDS ON THE WRITTEN NOTE — unless it is leading into a termination, and
-				// then it ends on the UPPER one.
+				// WHERE IT STARTS. What the file says, if it says; then what is written before
+				// it; then the style.
 				//
-				// THE REASON IS THE STRING. A termination is the written note's neighbour and
-				// then the written note again, and a trill that has just played the written note
-				// leaves that string ringing: struck again a tenth of a second later it barely
-				// speaks, and the ornament vanishes into the end of the trill. Ending the
-				// alternation above it hands the termination a string that is not sounding, which
-				// is what the figure is for and why players play it that way.
-				if (terminated) {
-					if ((count % 2) != 0)
-						count++;
+				// A GRACE NOTE WRITTEN BEFORE THE TRILL IS ITS START, in every style: the note
+				// above means the trill goes on from the written note, the written note itself
+				// means it goes on from above without striking it twice, and a note below — the
+				// prefix from below Chopin and Weber write — means from the written note.
+				//
+				// THE NOTE ABOVE ALREADY SOUNDING AND SLURRED IN is not struck again: the trill
+				// goes on from the written note. That is the bound trill of every eighteenth-
+				// century table, and it is what the hand does in any style.
+				bool fromAbove = rules.trillFromAbove;
+				if (n.note.trillStart >= 0)
+					fromAbove = n.note.trillStart == 1;
+				else {
+					bool decided = false;
+					for (size_t j = 0; j < played.size() && !decided; j++) {
+						const GpPlayedNote& before = played[j];
+						const double ends = before.startSeconds + before.lengthSeconds;
+						if (j == i || std::fabs(ends - n.startSeconds) > 0.004
+								|| std::abs(before.note.midi - n.note.midi) > 2)
+							continue;
+						if (before.grace) {
+							fromAbove = before.note.midi == n.note.midi;
+							decided = true;
+						}
+						else if (before.note.midi == above && before.note.slurred) {
+							fromAbove = false;
+							decided = true;
+						}
+					}
 				}
-				else if ((count % 2) == 0)
-					count++;
+				// HOW FAST: the style's speed in the middle of the keyboard, a tenth slower at
+				// the bottom and a tenth faster at the top, as Quantz, Leopold Mozart and Türk all
+				// have it.
+				const double register_ = std::max(-1.0, std::min(1.0, (n.note.midi - 66) / 18.0));
+				const double rate = (double) rules.trillPerSecond * (1.0 + 0.1 * register_);
+				// A TURN ADDED AT THE END, where the style adds one and nothing is written: on a
+				// trill a beat or longer, the note below and then the written note.
+				const bool turnAdded = rules.trillTurnAdded && !terminated && n.lengthQuarters >= 0.99;
+				int count = std::max(3, (int) std::lround(trilled * rate));
+				// THE ALTERNATION ENDS ON THE WRITTEN NOTE — unless a written termination follows,
+				// and then on the note above.
+				//
+				// THE REASON IS THE STRING. A termination is the written note's neighbour and then
+				// the written note again, and a trill that has just played the written note leaves
+				// that string ringing: struck again a tenth of a second later it barely speaks.
+				// Ending above hands the termination a string that is not sounding.
+				const int alternation = turnAdded ? count - 2 : count;
+				const bool endAbove = terminated;
+				// From above, the notes at even places are above; from the note, the odd ones.
+				auto aboveAt = [&](int k) { return fromAbove ? (k % 2) == 0 : (k % 2) == 1; };
+				int notes = std::max(2, alternation);
+				if (aboveAt(notes - 1) != endAbove)
+					notes++;
+				const int total = notes + (turnAdded ? 2 : 0);
+				const double each = trilled / (double) total;
+				for (int k = 0; k < notes; k++)
+					emit(aboveAt(k) ? above : n.note.midi, each * k, each, k == 0);
+				if (turnAdded) {
+					emit(below, each * notes, each, false);
+					emit(n.note.midi, each * (notes + 1), trilled - each * (notes + 1), false);
+				}
+				continue;
 			}
-			else if (n.note.turn) {
+
+			int pitches[4];
+			int count = 0;
+			if (n.note.turn) {
 				pitches[0] = above; pitches[1] = n.note.midi;
 				pitches[2] = below; pitches[3] = n.note.midi;
 				count = 4;
@@ -805,25 +876,22 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 				pitches[2] = n.note.midi;
 				count = 3;
 			}
-			if (n.note.trill) {
-				const double perQ = (n.lengthSeconds > 0.0)
-					? n.lengthQuarters / n.lengthSeconds : 0.0;
-				for (int k = 0; k < count; k++) {
-					GpPlayedNote one = n;
-					one.note.trill = false;
-					one.note.midi = (k % 2) ? above : n.note.midi;
-					if (k > 0)
-						one.dynamic = std::max(0.f, n.dynamic - ORNAMENT_LIGHTER);
-					one.note.tied = false;
-					one.startSeconds = n.startSeconds + trilled * (double) k / count;
-					one.lengthSeconds = trilled / (double) count;
-					one.startQuarters = n.startQuarters
-						+ (one.startSeconds - n.startSeconds) * perQ;
-					one.lengthQuarters = one.lengthSeconds * perQ;
-					grown.push_back(one);
-				}
+			const bool mordent = n.note.mordent || n.note.invertedMordent;
+
+			// A TURN PRINTED AFTER THE NOTE: the note first, held, and the four notes of the turn
+			// late, just before the next one — never early, which C. P. E. Bach says is what
+			// beginners get wrong. They take at most the second half of the note.
+			if (n.note.delayedTurn && !mordent) {
+				double each = rules.turnSeconds;
+				if (each * count > n.lengthSeconds * 0.5)
+					each = n.lengthSeconds * 0.5 / count;
+				const double figure = each * count;
+				emit(n.note.midi, 0.0, n.lengthSeconds - figure, true);
+				for (int k = 0; k < count; k++)
+					emit(pitches[k], n.lengthSeconds - figure + each * k, each, false);
 				continue;
 			}
+
 			// A FLICK AND THEN THE NOTE. The ornament never takes more than half of what it is
 			// on, so a short note keeps something of itself to be heard as. THE HALF IS SHARED BY
 			// THE QUICK NOTES ONLY: a figure ending on the written note holds that last note, so
@@ -832,52 +900,29 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			// spelled them out, and three hammer strikes that close sound hard.
 			const bool holdsLast = pitches[count - 1] == n.note.midi;
 			const int quickNotes = holdsLast ? count - 1 : count;
-			double each = TRILL_SECONDS;
+			double each = mordent ? rules.mordentSeconds : rules.turnSeconds;
 			if (each * quickNotes > n.lengthSeconds * 0.5)
 				each = n.lengthSeconds * 0.5 / quickNotes;
-			const double perQuarter = (n.lengthSeconds > 0.0)
-				? n.lengthQuarters / n.lengthSeconds : 0.0;
-			double at = 0.0;
+			// BEFORE THE BEAT, where the style plays them so: the quick notes as a pickup and the
+			// written note on the beat, held. Jazz.
+			const double early = (rules.figuresBeforeBeat && holdsLast) ? each * quickNotes : 0.0;
 			// THE LAST NOTE OF THE FIGURE IS HELD. Every one of these ends on the written note, and
 			// a pianist plays that last note and keeps it down for the rest of the length — it is
 			// the note the ornament is an ornament of. Played as a note of the figure and then
 			// struck again for the rest, the key was hit three times inside a tenth of a second,
 			// which in the Pathétique's second theme was heard as a rattle on every mordent.
-			const bool endsOnIt = holdsLast;
+			double at = -early;
 			for (int k = 0; k < count; k++) {
-				GpPlayedNote one = n;
-				one.note.mordent = one.note.invertedMordent = one.note.turn = false;
-				one.note.invertedTurn = false;
-				one.note.midi = pitches[k];
-				one.note.tied = false;
-				if (k > 0) {
-					const bool mordent = n.note.mordent || n.note.invertedMordent;
-					one.dynamic = std::max(0.f, n.dynamic - (mordent ? MORDENT_LIGHTER : ORNAMENT_LIGHTER));
-				}
-				one.startSeconds = n.startSeconds + at;
-				one.lengthSeconds = each;
-				one.startQuarters = n.startQuarters + at * perQuarter;
-				one.lengthQuarters = each * perQuarter;
-				if (k == count - 1 && endsOnIt) {
-					one.lengthSeconds = n.lengthSeconds - at;
-					one.lengthQuarters = n.lengthQuarters - at * perQuarter;
-				}
-				grown.push_back(one);
+				const bool last = k == count - 1 && holdsLast;
+				// The stress on the beat: the first note, or the last where a pickup leads to it.
+				emit(pitches[k], at, last ? n.lengthSeconds - at : each, early > 0.0 ? last : k == 0);
 				at += each;
 			}
-			if (endsOnIt)
+			if (holdsLast)
 				continue;
 			// AND THE REST OF THE NOTE, for a figure that does not end on it.
-			GpPlayedNote rest = n;
-			rest.note.mordent = rest.note.invertedMordent = rest.note.turn = false;
-			rest.note.invertedTurn = false;
-			rest.note.tied = false;
-			rest.startSeconds = n.startSeconds + at;
-			rest.lengthSeconds = n.lengthSeconds - at;
-			rest.startQuarters = n.startQuarters + at * perQuarter;
-			rest.lengthQuarters = n.lengthQuarters - at * perQuarter;
-			if (rest.lengthSeconds > 0.01)
-				grown.push_back(rest);
+			if (n.lengthSeconds - at > 0.01)
+				emit(n.note.midi, at, n.lengthSeconds - at, false);
 		}
 		if (any) {
 			std::stable_sort(grown.begin(), grown.end(),
@@ -885,6 +930,40 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					return a.startQuarters < b.startQuarters;
 				});
 			played.swap(grown);
+		}
+	}
+
+	// ---- rolled chords ---------------------------------------------------------------------
+	//
+	// HOW LONG A ROLL TAKES, from the style: so far apart a note, times the notes it rolls through,
+	// which is how long the whole stroke is — what the cable carries. Every note marked as rolled
+	// at the same instant in a part is one roll, whichever staff it is on, since a pianist rolls a
+	// chord through both hands. And whether what is struck with it and not rolled lands with its
+	// top note, which only some styles' sources say. Only for a score with a style: a Guitar Pro
+	// brush keeps the time its file gives it.
+	if (song.ornamentStyle >= 0) {
+		const OrnamentRules& rules = ornamentRules(song.ornamentStyle);
+		for (size_t t = 0; t < out.tracks.size(); t++) {
+			std::vector<GpPlayedNote>& played = out.tracks[t];
+			for (size_t i = 0; i < played.size(); ) {
+				size_t j = i;
+				int rolled = 0;
+				while (j < played.size() && played[j].startQuarters < played[i].startQuarters + 1e-9) {
+					if (played[j].brush != 0)
+						rolled++;
+					j++;
+				}
+				if (rolled > 1) {
+					const int ms = (int) std::lround(1000.0 * rules.rollSeconds * (rolled - 1));
+					for (size_t k = i; k < j; k++) {
+						if (played[k].brush == 0)
+							continue;
+						played[k].brushMs = std::min(255, ms);
+						played[k].rollToTop = rules.rollOthersWithTop;
+					}
+				}
+				i = j;
+			}
 		}
 	}
 

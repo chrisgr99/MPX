@@ -1851,23 +1851,35 @@ static float partGain(int part) {
 				// first of them. Rolling everything struck at the instant put the melody, the
 				// highest note, last of all, a tenth of a second behind the beat. A roll written
 				// through both hands has the sign on both, and so still goes through both.
-				int rolling = 0, rolled = 0;
+				//
+				// HOW FAST, AND WHERE THE REST LANDS, as the score says: the whole roll's length on
+				// the cable, from the style of the piece, and whether what is struck with it and
+				// not rolled lands with its top note — as Taylor has it for Haydn and the Chopin
+				// National Edition for Chopin — or with its first, as everywhere else. Where the
+				// cable says nothing, ROLL_PER_NOTE and the first.
+				int rolling = 0, rolled = 0, strokeMs = 0;
+				bool toTop = false;
 				for (int a = 0; a < chord; a++)
 					if (struck[a].strum != 0) {
 						rolling = struck[a].strum;
 						rolled++;
+						strokeMs = std::max(strokeMs, (int) struck[a].strumMs);
+						if (struck[a].technique & Event::ROLL_TO_TOP)
+							toTop = true;
 					}
+				const float perNote = (strokeMs > 0 && rolled > 1)
+					? 0.001f * (float) strokeMs / (float) (rolled - 1) : ROLL_PER_NOTE;
 
 				int rolledBelow = 0;
 				for (int a = 0; a < chord; a++) {
 					// WHEN EACH NOTE OF THE CHORD SPEAKS: see the constants above.
 					float late;
 					if (rolling != 0) {
-						// A note without the mark sounds with the first that has it.
-						late = 0.f;
+						// A note without the mark sounds with the first that has it, or the top.
+						late = toTop ? (float) (rolled - 1) * perNote : 0.f;
 						if (struck[a].strum != 0) {
 							const int step = (rolling > 0) ? rolledBelow : (rolled - 1 - rolledBelow);
-							late = (float) step * ROLL_PER_NOTE;
+							late = (float) step * perNote;
 							rolledBelow++;
 						}
 					}

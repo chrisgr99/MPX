@@ -23,6 +23,7 @@ nothing is put in front of the listener.
 
 See docs/guitar-pro.md.
 */
+#include "OrnamentStyle.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -72,6 +73,12 @@ struct GpNote {
 	bool invertedMordent = false;  /**< Main, the note above, main — a short trill. */
 	bool turn = false;             /**< Above, main, below, main. */
 	bool invertedTurn = false;     /**< Below, main, above, main. */
+	/** THE TURN IS PRINTED AFTER THE NOTE, not over it: the note sounds first and the turn comes
+	late, just before the next note. */
+	bool delayedTurn = false;
+	/** WHERE A TRILL STARTS, WHERE THE FILE SAYS SO: -1 where it does not, then 0 the written
+	note, 1 the note above, 2 the note below. Otherwise the style decides. */
+	int8_t trillStart = -1;
 	/** THE NOTES AN ORNAMENT ON THIS ONE GOES TO, as MIDI notes, or -1 where the file did not
 	spell them. The next letter name above and below, sharpened or flattened by an accidental
 	printed on the ornament, one earlier in the bar, or the music around it — all of which a
@@ -244,6 +251,16 @@ struct GpSong {
 
 	/** WHAT WAS NOT READ, counted rather than announced. For a log line, never for the panel. */
 	int skipped = 0;
+
+	/** WHAT THE FILE SAYS ABOUT WHO WROTE IT, every field that might: the composer and creator,
+	the credits printed on the page, the titles, the copyright line. A MusicXML file carries
+	these; a Guitar Pro file's artist is a performer as often as a composer, and carries none.
+	And how many chord symbols there are, which marks a lead sheet. See OrnamentStyle.hpp. */
+	std::vector<StyleClue> clues;
+	int chordSymbols = 0;
+	/** THE STYLE ITS ORNAMENTS ARE PLAYED IN, one of OrnamentStyle, or -1 for a file that has no
+	ornaments to play — a Guitar Pro file — and then nothing about it changes. */
+	int ornamentStyle = -1;
 };
 
 

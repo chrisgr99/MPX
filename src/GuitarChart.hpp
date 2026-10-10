@@ -143,6 +143,10 @@ struct Playing {
 	/** The tempo the song opens at, in quarter notes a minute. What the tempo control is set to
 	when a song is loaded, and what it is measured against afterwards. */
 	float openingBpm = 120.f;
+	/** WHAT THE FILE WAS TAKEN FOR, for the menu to say: the style its ornaments are played in,
+	the composer recognised, and why. Only for a MusicXML file; see OrnamentStyle.hpp. */
+	StyleGuess styleGuess;
+	bool hasStyle = false;
 
 	Playing() {
 		for (int r = 0; r < ROWS; r++)
@@ -229,6 +233,9 @@ struct SongModule : Module, NoteSource {
 	/** WHETHER THE SCORE'S OWN PEDAL IS SENT. On, because a score that is marked up should be
 	played the way it is marked; off for a patch that would rather hold the pedal itself. */
 	std::atomic<bool> sendPedal{true};
+	/** THE ORNAMENT STYLE CHOSEN IN THE MENU, one of OrnamentStyle, or -1 to take what the score
+	is worked out to be. Saved with the patch. */
+	std::atomic<int> styleChoice{-1};
 	uint32_t epoch = 0;
 	uint32_t partChange = 0;
 
@@ -404,6 +411,26 @@ struct SongModule : Module, NoteSource {
 	void onReset() override {
 		rewind();
 		scoreFollowSetLoop(id, -1, -1, false);
+	}
+
+	/** THE ORNAMENTS PLAYED IN ANOTHER STYLE, or in the one worked out with -1: the timeline built
+	again and swapped in where the music is, as a newly loaded song is, without reading the file
+	again — which would put the music back to the top and the tempo back to the score's. Main
+	thread. */
+	void restyle(int choice) {
+		styleChoice = choice;
+		const int spare = 1 - live.load();
+		Playing next = loaded[live.load()];
+		if (!next.hasStyle)
+			return;
+		next.song.ornamentStyle = (choice >= 0 && choice < STYLE_COUNT) ? choice : next.styleGuess.style;
+		std::string why;
+		if (!gpBuildTimeline(next.song, next.line, &why))
+			return;
+		loaded[spare] = next;
+		live.store(spare);
+		for (int r = 0; r < ROWS; r++)
+			reseek[r].store(true);
 	}
 
 	/** The bars being looped, as the page numbers them, or false for none — including a loop
@@ -626,6 +653,26 @@ struct SongModule : Module, NoteSource {
 		}
 		if (!ok)
 			return false;
+		// THE STYLE ITS ORNAMENTS ARE PLAYED IN, guessed from everything the file says about who
+		// wrote it and from its own name, unless the menu has said otherwise. Before the timeline,
+		// which is where the ornaments are written out. See OrnamentStyle.hpp.
+		if (wasMusicXML) {
+			std::vector<StyleClue> clues = next.song.clues;
+			std::string name = path;
+			const size_t slash = name.find_last_of("/\\");
+			if (slash != std::string::npos)
+				name = name.substr(slash + 1);
+			const size_t dot = name.find_last_of('.');
+			if (dot != std::string::npos && dot > 0)
+				name = name.substr(0, dot);
+			if (!name.empty())
+				clues.push_back(StyleClue{name, CLUE_FILE});
+			next.styleGuess = guessStyle(clues, next.song.chordSymbols);
+			next.hasStyle = true;
+			const int chosen = styleChoice.load();
+			next.song.ornamentStyle = (chosen >= 0 && chosen < STYLE_COUNT) ? chosen
+				: next.styleGuess.style;
+		}
 		if (!gpBuildTimeline(next.song, next.line, why))
 			return false;
 
@@ -760,6 +807,8 @@ struct SongModule : Module, NoteSource {
 		json_object_set_new(rootJ, "rows", rowsJ);
 		json_object_set_new(rootJ, "rowCount", json_integer(rows));
 		json_object_set_new(rootJ, "pedal", json_boolean(sendPedal.load()));
+		if (styleChoice.load() >= 0)
+			json_object_set_new(rootJ, "ornamentStyle", json_integer(styleChoice.load()));
 		// THE INSTRUMENT THE SCORE WINDOW WAS SHOWING, so it opens on the same one next session.
 		// See ScoreFollow::part.
 		const int part = scoreFollowPart(id);
@@ -777,6 +826,9 @@ struct SongModule : Module, NoteSource {
 			setRowCount((int) json_integer_value(j));
 		json_t* pedalJ = json_object_get(rootJ, "pedal");
 		sendPedal = !pedalJ || json_is_true(pedalJ);
+		// BEFORE THE SONG, which is read in the style chosen.
+		json_t* styleJ = json_object_get(rootJ, "ornamentStyle");
+		styleChoice = styleJ ? (int) json_integer_value(styleJ) : -1;
 		json_t* fileJ = json_object_get(rootJ, "file");
 		if (!json_is_string(fileJ))
 			return;
@@ -855,6 +907,8 @@ struct SongModule : Module, NoteSource {
 		e.strum = (int8_t) ((n.brush > 0) ? 1 : (n.brush < 0 ? -1 : 0));
 		e.strumIndex = n.strumIndex;
 		e.strumMs = (uint8_t) math::clamp(n.brushMs, 0, 255);
+		if (n.rollToTop)
+			e.technique |= Event::ROLL_TO_TOP;
 
 		e.bendCount = (uint8_t) std::min<size_t>(4, g.bend.size());
 		for (int i = 0; i < (int) e.bendCount; i++) {
@@ -2002,6 +2056,29 @@ struct SongWidget : ModuleWidget {
 				sub->addChild(createCheckMenuItem(string::f("%d rows", c), "",
 					[=]() { return m->rows == c; }, [=]() { m->setRowCount(c); }));
 		}));
+		// HOW THE ORNAMENTS ARE PLAYED: what the score was taken for and why, and the styles to
+		// choose instead. See OrnamentStyle.hpp and docs/ornament-styles.md.
+		if (m->haveSong.load()) {
+			const Playing& L = m->loaded[m->live.load()];
+			if (L.hasStyle) {
+				const StyleGuess guess = L.styleGuess;
+				menu->addChild(createSubmenuItem("Ornaments played as",
+					ornamentStyleName(L.song.ornamentStyle), [=](ui::Menu* sub) {
+						std::string said = guess.found
+							? std::string(ornamentStyleName(guess.style)) + ", because " + guess.because
+							: std::string("Later Romantic, because ") + guess.because;
+						sub->addChild(createMenuLabel(said));
+						sub->addChild(createCheckMenuItem("As worked out from the score", "",
+							[=]() { return m->styleChoice.load() < 0; },
+							[=]() { m->restyle(-1); }));
+						sub->addChild(new ui::MenuSeparator);
+						for (int s = 0; s < STYLE_COUNT; s++)
+							sub->addChild(createCheckMenuItem(ornamentStyleName(s), "",
+								[=]() { return m->styleChoice.load() == s; },
+								[=]() { m->restyle(s); }));
+					}));
+			}
+		}
 		menu->addChild(createCheckMenuItem("Send the score's sustain pedal", "",
 			[=]() { return m->sendPedal.load(); },
 			[=]() { m->sendPedal = !m->sendPedal.load(); }));

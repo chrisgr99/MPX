@@ -190,13 +190,13 @@ melodytest:
 # Reading Guitar Pro files. No Rack in it, so it builds on its own and runs against a folder of
 # real files: make gptest ARGS="~/Downloads/*.gp*"
 gptest:
-	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp src/GpTimeline.cpp -o build/gptest
+	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp -o build/gptest
 	@./build/gptest $(ARGS)
 
 
 # Repeats, endings and jumps: the played order, against songs written in the test itself.
 navtest:
-	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp \
+	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp \
 		-o build/navtest
 	@./build/navtest
 
@@ -241,7 +241,7 @@ gpxmltest:
 buried:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -w -I dep/include/verovio/pugi \
-		test/buried.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/buried.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/buried
 	@./build/buried $(ARGS)
 
@@ -255,7 +255,7 @@ marksused:
 barcheck:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
-		test/barcheck.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/barcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/barcheck
 	@./build/barcheck $(ARGS)
 
@@ -265,7 +265,7 @@ barcheck:
 drumcheck:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
-		test/drumcheck.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/drumcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/drumcheck
 	@./build/drumcheck $(ARGS)
 
@@ -283,7 +283,7 @@ drumsound:
 scorenotes:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
-		test/scorenotes.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/scorenotes.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scorenotes
 	@./build/scorenotes $(ARGS)
 
@@ -304,7 +304,7 @@ pianorelease:
 scoreread:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/scoreread.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/scoreread.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scoreread
 	@./build/scoreread $(ARGS)
 
@@ -315,7 +315,7 @@ scoreread:
 harmony:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/harmony.cpp src/MusicXML.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/harmony.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/harmony
 	@./build/harmony $(ARGS)
 
@@ -325,7 +325,7 @@ harmony:
 structure:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/structure.cpp src/MusicXML.cpp src/GuitarPro.cpp \
+		test/structure.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/structure
 	@./build/structure $(ARGS)
 
@@ -335,7 +335,7 @@ structure:
 tomusicxml:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/tomusicxml.cpp src/MusicXML.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
+		test/tomusicxml.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/tomusicxml
 	@./build/tomusicxml $(ARGS)
 
@@ -345,7 +345,7 @@ tomusicxml:
 mxtest:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/mxtest.cpp src/MusicXML.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
+		test/mxtest.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpMusicXML.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/mxtest
 	@./build/mxtest $(ARGS)
 
@@ -371,7 +371,7 @@ brushscan:
 #   make ringcheck ARGS="a-file.gp4 0"
 ringcheck:
 	@mkdir -p build
-	@c++ -std=c++11 -O1 -Wall test/ringcheck.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+	@c++ -std=c++11 -O1 -Wall test/ringcheck.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
 		-o build/ringcheck
 	@./build/ringcheck $(ARGS)
 
@@ -379,7 +379,7 @@ ringcheck:
 #   make strumcheck ARGS="a-file.gp5 0"
 strumcheck:
 	@mkdir -p build
-	@c++ -std=c++11 -O1 -Wall test/strumcheck.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+	@c++ -std=c++11 -O1 -Wall test/strumcheck.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
 		-o build/strumcheck
 	@./build/strumcheck $(ARGS)
 
@@ -554,7 +554,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pianobench bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: styletest pianobench bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -578,3 +578,11 @@ pianobench:
 		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
 		-L$(RACK_DIR) -lRack -o build/pianobench
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/pianobench $(ARGS)
+
+# What style each score's ornaments would be played in, and why. See test/styletest.cpp.
+styletest:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/styletest.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/styletest
+	@./build/styletest $(ARGS)

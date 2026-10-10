@@ -280,6 +280,10 @@ struct Event {
 		SLURRED = 1u << 20,        /**< Runs into the note after it without a fresh attack. On a
 		                           fretboard that is a hammer-on or a slide; on a keyboard it is
 		                           a note the finger holds until the next one sounds. */
+		ROLL_TO_TOP = 1u << 21,    /**< On the notes of a rolled chord: anything struck with them
+		                           and not rolled lands with the roll's top note, not its first —
+		                           as Taylor has it for Haydn and the Chopin National Edition for
+		                           Chopin. See OrnamentStyle.hpp. */
 	};
 	uint32_t technique = 0;
 

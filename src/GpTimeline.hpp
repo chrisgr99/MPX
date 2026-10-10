@@ -45,6 +45,9 @@ struct GpPlayedNote {
 	float dynamic = 0.6f;     /**< The beat's level, nought to one. */
 	int brush = 0;            /**< -1 up, 1 down, nought for a note that was not brushed. */
 	int brushMs = 0;
+	/** ON A ROLLED CHORD'S NOTES: whatever is struck with the roll and not rolled itself lands
+	with the roll's top note, not its first. See OrnamentRules::rollOthersWithTop. */
+	bool rollToTop = false;
 	uint8_t grace = 0;        /**< From the beat: 1 before it, 2 taking time from it. */
 	/** WHERE THIS NOTE CAME FROM on its own string, as a MIDI note, or -1 for the first note on
 	that string. A hammer-on and a pull-off are the same mark in the file — which of them it is

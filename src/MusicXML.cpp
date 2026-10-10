@@ -11,6 +11,7 @@
 #include <cctype>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -599,6 +600,64 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 			out.words = c.child_value();
 	}
 	out.copyright = root.child("identification").child_value("rights");
+
+	// WHAT THE SCORE SAYS ABOUT WHO WROTE IT, every field that might, for the ornament style. The
+	// file's own name is added by whoever knows it. See OrnamentStyle.hpp.
+	{
+		auto clue = [&](const std::string& text, int kind) {
+			if (!text.empty())
+				out.clues.push_back(StyleClue{text, kind});
+		};
+		clue(root.child("work").child_value("work-title"), CLUE_TITLE);
+		clue(root.child("work").child_value("work-number"), CLUE_TITLE);
+		clue(root.child_value("movement-title"), CLUE_TITLE);
+		clue(root.child_value("movement-number"), CLUE_TITLE);
+		for (pugi::xml_node c = root.child("identification").child("creator"); c;
+				c = c.next_sibling("creator")) {
+			const std::string what = c.attribute("type").as_string();
+			if (what == "composer")
+				clue(c.child_value(), CLUE_COMPOSER);
+			else if (what == "lyricist" || what == "poet")
+				clue(c.child_value(), CLUE_LYRICIST);
+			else if (what.empty())
+				clue(c.child_value(), CLUE_CREATOR);
+		}
+		for (pugi::xml_node r = root.child("identification").child("rights"); r;
+				r = r.next_sibling("rights"))
+			clue(r.child_value(), CLUE_RIGHTS);
+		// A CREDIT'S WORDS ARE ONE TEXT, joined as written: each carries its own spaces, and the
+		// Entertainer file spreads one dedication over fifty-seven of them.
+		std::set<std::string> seen;
+		for (pugi::xml_node cr = root.child("credit"); cr; cr = cr.next_sibling("credit")) {
+			int kind = CLUE_CREDIT;
+			bool skip = false;
+			for (pugi::xml_node t = cr.child("credit-type"); t; t = t.next_sibling("credit-type")) {
+				const std::string what = t.child_value();
+				if (what == "composer")
+					kind = CLUE_COMPOSER;
+				else if ((what == "lyricist" || what == "poet") && kind != CLUE_COMPOSER)
+					kind = CLUE_LYRICIST;
+				else if (what == "rights" && kind == CLUE_CREDIT)
+					kind = CLUE_RIGHTS;
+				else if (what == "arranger" || what == "page number" || what == "part name")
+					skip = true;
+			}
+			if (skip && kind == CLUE_CREDIT)
+				continue;
+			std::string text;
+			for (pugi::xml_node w = cr.child("credit-words"); w; w = w.next_sibling("credit-words"))
+				text += w.child_value();
+			// Once each: one file repeats its copyright line in ninety-five credits.
+			if (seen.insert(std::to_string(kind) + text).second)
+				clue(text, kind);
+		}
+		// HOW MANY CHORD SYMBOLS, which marks a lead sheet where no composer is named.
+		for (pugi::xml_node part = root.child("part"); part; part = part.next_sibling("part"))
+			for (pugi::xml_node m = part.child("measure"); m; m = m.next_sibling("measure"))
+				for (pugi::xml_node h = m.child("harmony"); h; h = h.next_sibling("harmony"))
+					out.chordSymbols++;
+		out.ornamentStyle = guessStyle(out.clues, out.chordSymbols).style;
+	}
 
 	// ---- the instruments ------------------------------------------------------------------------
 	std::map<std::string, size_t> trackOf;
@@ -1193,6 +1252,25 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							note.turn = true;
 						if (orn.child("inverted-turn") || orn.child("delayed-inverted-turn"))
 							note.invertedTurn = true;
+						// A TURN PRINTED AFTER THE NOTE rather than over it: the note first, and
+						// the turn late, just before the next.
+						if (orn.child("delayed-turn") || orn.child("delayed-inverted-turn"))
+							note.delayedTurn = true;
+						// WHERE THE TRILL STARTS, WHERE THE FILE SAYS SO. Only where the attribute is
+						// actually written: MusicXML gives an absent one a default of the main note,
+						// and taking that default would overrule every style's own rule.
+						{
+							pugi::xml_attribute start = orn.child("trill-mark").attribute("start-note");
+							if (!start)
+								start = orn.child("wavy-line").attribute("start-note");
+							const std::string from = start.as_string();
+							if (from == "main")
+								note.trillStart = 0;
+							else if (from == "upper")
+								note.trillStart = 1;
+							else if (from == "below")
+								note.trillStart = 2;
+						}
 						// A SHARP, FLAT OR NATURAL PRINTED ON THE ORNAMENT, above it for the note
 						// above and below it for the note below. It overrides the key and the bar.
 						for (pugi::xml_node am = orn.child("accidental-mark"); am;
@@ -1217,7 +1295,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							const std::string way =
 								marks.child("arpeggiate").attribute("direction").as_string();
 							beat.brush = (way == "down") ? -1 : 1;
-							beat.brushMs = 45;
+							// HOW LONG THE ROLL TAKES is the style's, worked out in the timeline once
+							// every note of the chord is known. See OrnamentRules::rollSeconds.
+							beat.brushMs = 0;
 						}
 						for (pugi::xml_node sl = marks.child("slur"); sl;
 								sl = sl.next_sibling("slur")) {
