@@ -104,6 +104,20 @@ void BowedString::setFriction(float staticCoefficient, float dynamicCoefficient,
 }
 
 
+void BowedString::setBristles(const Bristles& b) {
+	bristles = b;
+	bristles.stiffness = std::fmax(1.f, b.stiffness);
+	bristles.fall = std::fmax(1e-4f, b.fall);
+	bristles.breakaway = std::fmax(0.f, std::fmin(0.99f, b.breakaway));
+	bristled = true;
+}
+
+
+void BowedString::useFrictionCurve() {
+	bristled = false;
+}
+
+
 void BowedString::setContact(float b) {
 	b = std::fmax(0.005f, std::fmin(0.5f, b));
 	if (b != beta) {
@@ -545,8 +559,144 @@ float BowedString::bowJunction(float unbowed) {
 }
 
 
+/** THE BRISTLES' STEADY BEND at a sliding speed: the bend at which, sliding steadily, all of them
+are broken and the friction is the curve's, F mu(v) / s0, signed with the speed. */
+double BowedString::steadyBend(double v) const {
+	const double av = std::fabs(v);
+	const double drop = bristles.gaussian
+		? std::exp(-(av / bristles.fall) * (av / bristles.fall))
+		: std::exp(-av / bristles.fall);
+	const double mu = bristles.muCoulomb + (bristles.muStatic - bristles.muCoulomb) * drop;
+	return (v >= 0.0 ? 1.0 : -1.0) * (double) bowForce * mu / bristles.stiffness;
+}
+
+
+/** HOW FAST THE BEND CHANGES, dz/dt = v (1 - alpha z / z_ss): with the speed while the bristles only
+bend, not at all once all are broken and the bend is steady, and smoothly between, alpha going from
+nought to one over a half sine as the bend goes from the breakaway bend to the steady one (Dupont and
+colleagues' adhesion map). A bend against the slide is always elastic. `broken` says whether all
+of them are. */
+double BowedString::bendSpeed(double v, double z, bool* broken) const {
+	*broken = false;
+	if (v == 0.0)
+		return 0.0;
+	if ((v > 0.0) != (z > 0.0))
+		return v;
+	const double steady = std::fabs(steadyBend(v));
+	const double zBreak = (double) bristles.breakaway * (double) bowForce * bristles.muCoulomb
+		/ bristles.stiffness;
+	const double az = std::fabs(z);
+	double alpha;
+	if (az <= zBreak)
+		alpha = 0.0;
+	else if (az >= steady) {
+		alpha = 1.0;
+		*broken = true;
+	}
+	else
+		alpha = 0.5 * (1.0 + std::sin(3.14159265358979 * (az - 0.5 * (steady + zBreak)) / (steady - zBreak)));
+	return v * (1.0 - alpha * az / steady);
+}
+
+
+/** THE BOW AS BRISTLES, solved for one sample.
+
+The bend's rate r is the one unknown. A step of backward Euler sets the bend, z = z' + T r, and the
+string under the bow then moves at the velocity the friction s0 z + s1 r leaves it, so the sliding
+speed is v = u - (s0 z + s1 r) / 2Z, u the bow's speed less the unbowed string's: both are straight
+lines in r. What is left is r = dz/dt(v, z), one equation, solved by Newton's method kept inside a
+bracket so it cannot run away. Backward and not trapezoidal: the bristles are stiff enough to settle
+in a few microseconds, a fraction of a sample, and the trapezoidal step answers a mode that fast
+with a ringing at half the sample rate where backward Euler lets it settle, which is all it does.
+The bristles' own microsecond motion is not heard; their bend is. */
+float BowedString::bristleJunction(float unbowed) {
+	const double zt = (double) z * (double) twistRatio;
+	const double zBow = (twistRatio > 0.f) ? (double) z * zt / ((double) z + zt) : (double) z;
+	if (bowForce <= 0.f) {
+		stuck = false;
+		slide = 0.f;
+		bend = bendRate = hairLag = 0.0;
+		atBowVelocity = unbowed;
+		atBowForce = 0.f;
+		return 0.f;
+	}
+	const double T = 1.0 / (double) rate;
+	const double s0 = bristles.stiffness, s1 = bristles.damping;
+	// THE HAIR, if it gives: its lag z_h moves at (f - K z_h) / D, so by backward Euler the contact
+	// slows by (f - K z_h') / (D + K T) this sample, a second admittance in series with the string's.
+	const double K = bristles.hairStiffness, D = bristles.hairDamping;
+	const bool hair = K > 0.0 && D > 0.0;
+	const double hairAdmit = hair ? 1.0 / (D + K * T) : 0.0;
+	const double u = (double) bowSpeed - (double) unbowed + (hair ? K * hairLag * hairAdmit : 0.0);
+	const double admit = 1.0 / (2.0 * zBow) + hairAdmit;
+	// v = vt + k1 r, z = bend + T r.
+	const double vt = u - admit * s0 * bend;
+	const double k1 = -admit * (s0 * T + s1);
+	bool broken = false;
+	auto h = [&](double r) { return bendSpeed(vt + k1 * r, bend + T * r, &broken) - r; };
+
+	// THE BRACKET. h goes from plus infinity to minus infinity as r rises: far out either way the
+	// bend and the slide have opposite signs, the bristles only bend, and h is the slide less r.
+	double lo, hi;
+	const double h0 = h(0.0);
+	if (h0 == 0.0) {
+		lo = hi = 0.0;
+	}
+	else {
+		double step = std::fmax(1e-9, std::fabs(vt));
+		const double dir = (h0 > 0.0) ? 1.0 : -1.0;
+		double far = dir * step;
+		for (int i = 0; i < 80 && dir * h(far) > 0.0; i++)
+			far *= 2.0;
+		lo = std::fmin(0.0, far);
+		hi = std::fmax(0.0, far);
+	}
+	// NEWTON INSIDE IT, from last sample's rate, falling back on halving where a step leaves it.
+	double r = std::fmin(hi, std::fmax(lo, bendRate));
+	for (int i = 0; i < 60 && hi - lo > 1e-12; i++) {
+		const double hr = h(r);
+		if (hr == 0.0)
+			break;
+		if (hr > 0.0)
+			lo = r;
+		else
+			hi = r;
+		const double d = 1e-7 * std::fmax(1e-6, std::fabs(r)) + 1e-12;
+		const double slope = (h(r + d) - hr) / d;
+		double next = (slope < 0.0) ? r - hr / slope : 0.5 * (lo + hi);
+		if (!(next > lo && next < hi))
+			next = 0.5 * (lo + hi);
+		if (std::fabs(next - r) < 1e-13)
+			break;
+		r = next;
+	}
+	const double v = vt + k1 * r;
+	bendSpeed(v, bend + T * r, &broken);
+	bendRate = r;
+	bend += T * r;
+	const double f = s0 * bend + s1 * r;
+	if (hair)
+		hairLag += T * (f - K * hairLag) * hairAdmit;
+	// STUCK AND SLIPPING, for a bench to count. Not whether the bristles are broken: before it
+	// flies back, a string under a heavy bow creeps, a few centimetres a second behind the bow with
+	// every bristle broken and the friction still at its static value. Slipping is sliding fast
+	// enough that the friction has fallen a tenth of the way to its sliding value.
+	{
+		const double av = std::fabs(v) / bristles.fall;
+		const double drop = bristles.gaussian ? std::exp(-av * av) : std::exp(-av);
+		stuck = drop > 0.9;
+	}
+	slide = (float) v;
+	const float added = (float) (f / (2.0 * zBow));
+	atBowVelocity = unbowed + added;
+	atBowForce = (float) f;
+	return added;
+}
+
+
 void BowedString::silence() {
 	stuck = false;
+	bend = bendRate = hairLag = 0.0;
 	slide = 0.f;
 	atBowVelocity = atBowForce = 0.f;
 	for (int i = 0; i < MAX_DELAY; i++)
@@ -625,7 +775,8 @@ float BowedString::process() {
 	float push = 0.f;
 	if (excitePos < exciteLength)
 		push = excite[excitePos++];
-	const float added = bowJunction(fromBridge + fromNut + tFromBridge + tFromNut);
+	const float unbowed = fromBridge + fromNut + tFromBridge + tFromNut;
+	const float added = bristled ? bristleJunction(unbowed) : bowJunction(unbowed);
 	const float sideways = twisting ? twistRatio / (1.f + twistRatio) : 1.f;
 	push += added * sideways;
 	bowToBridge[write] = fromNut + push;

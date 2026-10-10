@@ -17,6 +17,8 @@ WHAT EACH SECTION TESTS AGAINST.
              attacks graded by Guettler and Askenfelt's listening limits.
   schelleng  Helmholtz motion held across force and bow position on the modelled cello D3, against
              Galluzzo's measured limits for a cello D string.
+  measured   Attacks on Matusiak and Chatziioannou's cello G string, against the Guettler diagram they
+             measured with a robot arm and a real bow.
   listen     A clean start, a creaky one and a slipping one, to hear.
 
     make bowplay                      all of it
@@ -53,6 +55,12 @@ struct Attack {
 };
 
 
+/** HOW FAR A GAP BETWEEN SLIPS MAY STRAY FROM THE PERIOD and still count as regular. */
+static double REGULAR = 0.1;
+/** Nought: regular from a slip to the end of the run. More: from the first slip with that many
+regular periods after it. */
+static size_t FIRST_RUN = 0;
+
 static Attack attack(BowedString& s, float force, float accel, double hz, int periodsAfter,
                      std::vector<float>* bridge = nullptr, float topSpeed = 1e9f) {
 	Attack r;
@@ -64,13 +72,15 @@ static Attack attack(BowedString& s, float force, float accel, double hz, int pe
 	bool was = false;
 	const size_t cap = (size_t) (3.0 * RATE);
 	size_t end = cap;
+	SlipWatch watch;
 	for (size_t i = 0; i < end; i++) {
 		const float t = (float) i / RATE;
 		s.setBow(force, std::fmin(accel * t, topSpeed));
 		const float out = s.process();
 		if (bridge)
 			bridge->push_back(out);
-		const bool stuck = s.sticking();
+		const bool flyback = watch.update(s, force, std::fmin(accel * t, topSpeed));
+		const bool stuck = s.bristling() ? !flyback : s.sticking();
 		// A slip starts where the string comes off the hair.
 		if (i > 0 && was && !stuck) {
 			if (!slips.empty())
@@ -108,12 +118,22 @@ static Attack attack(BowedString& s, float force, float accel, double hz, int pe
 	size_t k = slips.size();
 	for (size_t j = slips.size(); j-- > 1; ) {
 		const double gap = (double) (slips[j] - slips[j - 1]);
-		if (std::fabs(gap - period) > 0.1 * period)
+		if (std::fabs(gap - period) > REGULAR * period)
 			break;
 		k = j - 1;
 	}
 	if (k < slips.size() && slips.size() - k < 4)
 		k = slips.size();
+	// OR, IF ASKED, the first slip from which five periods running are regular.
+	if (FIRST_RUN > 0) {
+		k = slips.size();
+		for (size_t j = 0; j + FIRST_RUN < slips.size(); j++) {
+			bool run = true;
+			for (size_t q = j + 1; q <= j + FIRST_RUN && run; q++)
+				run = std::fabs((double) (slips[q] - slips[q - 1]) - period) <= REGULAR * period;
+			if (run) { k = j; break; }
+		}
+	}
 	if (k < slips.size()) {
 		r.periodsBefore = (int) std::lround((double) (slips[k] - slips[0]) / period);
 		r.seconds = (double) (slips[k] - slips[0]) / RATE;
@@ -423,6 +443,21 @@ static void attacksSection() {
 }
 
 
+/** THE BRISTLES AS MATUSIAK AND CHATZIIOANNOU FITTED THEM to their cello G string (2024): the S curve
+of their Table III, and their bow hair, whose stiffness and damping per metre of ribbon are taken
+over a centimetre-wide ribbon. */
+static void publishedBristles(BowedString& s) {
+	BowedString::Bristles b;
+	b.stiffness = 3.186e5f;
+	b.damping = 0.0027f;
+	b.muStatic = 1.0207f;
+	b.muCoulomb = 0.5071f;
+	b.fall = 0.228f;
+	b.gaussian = true;
+	s.setBristles(b);
+}
+
+
 // ---- SCHELLENG --------------------------------------------------------------------------------
 
 /** A STRING ALREADY IN HELMHOLTZ MOTION, a tenth of the way from the bridge, to start every cell of
@@ -452,13 +487,16 @@ static char heldMotion(const BowedString& start, float f0, float beta, float for
 	BowedString s = start;
 	const size_t n = (size_t) (1.0 * RATE);
 	std::vector<uint8_t> stuck(n);
+	SlipWatch watch;
 	for (size_t i = 0; i < n; i++) {
 		const float t = (float) i / RATE;
 		const float m = std::fmin(1.f, t / 0.15f);
 		s.setContact(0.1f * std::pow(beta / 0.1f, m));
-		s.setBow(f0 * std::pow(force / f0, m), speed);
+		const float fNow = f0 * std::pow(force / f0, m);
+		s.setBow(fNow, speed);
 		s.process();
-		stuck[i] = s.sticking() ? 1 : 0;
+		const bool slips = watch.update(s, fNow, speed);
+		stuck[i] = (s.bristling() ? !slips : s.sticking()) ? 1 : 0;
 	}
 	const double period = RATE / CELLO_D3;
 	int first = -1;
@@ -501,10 +539,14 @@ static void schellengSection() {
 	// play. Tested where he measured; further from the bridge his lines are printed for comparison
 	// only, and past about 0.17 is further than cellists bow (Schoonderwaldt's players: 2.4 to 12 cm
 	// on a 69 cm string).
+	// Under the friction curve, checked; under the bristles fitted to the cello G, printed alongside.
+	for (int model = 0; model < 2; model++)
 	for (float speed : {0.05f, 0.2f}) {
-		std::printf("\nSCHELLENG'S DIAGRAM, the modelled cello D3 at %.2f m/s: force across, bow position "
+		benchFriction = model ? publishedBristles : nullptr;
+		std::printf("\nSCHELLENG'S DIAGRAM, the modelled cello D3 at %.2f m/s, %s: force across, bow position "
 			"down.\n  H Helmholtz motion, f flattened past fifty cents, a digit that many slips a period, - "
-			"irregular.\n", speed);
+			"irregular, 0 no flyback at all.\n", speed, model ? "bristles (their S fit), not checked"
+			: "the friction curve");
 		const float forces[] = {0.01f, 0.02f, 0.03f, 0.05f, 0.1f, 0.2f, 0.35f, 0.5f, 1.f, 2.f, 4.f,
 			6.f, 8.f, 12.f, 16.f};
 		const int nf = (int) (sizeof forces / sizeof forces[0]);
@@ -552,6 +594,11 @@ static void schellengSection() {
 			if (plays) middles++;
 			if (fits) within++;
 		}
+		if (model) {
+			std::printf("  measured positions where the middle plays %d, with both limits within three "
+				"times %d, of %d\n", middles, within, rows);
+			continue;
+		}
 		char what[96];
 		std::snprintf(what, sizeof what, "  at %.2f m/s, measured positions where the middle plays, of %d",
 			speed, rows);
@@ -560,6 +607,94 @@ static void schellengSection() {
 			"times, of %d", speed, rows);
 		check(within >= rows - 1, what, within);
 	}
+	benchFriction = nullptr;
+}
+
+
+// ---- AGAINST A MEASURED GUETTLER DIAGRAM ----------------------------------------------------
+
+/** MATUSIAK AND CHATZIIOANNOU'S CELLO G STRING (2024), as they give it: 98 Hz, 149.6 N on a 0.5 mm
+radius at 10059 kg/m^3, so 1.087 kg/s; the fundamental at Q 200 (their sigma0, 1.537/s) and a
+partial at 2 kHz at about Q 84 (their sigma1); the twist 1.43 kg/s (sqrt(K_T theta) / r^2), 6.19
+times as fast, Q 29; bowed 0.0786 of the way from the bridge. */
+static BowedString celloG() {
+	BowedString s = cello(98.f, 0.0786f, 1.087f);
+	s.setDecay(6.91f * 200.f / (3.14159265f * 98.f));
+	s.setDamping(0.633f);
+	s.setTorsion(1.31f, 6.19f, 29.f);
+	return s;
+}
+
+
+static void measuredSection() {
+	std::printf("\nAGAINST A MEASURED GUETTLER DIAGRAM: their cello G string, 0.43 to 4.1 N up the page, 0.15 to "
+		"3.15 m/s2 across,\n  30 by 30 as they measured it with a robot arm and a real bow "
+		"(research/bowed-strings/guettler-measured-cello-g.txt).\n  @ playable in both, o measured only, + "
+		"modelled only, . neither, ? not readable on the figure. Playable: Helmholtz motion within 20 periods.\n");
+	std::vector<int> target;
+	{
+		FILE* f = std::fopen("research/bowed-strings/guettler-measured-cello-g.txt", "r");
+		if (!f) {
+			check(false, "  the measured diagram is readable", 0.0);
+			return;
+		}
+		char line[1024];
+		while (std::fgets(line, sizeof line, f)) {
+			if (line[0] == '#')
+				continue;
+			char* p = line;
+			char* end;
+			for (long v = std::strtol(p, &end, 10); end != p; v = std::strtol(p, &end, 10)) {
+				target.push_back((int) v);
+				p = end;
+			}
+		}
+		std::fclose(f);
+	}
+	if (target.size() != 900) {
+		check(false, "  the measured diagram has 900 cells", (double) target.size());
+		return;
+	}
+	// THE TWO FRICTION MODELS, the curve the string plays with and the bristles with the values
+	// Matusiak and Chatziioannou fitted to this string (their S curve, Table III, and their hair).
+	struct Model { const char* name; void (*apply)(BowedString&); };
+	const Model models[] = {{"the friction curve, 0.8 to 0.4 over 0.2 m/s", nullptr},
+	                        {"bristles, their S fit, with the hair", publishedBristles}};
+	for (const Model& m : models) {
+		benchFriction = m.apply;
+		std::printf("\n  %s:\n", m.name);
+		int both = 0, either = 0, measured = 0, modelled = 0, falseAlarm = 0, negatives = 0;
+		for (int row = 0; row < 30; row++) {
+			std::printf("  %4.2f N  ", 4.1f - (4.1f - 0.43f) * row / 29.f);
+			for (int col = 0; col < 30; col++) {
+				const float f = 4.1f - (4.1f - 0.43f) * row / 29.f, a = 0.15f + 3.0f * col / 29.f;
+				BowedString s = celloG();
+				const Attack r = attack(s, f, a, 98.0, 25);
+				const bool ours = r.periodsBefore >= 0 && r.periodsBefore < 20;
+				const int t = target[row * 30 + col];
+				if (t < 0) {
+					std::printf("?");
+					continue;
+				}
+				const bool theirs = t < 20;
+				std::printf("%c", ours ? (theirs ? '@' : '+') : (theirs ? 'o' : '.'));
+				measured += theirs;
+				modelled += ours;
+				both += ours && theirs;
+				either += ours || theirs;
+				if (!theirs) {
+					negatives++;
+					falseAlarm += ours;
+				}
+			}
+			std::printf("\n");
+		}
+		std::printf("  playable: measured %d, modelled %d, both %d. The model plays %.0f%% of the measured "
+			"playable cells, and %.0f%% of the unplayable ones; overlap %.2f.\n", measured, modelled, both,
+			100.0 * both / std::max(1, measured), 100.0 * falseAlarm / std::max(1, negatives),
+			either ? (double) both / either : 0.0);
+	}
+	benchFriction = nullptr;
 }
 
 
@@ -612,6 +747,38 @@ static void listenSection() {
 	}
 	normalise(out);
 	writeWav("build/bowed-attacks.wav", out);
+
+	// THE SAME ATTACKS UNDER BOTH FRICTION MODELS, on Matusiak and Chatziioannou's cello G string,
+	// at three cells their robot found playable: each first with the friction curve, then with the
+	// bristles. Drawn at its acceleration for 0.4 s, then held at the speed reached, for a second.
+	std::printf("\n  On their cello G string, three attacks they measured as playable, each with the friction "
+		"curve and then the bristles:\n");
+	// Cells of the measured grid, by row from the top and column: a bowed attack is chaotic enough
+	// that rounding the force to two places can change how it starts.
+	struct Cell { float force, accel; };
+	auto at = [](int row, int col) { return Cell{4.1f - (4.1f - 0.43f) * row / 29.f, 0.15f + 3.0f * col / 29.f}; };
+	const Cell cells[] = {at(10, 5), at(2, 10), at(0, 12)};
+	std::vector<float> both;
+	for (const Cell& c : cells)
+		for (int model = 0; model < 2; model++) {
+			benchFriction = model ? publishedBristles : nullptr;
+			BowedString probe = celloG();
+			const Attack r = attack(probe, c.force, c.accel, 98.0, 25, nullptr, 0.4f * c.accel);
+			std::printf("  %.1f N at %.2f m/s2, %-9s %s\n", c.force, c.accel, model ? "bristles:" : "curve:",
+				r.periodsBefore >= 0 ? (std::to_string(r.periodsBefore) + " periods to Helmholtz motion").c_str()
+				                     : "no Helmholtz motion in the run");
+			BowedString s = celloG();
+			const size_t n = (size_t) (1.2 * RATE);
+			for (size_t i = 0; i < n; i++) {
+				const float time = (float) i / RATE;
+				s.setBow(time < 1.0f ? c.force : 0.f, std::fmin(c.accel * time, 0.4f * c.accel));
+				both.push_back(s.process());
+			}
+			both.insert(both.end(), (size_t) (0.4 * RATE), 0.f);
+		}
+	benchFriction = nullptr;
+	normalise(both);
+	writeWav("build/bowed-attacks-friction.wav", both);
 }
 
 
@@ -623,6 +790,7 @@ int main(int argc, char** argv) {
 	if (run("guettler")) guettlerSection();
 	if (run("attacks")) attacksSection();
 	if (run("schelleng")) schellengSection();
+	if (run("measured")) measuredSection();
 	if (run("listen")) listenSection();
 	std::printf("\n%s\n", failures ? "SOME CHECKS FAILED" : "all passed");
 	return failures ? 1 : 0;

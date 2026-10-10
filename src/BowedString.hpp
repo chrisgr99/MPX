@@ -109,6 +109,42 @@ struct BowedString {
 	classical model; see process. */
 	void setFriction(float staticCoefficient, float dynamicCoefficient, float fallSpeed);
 
+	/** THE ROSIN AS BRISTLES: the elasto-plastic friction model (Dupont and colleagues 2002), as
+	Serafin, Avanzini and Rocchesso put it at a waveguide's bow and Matusiak and Chatziioannou fitted
+	it to a cello string (2024). The contact is a field of elastic bristles whose mean bend, z, is
+	the model's memory: the friction is the bend's spring and damper, s0 z + s1 dz/dt; while the bend
+	is small the bristles only bend and the string moves with the bow; past `breakaway` of the
+	Coulomb bend they start to break; at the steady bend for the sliding speed all are broken and
+	the string slides. So whether it sticks depends on how the contact got where it is, not only on
+	the speed now, which a friction curve cannot say. Set field by field; the defaults are their
+	fit for the epsilon curve. */
+	struct Bristles {
+		/** s0, newtons a metre: how stiff the bristles are. */
+		float stiffness = 2.4099e5f;
+		/** s1, kilograms a second: their internal damping. */
+		float damping = 0.0115f;
+		/** The coefficients stuck and sliding fast. */
+		float muStatic = 1.1489f, muCoulomb = 0.3382f;
+		/** How fast the steady friction falls with sliding speed, metres a second: epsilon for the
+		curve mu_C + (mu_S - mu_C) e^(-|v| / epsilon), or the Stribeck speed for the Gaussian one. */
+		float fall = 0.4f;
+		/** The Gaussian Stribeck curve, e^(-(v / v_S)^2), in place of the exponential one. */
+		bool gaussian = false;
+		/** The breakaway bend, below which the bristles only bend, as a share of the Coulomb bend
+		mu_C F / s0. */
+		float breakaway = 0.7f;
+		/** THE BOW HAIR GIVES, a spring and a damper between the stick and the rosin, so the hair
+		where it touches the string lags the stick by however far the friction stretches it. Newtons
+		a metre and kilograms a second; nought stiffness for hair that does not give. Matusiak and
+		Chatziioannou's fit, over a centimetre-wide ribbon: 4.83e6 N/m^2 and 5.77e3 kg/(s m). */
+		float hairStiffness = 4.8297e4f, hairDamping = 57.674f;
+	};
+	/** Friction from bristles with these properties, in place of the friction curve. */
+	void setBristles(const Bristles& b);
+	/** Back to the friction curve. */
+	void useFrictionCurve();
+	bool bristling() const { return bristled; }
+
 	/** WHAT THE BOW DID LAST SAMPLE, for a bench: whether the string was stuck to the hair, the
 	velocity of its surface under the bow in metres a second, and the friction force in newtons. */
 	bool sticking() const { return stuck; }
@@ -187,6 +223,11 @@ private:
 	halfway at 0.2 m/s. */
 	float muStatic = 0.8f, muDynamic = 0.4f, fallSpeed = 0.2f;
 	bool stuck = false;
+	/** The bristles, when they are what makes the friction: their properties, their bend and how
+	fast it last changed. */
+	bool bristled = false;
+	Bristles bristles;
+	double bend = 0.0, bendRate = 0.0, hairLag = 0.0;
 	/** The sliding speed last sample, bow minus string: which way the string is slipping. */
 	float slide = 0.f;
 	float atBowVelocity = 0.f, atBowForce = 0.f;
@@ -194,6 +235,10 @@ private:
 	/** The velocity the bow adds to both outgoing waves, given what the string would be doing
 	under it with nothing touching it. */
 	float bowJunction(float unbowed);
+	float bristleJunction(float unbowed);
+	/** The bristles' steady bend for a sliding speed, signed with it, and what the bend does next. */
+	double steadyBend(double slideSpeed) const;
+	double bendSpeed(double slideSpeed, double z, bool* broken) const;
 
 	// The pluck, played in over one period, half into each outgoing wave.
 	float excite[MAX_DELAY] = {};

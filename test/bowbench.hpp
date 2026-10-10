@@ -163,6 +163,27 @@ static inline void writeWav(const std::string& path, const std::vector<float>& l
 }
 
 
+/** SLIPPING, JUDGED FROM THE MOTION, as the measurements judge it, and not from the friction
+model's own state: a slip is a flyback, the string going back against the bow at half the speed of
+an ideal Helmholtz slip or more (the bow's speed over beta), or, while the bow is too slow for that
+to mean anything, at more than the slip a twentieth of the bow force would cause. It ends when the
+string has all but caught the bow again. Under the friction curve this agrees with the junction's
+stuck flag, which marks the moment of release exactly and is used there instead; under bristles
+the string can creep, sliding slowly with every bristle broken, which is not a slip. */
+struct SlipWatch {
+	bool slipping = false;
+	bool update(const BowedString& s, float force, float bowSpeed) {
+		const float dir = bowSpeed < 0.f ? -1.f : 1.f;
+		const float back = dir * (bowSpeed - s.velocityAtBow());
+		const float ideal = std::fabs(bowSpeed) / std::fmax(0.01f, s.contact());
+		const float floor = 0.05f * force / (2.f * s.impedance());
+		const float start = std::fmax(0.5f * ideal, floor);
+		slipping = slipping ? back > 0.2f * start : back > start;
+		return slipping;
+	}
+};
+
+
 /** WHAT A BOWED NOTE DID, sample by sample: the bridge, the string under the bow, and whether it
 was stuck to the hair. */
 struct Bowing {
@@ -180,12 +201,15 @@ static inline Bowing bow(BowedString& s, float force, float speed, float seconds
 	b.bridge.resize(n);
 	b.velocity.resize(n);
 	b.stuck.resize(n);
+	SlipWatch watch;
 	for (size_t i = 0; i < n; i++) {
 		const float t = (float) i / RATE;
-		s.setBow(force, speed * std::fmin(1.f, t / rise));
+		const float v = speed * std::fmin(1.f, t / rise);
+		s.setBow(force, v);
 		b.bridge[i] = s.process();
 		b.velocity[i] = s.velocityAtBow();
-		b.stuck[i] = s.sticking() ? 1 : 0;
+		const bool slips = watch.update(s, force, v);
+		b.stuck[i] = (s.bristling() ? !slips : s.sticking()) ? 1 : 0;
 	}
 	return b;
 }
@@ -276,10 +300,16 @@ static inline float impedanceOf(float hz) {
 	return best;
 }
 
+/** WHAT EVERY STRING THE BENCH MAKES IS GIVEN AFTER THE REST: a friction model, say, so a whole
+section can be run under another. Nothing by default. */
+static void (*benchFriction)(BowedString&) = nullptr;
+
 static inline BowedString cello(float hz, float contact, float impedance = -1.f) {
 	const float q = 500.f;
 	BowedString s = string(hz, 6.91f * q / (3.14159265f * hz), 0.3f, contact);
 	s.setImpedance(impedance > 0.f ? impedance : impedanceOf(hz));
+	if (benchFriction)
+		benchFriction(s);
 	return s;
 }
 

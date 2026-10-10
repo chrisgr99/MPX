@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: phases 1 and 2 built — the string and the bow. Phase 3, the acceptance benches, is under way: held notes play where Schelleng's diagram says a cello does, and notes do not yet start the way Guettler's says they should. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
+Status: phases 1 and 2 built — the string and the bow. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -40,7 +40,11 @@ The classical model makes friction a function of the sliding speed alone: a curv
 
 Build the velocity curve first because it is a known quantity and the rest of the model can be exercised against it. Treat the thermal model as the planned replacement rather than as an improvement that may never come.
 
-The curve is Woodhouse and Galluzzo's hyperbola, static 0.8 falling to 0.4, halfway at 0.2 m/s, which they fitted to steady bowing. It plays held notes where cellos play them and does not start them as cellists do; the steeper curve Smith and Woodhouse measured for rosin sliding steadily starts them better and holds them worse. One curve does not serve both, which is the case for the thermal model made by measurement. See phase 3.
+The string has two friction models, and which plays by default is open (phase 3).
+
+**The friction curve**, the default: Woodhouse and Galluzzo's hyperbola, static 0.8 falling to 0.4, halfway at 0.2 m/s, which they fitted to steady bowing. It plays held notes where cellos play them and does not start them as cellists do; the steeper curve Smith and Woodhouse measured for rosin sliding steadily starts them better and holds them worse.
+
+**The bristles** (`BowedString::setBristles`): the elasto-plastic model of Dupont and colleagues (2002), as Serafin, Avanzini and Rocchesso put it at a waveguide's bow (2003) and Matusiak and Chatziioannou fitted it to a cello string (2024). The rosin contact is a field of elastic bristles whose mean bend is the model's memory: while the bend is small they only bend and the string moves with the bow, past a breakaway bend they start to break, and at the steady bend for the sliding speed all are broken and the string slides at the friction of a Stribeck curve. So whether the string sticks depends on how the contact got where it is, which a curve cannot say. The bow hair's own give, a spring and damper between the stick and the rosin, is part of it. Solved each sample for the bend's rate by Newton's method kept inside a bracket, the bend stepped by backward Euler because the bristles settle in microseconds. Under a heavy, slow bow it lets the string creep, a few centimetres a second behind the bow at the static friction, before it flies back — which a curve does not do.
 
 The bow is not a point. The hair covers about a centimetre of string, which is why some effects need several contact points. Out of scope for the first version.
 
@@ -209,9 +213,20 @@ This is the gate the whole design rests on, and it is the reason this is a bette
 
 The steeper curve, Smith and Woodhouse's measured rosin as the nearest hyperbola, draws a band of acceptable starts with the twist in, in the wedge's orientation but at about half the accelerations Guettler's equations give for this string. It would also halve Schelleng's upper limit, which the gentler curve meets. One friction curve does not serve both diagrams, and that is what the literature finds for this model. Galluzzo's simulations, as Woodhouse's 2014 review reports them, put the friction-curve wedge in the wrong part of the diagram with far fewer successes, and the thermal model's much closer. Galluzzo, Woodhouse and Mansour (2017) found that none of the classical, reconstructed or thermal friction models predicted the measured region. Matusiak and Chatziioannou (2024) got a region roughly like the measured one from an elasto-plastic model, though reconstructing individual attacks needed friction coefficients that change with force and acceleration. From plain starts the model's notes take a fifth of a second to more than a second to settle, the low strings longest.
 
-`build/bowed-attacks.wav`: the cleanest start on the grid a tenth of the way from the bridge, a creaky one and a slipping one.
+**Against a measured Guettler diagram.** Matusiak and Chatziioannou measured one with a robot arm and a real bow on a cello G string, 30 by 30 cells of force and acceleration; it is read off their figure cell by cell into `research/bowed-strings/guettler-measured-cello-g.txt`, and the bench models their string from their published figures — weight, tension, damping, twist and bow position. Of the 231 cells they found playable, Helmholtz motion within 20 periods:
 
-**Next in this phase**: a friction model whose coefficients depend on more than the sliding speed — the thermal model, or the elasto-plastic one — measured against both diagrams on this bench. The player of phase 7 can also choose an attack inside the wedge, as players do, which Guettler's equations make possible.
+| friction | measured playable cells the model plays | measured unplayable cells it plays | overlap |
+|---|---|---|---|
+| the curve | 1 per cent | 1 per cent | 0.01 |
+| bristles, their fitted values | 76 per cent | 21 per cent | 0.48 |
+
+The bristles put the playable region where the measurement has it: heavy bow, gentle acceleration, above the diagonal. Their own simulation found theirs larger than the measured region too.
+
+**But the bristles miss Schelleng's diagram.** On the cello D3 with their fitted values, held Helmholtz motion reaches far past Galluzzo's limits at both ends: at 0.05 m/s down to a hundredth of a newton, ten times below his minimum, and at 0.2 m/s up to the 16 N the bench reaches, three times his maximum and more. Both limits are within a factor of three of his at only one measured position of five, against four for the curve. A search over the bristles' stiffness, coefficients, Stribeck speed, breakaway and hair found no values that do well on both diagrams: the best cut the Schelleng error by about a third and the overlap from 0.48 to 0.42, and the attacks are chaotic enough that a change in the third figure of a parameter moves the score. One model serves held notes, the other attacks, as the two friction curves did. Matusiak and Chatziioannou reach the same place from the other side: reconstructing individual measured attacks needed the friction parameters to change with force and acceleration.
+
+`build/bowed-attacks.wav`: the cleanest start on the D3 grid a tenth of the way from the bridge, a creaky one and a slipping one. `build/bowed-attacks-friction.wav`: three attacks the robot found playable on the cello G, each with the curve and then the bristles; with the curve none starts, with the bristles all three within two periods.
+
+**Open**: which model plays, or a friction whose parameters move with the bowing. The player of phase 7 can also choose attacks inside the wedge, as players do, which Guettler's equations make possible.
 
 Worth stopping if: the playable region cannot be made to resemble the published one. Everything after this assumes a player can be given force and speed and get a note.
 
