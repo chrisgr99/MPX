@@ -168,13 +168,33 @@ Two things it cost. The round trip meets each end once, not twice, and counting 
 
 The bench also prints how close to the bridge the contact point can be had, which is the figure phase 4 needs. At 48 kHz, with the shortest segment the interpolated read allows: cello C2 reaches 0.006 of the length, cello A3 0.019, violin G3 0.017, violin A4 0.039, violin E5 0.059, violin E6 0.125, violin E7 0.288. So a cello can be bowed anywhere a player would, and a violin cannot be bowed near the bridge above about the A string without oversampling.
 
-### 2. The bow — under way
+### 2. The bow — built
 
 The nonlinear junction at the contact point, solved once per sample, with the classical friction curve that depends on sliding speed alone. Bow force, bow speed and sounding point as explicit inputs.
 
-**Where it stands.** The junction is built (`BowedString::bowJunction`): the hyperbolic friction curve, and the hysteresis rule that keeps a stuck string stuck until the static limit is passed and a slipping one on its outer branch until that branch disappears, which matches the published closed form exactly. A held cello D3 at a newton and 0.2 m/s, bowed at a tenth of the length, settles into Helmholtz motion: one slip a period, stuck for 0.885 of it, in tune to a quarter of a cent. Once going, Helmholtz motion survives over a band of force and bow position with Schelleng's shape — at a tenth of the length from 0.2 N to 4 N. Starting a note is erratic: from rest the string falls into two, three or more slips a period depending on the attack, and the cello's low C almost never starts cleanly. Simulations with this friction model are known for exactly that (Woodhouse and Galluzzo found a quarter of attacks succeeding), which is the case for the thermal model.
+**The junction** (`BowedString::bowJunction`): the hyperbolic friction curve with the published constants — static 0.8, falling to 0.4, halfway there at 0.2 m/s — and the hysteresis rule that keeps a stuck string stuck until the static limit is passed and a slipping one on its outer branch until that branch disappears, which matches the published closed form exactly.
 
-**Still to do in this phase.** Both end reflections pass a steady velocity back exactly, so the string cannot drift; at present they lose a little of it, which skews the balance of sticking and slipping. The losses become physical: the fundamental at a Q of about five hundred, as a cello's open strings measure, and the high-frequency loss set per hertz rather than per sample, which the oversampling of phase 4 needs anyway. The friction constants become the published ones (static 0.8, dynamic 0.4, falling over 0.2 m/s), and each string its own measured impedance.
+**The ends.** Both reflections pass a steady velocity back exactly, through a lowpass at an eighth of the pitch that carries it round the loss and dispersion, so the string cannot drift and the balance of sticking and slipping is not skewed. The tuning allows for the delay that lowpass adds.
+
+**The losses are physical.** The fundamental is set by the decay time, at a Q of about five hundred, as a cello's open strings measure. The high-frequency loss is set per hertz rather than per sample: a damping of 0.3 gives a partial at two kilohertz a Q of about three hundred at any pitch and any sample rate, which the oversampling of phase 4 needs. Each string has its own wave impedance, from 1.46 kg/s for the cello's C to 0.17 for the violin's E.
+
+**What `make bowtest` measures.** A held cello D3 at a newton and 0.2 m/s, bowed a tenth of the length from the bridge, settles into Helmholtz motion within 0.6 s and holds it: one slip a period, slipping for 0.13 of it against the 0.1 of the ideal sharp-cornered motion, as losses round the corner and spread the slip. It goes nowhere on average, is in tune to 1.3 cents, has nothing at half the pitch, and its harmonics fall as one over the harmonic number to within 2 dB up to the seventh, and dip by 2 to 3 dB around the tenth, whose node is under the bow. An up-bow is the same motion reversed, and a lifted bow lets the string ring down.
+
+Each string at a force a player would use plays clean Helmholtz motion, every period: cello C2 at 3 N, G2 at 1.5 N, A3 at 0.8 N, violin G3 and A4 at 0.5 N, E5 at 0.3 N. The cello's low C needs about three newtons at this speed and below that slips two to seven times a period. The violin's A, five samples from the bridge at 48 kHz, starts to go astray at about 0.3 N, which is phase 4's oversampling.
+
+Held Helmholtz motion survives over a band with Schelleng's shape. On the D3 at 0.2 m/s, starting cleanly and then moving to each force and position:
+
+| bow from bridge | Helmholtz from | to |
+|---|---|---|
+| 0.03 | 2 N | above 8 N |
+| 0.05 | 0.5 N | above 8 N |
+| 0.08 and 0.12 | 0.5 N | 6 N |
+| 0.18 | 0.1 N | 1 N |
+| 0.25 | 0.05 N or less | 0.2 N |
+
+The minimum rises towards the bridge and the maximum falls away from it. One thing does not match: at a quarter of the length, six and eight newtons come back to one slip a period where a real string would crunch. Phase 3 decides whether that matters.
+
+**Not yet.** Starting a note is slow: a plain attack takes a third of a second to a second to settle, where a cellist does it in tens of milliseconds. Simulations with this friction model are known for erratic starts (Woodhouse and Galluzzo found a quarter of attacks succeeding), which is the case for the thermal model, and attacks are phase 3's question.
 
 This is the first bowed sound. It will be thin, because there is no body, and it should already be recognisably a bowed string rather than a synthesiser, because Helmholtz motion is a strong attractor.
 

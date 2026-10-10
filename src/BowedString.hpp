@@ -49,8 +49,10 @@ struct BowedString {
 	void setFrequency(float hz);
 	/** How long the fundamental takes to fall by 60 dB once the bow leaves, in seconds. */
 	void setDecay(float seconds);
-	/** How much faster the upper partials die than the fundamental: nought, as slowly, to one,
-	far faster. */
+	/** HOW FAST THE UPPER PARTIALS DIE, as a physical quantity rather than a filter setting: nought
+	gives a partial at two kilohertz a Q of a thousand, 0.3 about three hundred — near what a cello
+	string on its instrument measures — and one a Q of twenty. Set per hertz, so the same setting
+	means the same string at any pitch and any sample rate, which oversampling needs. */
 	void setDamping(float amount);
 	/** How stiff the string is, nought to one. Less of a bowed string's character than of a
 	piano's, and still there. */
@@ -141,11 +143,16 @@ private:
 	float atBridge = 0.f;
 	// The DC blocker's.
 	float dcIn = 0.f, dcOut = 0.f;
+	/** WHAT EACH END PASSES BACK UNTOUCHED: a steady velocity, exactly. See tune. The lowpass that
+	carries it, its pole, and the nut's own. */
+	float bridgeLow = 0.f, nutLow = 0.f, lowPole = 0.99f;
 
 	// The bow and the friction.
 	float z = 0.5f;
 	float bowForce = 0.f, bowSpeed = 0.f;
-	float muStatic = 0.8f, muDynamic = 0.3f, fallSpeed = 0.1f;
+	/** THE PUBLISHED CURVE: Woodhouse and Galluzzo's hyperbolic fit, static 0.8, falling to 0.4,
+	halfway at 0.2 m/s. */
+	float muStatic = 0.8f, muDynamic = 0.4f, fallSpeed = 0.2f;
 	bool stuck = false;
 	/** The sliding speed last sample, bow minus string: which way the string is slipping. */
 	float slide = 0.f;

@@ -151,8 +151,19 @@ void BowedString::tune() {
 	const float period = rate / freq;
 	const float w = 2.f * PI * freq / rate;
 
-	// A one-pole lowpass in the bridge reflection, as GuitarString's loss filter.
-	lossS = 0.02f + 0.73f * damping;
+	// A ONE-POLE LOWPASS IN THE BRIDGE REFLECTION, as GuitarString's loss filter — SET PER HERTZ.
+	// Its coefficient used to be a fixed number per sample, so the same setting lost far less a
+	// second at a low note than a high one, and less again at a higher sample rate. Now `damping`
+	// names a Q for a partial at two kilohertz, internal friction makes a partial's decay rate go
+	// as its frequency squared, and the coefficient is what gives that rate at this pitch and this
+	// rate: per round trip the filter takes away about s / (1 - s)^2 times w^2 / 2 nepers.
+	{
+		const float q2k = 1000.f * std::pow(0.02f, damping);
+		const float b = PI / (q2k * 2000.f);
+		const float k = b * rate * rate / (2.f * PI * PI * freq);
+		lossS = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
+		lossS = std::fmax(0.f, std::fmin(0.97f, lossS));
+	}
 	const float denRe = 1.f - lossS * std::cos(w);
 	const float denIm = lossS * std::sin(w);
 	const float lossDelay = std::atan2(denIm, denRe) / w;
@@ -189,8 +200,43 @@ void BowedString::tune() {
 	}
 	const float dispersionDelay = (float) DISPERSION_STAGES * allpassDelay(dispersionA, w);
 
+	// EACH END PASSES A STEADY VELOCITY BACK EXACTLY. A reflection that lost a little of it let the
+	// mean of the travelling waves drift — the whole string moving sideways — which under a bow
+	// is not harmless: the friction's own steady part never balanced, and the string spent the
+	// wrong share of each period stuck. So the loss that sets the decay is taken only at the
+	// note's own frequencies: what reflects is `gain` of the wave plus the rest of it through a
+	// lowpass an octave and a half below the note, which is the whole of it at nought hertz and
+	// almost none of it at the fundamental. McIntyre, Schumacher and Woodhouse's condition, that
+	// each reflection's area be exactly minus one.
+	lowPole = std::exp(-2.f * PI * (freq / 8.f) / rate);
+	const float cDen = (1.f - lowPole * std::cos(w)) * (1.f - lowPole * std::cos(w))
+		+ (lowPole * std::sin(w)) * (lowPole * std::sin(w));
+	const float cRe = (1.f - lowPole) * (1.f - lowPole * std::cos(w)) / cDen;
+	const float cIm = -(1.f - lowPole) * lowPole * std::sin(w) / cDen;
+	// What a reflection of `g` does to the fundamental: its gain and its delay in samples.
+	auto through = [&](float g, float* delay) {
+		const float re = g + (1.f - g) * cRe, im = (1.f - g) * cIm;
+		if (delay)
+			*delay = -std::atan2(im, re) / w;
+		return std::sqrt(re * re + im * im);
+	};
+	// And the `g` that gives the fundamental a gain of `target`: a quadratic in g.
+	auto solveFor = [&](float target) {
+		const float a = 1.f - cRe;
+		const float qa = a * a + cIm * cIm;
+		const float qb = 2.f * (a * cRe - cIm * cIm);
+		const float qc = cRe * cRe + cIm * cIm - target * target;
+		const float disc = std::fmax(0.f, qb * qb - 4.f * qa * qc);
+		return std::fmax(0.f, std::fmin(0.99999f, (-qb + std::sqrt(disc)) / (2.f * qa)));
+	};
+	float nutDelay = 0.f;
+	const float nutGain = through(NUT_REFLECT, &nutDelay);
+	const float perPass = std::pow(0.001f, 1.f / (decay * freq));
+	float bridgeDelay = 0.f;
+	through(solveFor(perPass / std::fmax(lossGain * nutGain, 1e-6f)), &bridgeDelay);
+
 	// What the four reads have to give between them, and how it divides.
-	const float want = period - lossDelay - dispersionDelay;
+	const float want = period - lossDelay - dispersionDelay - nutDelay - bridgeDelay;
 	float half = std::fmax(2.f * MIN_SEGMENT, want) * 0.5f;
 	float db = beta * half;
 	float dn = half - db;
@@ -228,9 +274,7 @@ void BowedString::tune() {
 	// trip meets each end once, not twice: bow to bridge, back to bow, on to the nut, back
 	// again. Counting the nut's reflection for each of the two segments it borders left a
 	// string asked for six seconds ringing for nearly nine.
-	const float perPass = std::pow(0.001f, 1.f / (decay * freq));
-	const float passive = lossGain * readGain * NUT_REFLECT;
-	gain = std::fmin(perPass / std::fmax(passive, 1e-6f), 0.99999f);
+	gain = solveFor(perPass / std::fmax(lossGain * readGain * nutGain, 1e-6f));
 }
 
 
@@ -419,6 +463,7 @@ void BowedString::silence() {
 	for (int i = 0; i < DISPERSION_STAGES; i++)
 		dIn[i] = dOut[i] = 0.f;
 	dcIn = dcOut = 0.f;
+	bridgeLow = nutLow = 0.f;
 	exciteLength = excitePos = 0;
 }
 
@@ -454,10 +499,12 @@ float BowedString::process() {
 		dOut[i] = y;
 		stiff = y;
 	}
-	bridgeToBow[write] = -gain * stiff;
+	bridgeLow += (1.f - lowPole) * (stiff - bridgeLow);
+	bridgeToBow[write] = -(gain * stiff + (1.f - gain) * bridgeLow);
 
 	// THE NUT: a reflection and almost nothing else.
-	nutToBow[write] = -NUT_REFLECT * arrivingAtNut;
+	nutLow += (1.f - lowPole) * (arrivingAtNut - nutLow);
+	nutToBow[write] = -(NUT_REFLECT * arrivingAtNut + (1.f - NUT_REFLECT) * nutLow);
 
 	// THE BOW: straight through, plus what the friction adds, plus the pluck while one is going in.
 	float push = 0.f;
