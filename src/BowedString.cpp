@@ -747,6 +747,7 @@ float BowedString::process() {
 	lastOutB = lossyB;
 	bridgeLow += (1.f - lowPole) * (lossyB - bridgeLow);
 	bridgeToBow[write] = -(gain * lossyB + (1.f - gain) * bridgeLow);
+	atBridgeForce = z * (arrivingAtBridge - bridgeToBow[write]);
 
 	// THE NUT: the rest of the string's loss, the stiffness allpasses, and the reflection.
 	const float lossy = (1.f - lossS) * arrivingAtNut + lossS * lastOut;

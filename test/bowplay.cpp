@@ -36,136 +36,6 @@ WHAT EACH SECTION TESTS AGAINST.
 #include <thread>
 
 
-// ---- ONE ATTACK -----------------------------------------------------------------------------
-
-/** WHAT A NOTE STARTED FROM REST DID. The bow is put on the string at its force and drawn from
-standing still at a constant acceleration, as in Guettler's analysis and in the measurements. */
-struct Attack {
-	/** When the string first let go of the hair, in seconds; -1 if it never did. */
-	double firstSlip = -1.0;
-	/** NOMINAL PERIODS FROM THE FIRST SLIP UNTIL THE TRIGGERING TURNS REGULAR — one slip every
-	period from then to the end of the run. Nought is Guettler's perfect attack. -1 if it never
-	turned regular within the run. */
-	int periodsBefore = -1;
-	/** What went wrong first, when something did: a period too long (the string held on past the
-	release, which is the creak Guettler calls prolonged periods), or too short (it let go early,
-	multiple slipping). */
-	bool prolonged = false;
-	/** The friction coefficient while slipping: in the first slip, and in the later slips before
-	the first one's reflection comes back from the nut. What Guettler's limits are worked out with. */
-	double muFirst = 0.0, muLater = 0.0;
-	/** The string's speed against the bow just after it first lets go, in metres a second. */
-	double slipSpeed = 0.0;
-	/** How long the transient lasted, in seconds: the first slip to regular triggering. */
-	double seconds = 0.0;
-};
-
-
-/** HOW FAR A GAP BETWEEN SLIPS MAY STRAY FROM THE PERIOD and still count as regular. */
-static double REGULAR = 0.1;
-/** Nought: regular from a slip to the end of the run. More: from the first slip with that many
-regular periods after it. */
-static size_t FIRST_RUN = 0;
-
-static Attack attack(BowedString& s, float force, float accel, double hz, int periodsAfter,
-                     std::vector<float>* bridge = nullptr, float topSpeed = 1e9f) {
-	Attack r;
-	const double period = RATE / hz;
-	std::vector<size_t> slips;
-	std::vector<double> slipMu;            // mean friction coefficient, slip by slip
-	double muSum = 0.0;
-	int muN = 0;
-	bool was = false;
-	const size_t cap = (size_t) (3.0 * RATE);
-	size_t end = cap;
-	SlipWatch watch;
-	for (size_t i = 0; i < end; i++) {
-		const float t = (float) i / RATE;
-		s.setBow(force, std::fmin(accel * t, topSpeed));
-		const float out = s.process();
-		if (bridge)
-			bridge->push_back(out);
-		const bool flyback = watch.update(s, force, std::fmin(accel * t, topSpeed));
-		const bool stuck = s.bristling() ? !flyback : s.sticking();
-		// A slip starts where the string comes off the hair.
-		if (i > 0 && was && !stuck) {
-			if (!slips.empty())
-				slipMu.push_back(muN ? muSum / muN : 0.0);
-			slips.push_back(i);
-			muSum = 0.0;
-			muN = 0;
-			if (slips.size() == 1) {
-				end = std::min(cap, i + (size_t) (periodsAfter * period));
-				r.slipSpeed = s.velocityAtBow() - std::fmin(accel * t, topSpeed);
-			}
-		}
-		if (!stuck && !slips.empty()) {
-			muSum += std::fabs(s.frictionForce()) / force;
-			muN++;
-		}
-		was = stuck;
-	}
-	if (slips.empty())
-		return r;
-	r.firstSlip = (double) slips[0] / RATE;
-	if (!slipMu.empty())
-		r.muFirst = slipMu[0];
-	// The later slips: those before the first one's reflection from the nut returns.
-	{
-		const double n = 1.0 / std::fmax(1e-3, (double) s.contact());
-		double sum = 0.0;
-		int k = 0;
-		for (size_t j = 1; j < slipMu.size() && (double) j < n - 1.0; j++, k++)
-			sum += slipMu[j];
-		r.muLater = k ? sum / k : r.muFirst;
-	}
-	// REGULAR FROM SLIP k: every gap from there to the end within a tenth of a period, and at
-	// least three of them, or the end of the run is not telling us anything.
-	size_t k = slips.size();
-	for (size_t j = slips.size(); j-- > 1; ) {
-		const double gap = (double) (slips[j] - slips[j - 1]);
-		if (std::fabs(gap - period) > REGULAR * period)
-			break;
-		k = j - 1;
-	}
-	if (k < slips.size() && slips.size() - k < 4)
-		k = slips.size();
-	// OR, IF ASKED, the first slip from which five periods running are regular.
-	if (FIRST_RUN > 0) {
-		k = slips.size();
-		for (size_t j = 0; j + FIRST_RUN < slips.size(); j++) {
-			bool run = true;
-			for (size_t q = j + 1; q <= j + FIRST_RUN && run; q++)
-				run = std::fabs((double) (slips[q] - slips[q - 1]) - period) <= REGULAR * period;
-			if (run) { k = j; break; }
-		}
-	}
-	if (k < slips.size()) {
-		r.periodsBefore = (int) std::lround((double) (slips[k] - slips[0]) / period);
-		r.seconds = (double) (slips[k] - slips[0]) / RATE;
-	}
-	// What went wrong first.
-	const size_t upTo = (k < slips.size()) ? k : slips.size() - 1;
-	for (size_t j = 1; j <= upTo; j++) {
-		const double gap = (double) (slips[j] - slips[j - 1]);
-		if (gap > 1.1 * period) { r.prolonged = true; break; }
-		if (gap < 0.9 * period) { r.prolonged = false; break; }
-	}
-	if (k >= slips.size()) {
-		// Never regular: what dominated, gaps too long or too short?
-		int longer = 0, shorter = 0;
-		for (size_t j = 1; j < slips.size(); j++) {
-			const double gap = (double) (slips[j] - slips[j - 1]);
-			if (gap > 1.1 * period) longer++;
-			else if (gap < 0.9 * period) shorter++;
-		}
-		r.prolonged = longer >= shorter || slips.size() < 2;
-		r.seconds = (double) (end - slips[0]) / RATE;
-	}
-	return r;
-}
-
-
 // ---- GUETTLER'S LIMITS ----------------------------------------------------------------------
 
 /** THE FOUR LIMITS ON A PERFECT ATTACK, Guettler (2002) equations (8b), (10b) and (12), for a
@@ -361,20 +231,6 @@ static void guettlerSection() {
 
 
 // ---- THE MODELLED CELLO -----------------------------------------------------------------------
-
-/** GUETTLER AND ASKENFELT'S LISTENING LIMITS (1997, as Guettler 2002 gives them): a violin attack
-was heard as unacceptable when its multiple slipping lasted more than 90 milliseconds, or its
-prolonged periods more than 50. Perfect is regular from the first period. */
-enum Grade { PERFECT, ACCEPTABLE, CREAKS, SLIPS };
-
-static Grade grade(const Attack& r) {
-	if (r.periodsBefore == 0)
-		return PERFECT;
-	if (r.periodsBefore > 0 && r.seconds <= (r.prolonged ? 0.050 : 0.090))
-		return ACCEPTABLE;
-	return r.prolonged ? CREAKS : SLIPS;
-}
-
 
 static const double CELLO_D3 = 146.83;
 
@@ -712,19 +568,17 @@ static void measuredSection() {
 cello's four strings and the violin's G, A and E, at five bow positions and six forces across the
 upper half of each position's Schelleng band at 0.2 m/s (Galluzzo's limits, scaled by impedance).
 First one acceleration for every note, scaled as Guettler's limits scale, beta (1 - beta) F / (T Z);
-then a player who rehearses each note on a copy of the string, twelve accelerations at four
-starting forces up to four times the intended one, and plays the best; then that best attack played
-through, easing to the intended force once four regular periods are heard. */
+then the player of bowbench.hpp, who rehearses each note on a copy of the string — 168 attacks,
+the smoothest of those that turn regular within five periods, and where none turns regular within
+three, 2,080 more at four other bow positions — and that attack played through, where it was
+found, easing to the intended force once four regular periods are heard. */
 static void rehearseSection() {
 	std::printf("\nA PLAYER WHO REHEARSES: 210 notes from rest, seven strings, beta 0.06 to 0.15, six forces each.\n");
 	struct Note { double hz; const char* name; };
 	const Note notes[] = {{65.41, "cello C2"}, {98.0, "cello G2"}, {146.83, "cello D3"}, {220.0, "cello A3"},
 	                      {196.0, "violin G3"}, {440.0, "violin A4"}, {659.26, "violin E5"}};
 	const float betas[] = {0.06f, 0.08f, 0.1f, 0.125f, 0.15f};
-	const int accelerations = 12, forces = 4;
-	auto kAt = [&](int k) { return 0.006 * std::pow(15.0, k / (double) (accelerations - 1)); };
-	auto biteAt = [&](int b) { return std::pow(4.0, b / 3.0); };
-	int fixedGood = 0, within5 = 0, within10 = 0, kept = 0, all = 0;
+	int fixedGood = 0, within5 = 0, within10 = 0, kept = 0, all = 0, moved = 0;
 	for (const Note& n : notes) {
 		int missed = 0;
 		for (float beta : betas)
@@ -741,37 +595,27 @@ static void rehearseSection() {
 					const Grade g = grade(attack(s, (float) f, accel(0.024, f), n.hz, 25));
 					fixedGood += (g == PERFECT || g == ACCEPTABLE);
 				}
-				int best = 999, bestK = 0, bestB = 0;
-				for (int b = 0; b < forces; b++)
-					for (int k = 0; k < accelerations; k++) {
-						BowedString s = cello((float) n.hz, beta);
-						const double force = f * biteAt(b);
-						const Attack r = attack(s, (float) force, accel(kAt(k), force), n.hz, 20, nullptr, 0.2f);
-						if (r.periodsBefore >= 0 && r.periodsBefore < best) {
-							best = r.periodsBefore;
-							bestK = k;
-							bestB = b;
-						}
-					}
-				within5 += best <= 5;
-				within10 += best <= 10;
-				if (best > 10) {
+				const Rehearsed chose = rehearseAttack(n.hz, -1.f, beta, (float) f, 0.2f);
+				within5 += chose.periods >= 0 && chose.periods <= 5;
+				within10 += chose.periods >= 0 && chose.periods <= 10;
+				moved += chose.beta != beta;
+				if (chose.periods < 0 || chose.periods > 10) {
 					missed++;
 					continue;
 				}
-				// THE BEST ATTACK PLAYED THROUGH: bite, then ease to the intended force over 0.1 s once
-				// four regular periods are heard; held to a second, the last 0.3 s read.
-				const double bite = f * biteAt(bestB);
-				const float a = accel(kAt(bestK), bite);
-				BowedString s = cello((float) n.hz, beta);
+				// THE BEST ATTACK PLAYED THROUGH: bite, then ease to the intended force over EASE_SECONDS
+				// once four regular periods are heard; held to a second and a half, the last 0.3 s read.
+				const double bite = f * chose.bite;
+				const float a = chose.accel;
+				BowedString s = cello((float) n.hz, chose.beta);
 				const double period = RATE / n.hz;
 				std::vector<size_t> slips;
-				std::vector<uint8_t> stuck((size_t) RATE);
+				std::vector<uint8_t> stuck((size_t) (1.5 * RATE));
 				double easeFrom = -1.0;
 				bool was = true;
 				for (size_t i = 0; i < stuck.size(); i++) {
 					const double t = i / RATE;
-					const double force = easeFrom < 0.0 ? bite : bite + (f - bite) * std::fmin(1.0, (t - easeFrom) / 0.1);
+					const double force = easeFrom < 0.0 ? bite : bite + (f - bite) * std::fmin(1.0, (t - easeFrom) / EASE_SECONDS);
 					s.setBow((float) force, (float) std::fmin(a * t, 0.2));
 					s.process();
 					stuck[i] = s.sticking() ? 1 : 0;
@@ -788,7 +632,7 @@ static void rehearseSection() {
 					was = stuck[i] != 0;
 				}
 				bool held = true;
-				for (double t0 = 0.7 * RATE; t0 + period <= RATE; t0 += period) {
+				for (double t0 = 1.2 * RATE; t0 + period <= 1.5 * RATE; t0 += period) {
 					int k = 0;
 					for (size_t i = (size_t) t0 + 1; i < (size_t) (t0 + period); i++)
 						if (stuck[i - 1] && !stuck[i])
@@ -800,8 +644,8 @@ static void rehearseSection() {
 		std::printf("  %-10s rehearsed, no start within ten periods: %d of 30\n", n.name, missed);
 	}
 	std::printf("  one acceleration for every note: %d of %d within the listening limits\n", fixedGood, all);
-	std::printf("  rehearsed: %d start within five periods, %d within ten; of those, %d still in Helmholtz\n"
-		"  motion after easing to the intended force\n", within5, within10, kept);
+	std::printf("  rehearsed: %d start within five periods, %d within ten, %d of them with the bow moved; of those,\n"
+		"  %d still in Helmholtz motion after easing to the intended force\n", within5, within10, moved, kept);
 	check(within10 >= (3 * all) / 4, "  rehearsed notes that start within ten periods, share", (double) within10 / all);
 	check(kept >= (9 * within10) / 10, "  of those, share that keep Helmholtz motion at the intended force",
 		within10 ? (double) kept / within10 : 0.0);

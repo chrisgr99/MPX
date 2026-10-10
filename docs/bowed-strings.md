@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: phases 1, 2 and 4 built — the string, the bow, and the pitch range with its oversampling schedule. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
+Status: phases 1, 2, 4 and 5 built — the string, the bow, the pitch range with its oversampling schedule, and the body. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -60,9 +60,11 @@ A model that reproduces both diagrams is playable whatever it sounds like. A mod
 
 ## The body
 
-A modal bank and a radiation filter, as in the deprecated piano's soundboard, where that approach was measured and worked. The violin family's modes are documented in detail: the air resonance, the corpus bending modes, and the bridge's own resonance around three kilohertz, which shapes the whole timbre.
+`src/BowedBody.hpp`, `.cpp`. The force the strings put on the bridge in, the sound a metre away out — the body's radiativity, in pascals per newton, which is how the measurements describe a violin's voice. As the deprecated piano's soundboard was built: the low modes, the instrument's signature, a resonator each; the dense ones above, where they overlap and no one of them is heard, generated from the body's modal density and damping, deterministically, so an instrument is the same instrument every time it is built. Each mode carries both how much it radiates and how readily it lets the bridge move.
 
-The bridge is not a boundary condition here but a filter with a strong resonance of its own, and it is the one component that most distinguishes the instruments.
+**One way, for now.** The body does not push back on the strings; they keep the bridge their earlier phases were calibrated against, a resistance the same at every frequency. A body that answered would make some notes decay faster than others and give the cello its wolf. The modes already carry their mobility so that it can be added.
+
+The bridge's own resonance, its rocking at about three kilohertz, makes the bridge hill: the broad rise near 2.4 kHz that much of a violin's brilliance comes from. The violin's measured radiativity has it in already, so there is no bridge filter on top; the body offers one, for an instrument built from its mobility rather than from a measured voice.
 
 ## The player
 
@@ -230,7 +232,7 @@ The bristles put the playable region where the measurement has it: heavy bow, ge
 
 - one acceleration for every note, scaled from string to string as Guettler's limits scale: at best about a quarter start within the listening limits, the rate Galluzzo's simulations of this friction found;
 - a player that listens and corrects the force or the bow's acceleration as the slips come: no better;
-- a player that rehearses, trying twelve accelerations at four starting forces up to four times the intended one on a copy of the string, and playing the best: 170 of the 210 start within ten periods and 77 within five, and 154 of those 170 are still in Helmholtz motion after easing back to the intended force over a tenth of a second. The violin's strings and the cello's A almost always find a start; the cello's G misses a third of the time and its C more than half.
+- a player that rehearses, trying twenty-four accelerations at seven starting forces from the intended one to four times it on a copy of the string, and playing the smoothest of the attacks that turn regular within five periods — and where none turns regular within three, trying again at four bow positions a little nearer the bridge and further from it, and playing the soonest it finds there, where it found it: all 210 notes start within ten periods and 209 within five, 135 of them with the bow moved, and 190 are still in Helmholtz motion after easing back to the intended force over 0.8 s. The finer search and the smoothness were settled by ear on the violin's open G and D: twelve accelerations at four forces, taking whichever turned regular soonest, found only attacks at four times the force, and they started harshly. The bow positions were settled on the cello's open C: at a tenth of the length the best of 7,800 attacks took five periods, about 76 ms, and at 0.085 one starts at once, which sounded best. An attack is chaotic enough there that its acceleration matters in the fourth figure.
 
 See phase 7.
 
@@ -256,9 +258,17 @@ Some limits are bimodal — on the violin's G at 0.06 of the length the motion b
 
 **For the module.** The factor is chosen at each note's start, from its pitch, and kept through the note, so vibrato and slides do not change the rate under a sounding string; the string's output is decimated back to the engine's rate. Both are phase 8's.
 
-### 5. The body
+### 5. The body — built, the violin from measurements and the cello provisional
 
-A modal bank, the bridge resonance, and a radiation filter, as in the deprecated piano's soundboard, where that approach was measured and did work. Constants per instrument.
+`make bowbody`; the sources are in `research/bowed-strings/body-sources.md`.
+
+**The violin.** The five signature modes as measured: A0 at 275 Hz, CBR at 407, A1 at 469, B1− at 475 and B1+ at 541, frequencies the means over seventeen violins and damping the averages over fourteen (Bissinger 2008, 2012), the B1 modes' radiativity his averages. Above 630 Hz the modes are dense, two in a hundred hertz at Q 50, the density and damping that agree with Woodhouse's modal overlap for a violin being played, and their radiativity follows Bissinger's seventeen-violin average band by band to 3,875 Hz, where his measurements stop, falling 8.5 dB an octave above, as the measured bridge mobility does. Against his measurements: A0, B1− and B1+ within a decibel of his values; the 250 Hz bands within 0.8 dB in the median and 2.6 at worst. The upper modes can be scattered in many ways and each is a different violin, a few decibels from the average here and there as any real one is; this one is the closest of four hundred.
+
+**The cello**, provisional. Measured: the air mode near 97 Hz; the strongest body mode at 175 Hz, Q 18, 0.056 m/(s N), the one that makes the wolf; peaks at 140, 200, 209 and 281 Hz. Not measured anywhere that could be found: a cello's radiativity, the damping of all but the wolf mode, and the density of its upper modes. Those are judgement — the upper modes two and a half times the violin's density for a body about twice its size, shaped as the measured mobility is with a radiation efficiency rising to about 1.5 kHz — to be settled by ear.
+
+**The filter** runs as its resonators' sum says it should, within a millionth of a decibel, and nothing in it rings on.
+
+**To listen to.** `build/bowed-violin-body.wav` and `build/bowed-cello-body.wav`: six notes on each, the open strings and the top string stopped higher, every note started by a player who rehearses it (phase 3). `build/bowed-violin-bridge.wav` and `build/bowed-cello-bridge.wav` are the same notes as the force on the bridge, without the body, to hear what the body does. No vibrato and no player yet: held notes at one force and speed.
 
 This is the first phase whose result is judged by ear as well as by measurement, and the first point at which it is worth you listening properly.
 
@@ -274,7 +284,7 @@ The bowing, in the performer library beside the guitarist. A slur is a bow strok
 
 Pressure and timbre on the cable map onto bow force and sounding point, continuously through each note.
 
-**It starts each note by rehearsing it.** Before a note from rest, the player tries a set of attacks — bow accelerations, and starting forces up to four times the one the dynamic asks for, as a cellist bites into a note and eases off — on a copy of the string, and plays the one that reaches Helmholtz motion soonest; once four regular periods are heard it eases to the intended force. Phase 3 measured what this buys (above). It costs computing in bursts at note starts, tens of milliseconds for a low string, so it runs ahead of the sound: on another thread, with the note delayed by the rehearsal, or from the score's knowing the note is coming. Which, and how few candidates suffice when the best ones are tried first, is this phase's to settle.
+**It starts each note by rehearsing it.** Before a note from rest, the player tries a set of attacks — twenty-four bow accelerations at each of seven starting forces from the one the dynamic asks for to four times it, as a cellist bites into a note and eases off — on a copy of the string, and plays the smoothest of those that reach Helmholtz motion within five periods, smoothness being how little the first eighty milliseconds have above two kilohertz against below one; where none does within three, it tries four bow positions either side of the one planned and plays the note where it found the soonest start; once four regular periods are heard it eases to the intended force, over about 0.8 s: chosen by ear on the cello's open C and G, where easing over a tenth of a second swept every start quickly from bright to dull and sounded rough, and 0.8 s sounded the most natural of the times tried. Phase 3 measured what this buys (above). It costs computing in bursts at note starts: 168 attacks, 30 to 50 milliseconds of one core a note, and where the bow has to move, 2,080 more, about 0.9 s for the cello's open C. But a start from rest depends only on the string, the bow's position, the force and the speed, so what a rehearsal finds can be kept: the first open C at a dynamic is rehearsed and every later one plays at once, and the common ones can be rehearsed before the music starts. Whether it runs on another thread, delays the note, or rehearses ahead from the score's knowing the note is coming, and how few candidates suffice when the best ones are tried first, is this phase's to settle.
 
 `pizz` and `arco` arrive as words rather than as elements, which is the reading problem already solved for the worded crescendos.
 

@@ -16,6 +16,13 @@ using namespace px;
 /** THE SAMPLE RATE THE BENCHES RUN AT. A variable, so a section can oversample: phase 4 runs the same
 diagrams at two, four, eight and sixteen times. */
 static float RATE = 48000.f;
+
+/** HOW LONG A PLAYER TAKES TO RELAX FROM THE BITE INTO THE NOTE, in seconds: the attack starts with
+more force than the note wants (phase 3's rehearsal) and eases to it once four regular periods are
+heard. Chosen by ear on the cello's open C and G: over a tenth of a second the ease swept every
+start quickly from bright to dull and sounded rough; 0.8 s sounded the most natural of the times
+tried. */
+static const double EASE_SECONDS = 0.8;
 static int failures = 0;
 
 
@@ -322,3 +329,274 @@ static inline void normalise(std::vector<float>& x, float to = 0.8f) {
 		for (float& v : x)
 			v = (float) (v / p * to);
 }
+
+
+// ---- ONE ATTACK -----------------------------------------------------------------------------
+
+/** WHAT A NOTE STARTED FROM REST DID. The bow is put on the string at its force and drawn from
+standing still at a constant acceleration, as in Guettler's analysis and in the measurements. */
+struct Attack {
+	/** When the string first let go of the hair, in seconds; -1 if it never did. */
+	double firstSlip = -1.0;
+	/** NOMINAL PERIODS FROM THE FIRST SLIP UNTIL THE TRIGGERING TURNS REGULAR — one slip every
+	period from then to the end of the run. Nought is Guettler's perfect attack. -1 if it never
+	turned regular within the run. */
+	int periodsBefore = -1;
+	/** What went wrong first, when something did: a period too long (the string held on past the
+	release, which is the creak Guettler calls prolonged periods), or too short (it let go early,
+	multiple slipping). */
+	bool prolonged = false;
+	/** The friction coefficient while slipping: in the first slip, and in the later slips before
+	the first one's reflection comes back from the nut. What Guettler's limits are worked out with. */
+	double muFirst = 0.0, muLater = 0.0;
+	/** The string's speed against the bow just after it first lets go, in metres a second. */
+	double slipSpeed = 0.0;
+	/** How long the transient lasted, in seconds: the first slip to regular triggering. */
+	double seconds = 0.0;
+};
+
+
+/** HOW FAR A GAP BETWEEN SLIPS MAY STRAY FROM THE PERIOD and still count as regular. */
+static double REGULAR = 0.1;
+/** Nought: regular from a slip to the end of the run. More: from the first slip with that many
+regular periods after it. */
+static size_t FIRST_RUN = 0;
+
+static inline Attack attack(BowedString& s, float force, float accel, double hz, int periodsAfter,
+                     std::vector<float>* bridge = nullptr, float topSpeed = 1e9f) {
+	Attack r;
+	const double period = RATE / hz;
+	std::vector<size_t> slips;
+	std::vector<double> slipMu;            // mean friction coefficient, slip by slip
+	double muSum = 0.0;
+	int muN = 0;
+	bool was = false;
+	const size_t cap = (size_t) (3.0 * RATE);
+	size_t end = cap;
+	SlipWatch watch;
+	for (size_t i = 0; i < end; i++) {
+		const float t = (float) i / RATE;
+		s.setBow(force, std::fmin(accel * t, topSpeed));
+		const float out = s.process();
+		if (bridge)
+			bridge->push_back(out);
+		const bool flyback = watch.update(s, force, std::fmin(accel * t, topSpeed));
+		const bool stuck = s.bristling() ? !flyback : s.sticking();
+		// A slip starts where the string comes off the hair.
+		if (i > 0 && was && !stuck) {
+			if (!slips.empty())
+				slipMu.push_back(muN ? muSum / muN : 0.0);
+			slips.push_back(i);
+			muSum = 0.0;
+			muN = 0;
+			if (slips.size() == 1) {
+				end = std::min(cap, i + (size_t) (periodsAfter * period));
+				r.slipSpeed = s.velocityAtBow() - std::fmin(accel * t, topSpeed);
+			}
+		}
+		if (!stuck && !slips.empty()) {
+			muSum += std::fabs(s.frictionForce()) / force;
+			muN++;
+		}
+		was = stuck;
+	}
+	if (slips.empty())
+		return r;
+	r.firstSlip = (double) slips[0] / RATE;
+	if (!slipMu.empty())
+		r.muFirst = slipMu[0];
+	// The later slips: those before the first one's reflection from the nut returns.
+	{
+		const double n = 1.0 / std::fmax(1e-3, (double) s.contact());
+		double sum = 0.0;
+		int k = 0;
+		for (size_t j = 1; j < slipMu.size() && (double) j < n - 1.0; j++, k++)
+			sum += slipMu[j];
+		r.muLater = k ? sum / k : r.muFirst;
+	}
+	// REGULAR FROM SLIP k: every gap from there to the end within a tenth of a period, and at
+	// least three of them, or the end of the run is not telling us anything.
+	size_t k = slips.size();
+	for (size_t j = slips.size(); j-- > 1; ) {
+		const double gap = (double) (slips[j] - slips[j - 1]);
+		if (std::fabs(gap - period) > REGULAR * period)
+			break;
+		k = j - 1;
+	}
+	if (k < slips.size() && slips.size() - k < 4)
+		k = slips.size();
+	// OR, IF ASKED, the first slip from which five periods running are regular.
+	if (FIRST_RUN > 0) {
+		k = slips.size();
+		for (size_t j = 0; j + FIRST_RUN < slips.size(); j++) {
+			bool run = true;
+			for (size_t q = j + 1; q <= j + FIRST_RUN && run; q++)
+				run = std::fabs((double) (slips[q] - slips[q - 1]) - period) <= REGULAR * period;
+			if (run) { k = j; break; }
+		}
+	}
+	if (k < slips.size()) {
+		r.periodsBefore = (int) std::lround((double) (slips[k] - slips[0]) / period);
+		r.seconds = (double) (slips[k] - slips[0]) / RATE;
+	}
+	// What went wrong first.
+	const size_t upTo = (k < slips.size()) ? k : slips.size() - 1;
+	for (size_t j = 1; j <= upTo; j++) {
+		const double gap = (double) (slips[j] - slips[j - 1]);
+		if (gap > 1.1 * period) { r.prolonged = true; break; }
+		if (gap < 0.9 * period) { r.prolonged = false; break; }
+	}
+	if (k >= slips.size()) {
+		// Never regular: what dominated, gaps too long or too short?
+		int longer = 0, shorter = 0;
+		for (size_t j = 1; j < slips.size(); j++) {
+			const double gap = (double) (slips[j] - slips[j - 1]);
+			if (gap > 1.1 * period) longer++;
+			else if (gap < 0.9 * period) shorter++;
+		}
+		r.prolonged = longer >= shorter || slips.size() < 2;
+		r.seconds = (double) (end - slips[0]) / RATE;
+	}
+	return r;
+}
+
+
+/** GUETTLER AND ASKENFELT'S LISTENING LIMITS (1997, as Guettler 2002 gives them): a violin attack
+was heard as unacceptable when its multiple slipping lasted more than 90 milliseconds, or its
+prolonged periods more than 50. Perfect is regular from the first period. */
+enum Grade { PERFECT, ACCEPTABLE, CREAKS, SLIPS };
+
+static inline Grade grade(const Attack& r) {
+	if (r.periodsBefore == 0)
+		return PERFECT;
+	if (r.periodsBefore > 0 && r.seconds <= (r.prolonged ? 0.050 : 0.090))
+		return ACCEPTABLE;
+	return r.prolonged ? CREAKS : SLIPS;
+}
+
+
+// ---- THE PLAYER WHO REHEARSES ------------------------------------------------------------------
+
+/** HOW ROUGH A START IS: in the first 80 ms after the string first lets go, the energy above two
+kilohertz over the energy below one, through second-order filters. A clean start is no brighter
+than the note it becomes; a rough one, its first periods irregular or pressed too hard, is several
+times brighter. Cheap enough to measure on every attack the player tries. */
+static inline double startRoughness(const std::vector<float>& x, double firstSlip) {
+	auto biquad = [](double hz, bool high, double* b, double* a) {
+		const double w = 2.0 * M_PI * hz / RATE, cw = std::cos(w), alpha = std::sin(w) / (2.0 * 0.7071);
+		const double a0 = 1.0 + alpha;
+		b[0] = (high ? (1.0 + cw) / 2.0 : (1.0 - cw) / 2.0) / a0;
+		b[1] = (high ? -(1.0 + cw) : (1.0 - cw)) / a0;
+		b[2] = b[0];
+		a[0] = -2.0 * cw / a0;
+		a[1] = (1.0 - alpha) / a0;
+	};
+	double hb[3], ha[2], lb[3], la[2];
+	biquad(2000.0, true, hb, ha);
+	biquad(1000.0, false, lb, la);
+	double hx1 = 0, hx2 = 0, hy1 = 0, hy2 = 0, lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0, high = 0, low = 0;
+	const size_t from = (size_t) (firstSlip * RATE), to = std::min(x.size(), from + (size_t) (0.08 * RATE));
+	for (size_t i = 0; i < to; i++) {
+		const double v = x[i];
+		const double h = hb[0] * v + hb[1] * hx1 + hb[2] * hx2 - ha[0] * hy1 - ha[1] * hy2;
+		hx2 = hx1; hx1 = v; hy2 = hy1; hy1 = h;
+		const double l = lb[0] * v + lb[1] * lx1 + lb[2] * lx2 - la[0] * ly1 - la[1] * ly2;
+		lx2 = lx1; lx1 = v; ly2 = ly1; ly1 = l;
+		if (i >= from) {
+			high += h * h;
+			low += l * l;
+		}
+	}
+	return low > 0.0 ? high / low : 0.0;
+}
+
+
+/** WHAT THE PLAYER CHOSE: where the bow goes, how much harder than the note wants it starts, the
+bow's acceleration, how many periods that attack takes to turn regular, how rough its start, and the
+soonest any attack it tried at the planned position turned regular. */
+struct Rehearsed {
+	float beta = 0.1f;
+	double bite = 1.0;
+	float accel = 0.f;
+	int periods = -1;
+	double roughness = 0.0;
+	int soonest = -1;
+};
+
+/** A PLAYER WHO REHEARSES EACH NOTE on a copy of the string before playing it (phase 3 of
+docs/bowed-strings.md): seven starting forces from the note's own to four times it, each at
+twenty-four bow accelerations scaled as Guettler's limits scale, beta (1 - beta) F / (T Z). Of the
+attacks that turn regular within five periods, the smoothest start; if none does, the soonest. The
+finer search and the smoothness were settled by ear on the violin's open G and D: the coarser
+search, twelve accelerations at four forces taking the soonest, found only attacks at four times
+the force, and they started harshly.
+
+WHERE NOTHING TURNS REGULAR WITHIN THREE PERIODS, A LITTLE NEARER THE BRIDGE OR FURTHER FROM IT: the
+search again at 0.7, 0.85, 1.2 and 1.4 of the planned bow position, more finely — thirteen forces
+to eight times the note's, forty accelerations — and the soonest attack found anywhere, the
+smoothest of the soonest, played where it was found. Settled by ear on the cello's open C, whose
+clean starts are so few that at a tenth of the length the best took five periods, about 76 ms;
+at 0.085 one starts at once, and sounded best. At the current RATE, which the caller sets. */
+static inline Rehearsed rehearseAttack(double hz, float impedance, float beta, float force, float speed) {
+	const double z = impedance > 0.f ? impedance : impedanceOf((float) hz);
+	const double zBow = z * 3.27 / 4.27, T = 1.0 / hz;
+	Rehearsed smoothest, quickest;
+	for (int b = 0; b < 7; b++)
+		for (int k = 0; k < 24; k++) {
+			const double bite = std::pow(4.0, b / 6.0);
+			const double kk = 0.004 * std::pow(30.0, k / 23.0);
+			const float a = (float) (kk * beta * (1.0 - beta) * force * bite / (T * zBow));
+			BowedString s = cello((float) hz, beta, impedance);
+			std::vector<float> bridge;
+			const Attack r = attack(s, (float) (force * bite), a, hz, 20, &bridge, speed);
+			if (r.periodsBefore < 0)
+				continue;
+			const double rough = startRoughness(bridge, r.firstSlip);
+			if (quickest.periods < 0 || r.periodsBefore < quickest.periods) {
+				quickest.bite = bite;
+				quickest.accel = a;
+				quickest.periods = r.periodsBefore;
+				quickest.roughness = rough;
+			}
+			if (r.periodsBefore <= 5 && (smoothest.periods < 0 || rough < smoothest.roughness)) {
+				smoothest.bite = bite;
+				smoothest.accel = a;
+				smoothest.periods = r.periodsBefore;
+				smoothest.roughness = rough;
+			}
+		}
+	Rehearsed best = smoothest.periods >= 0 ? smoothest : quickest;
+	best.beta = beta;
+	const int soonest = quickest.periods;
+	if (best.periods < 0 || best.periods > 3) {
+		Rehearsed moved;
+		for (float shift : {0.85f, 1.2f, 0.7f, 1.4f}) {
+			const float b2 = beta * shift;
+			for (int b = 0; b < 13; b++)
+				for (int k = 0; k < 40; k++) {
+					const double bite = std::pow(8.0, b / 12.0);
+					const double kk = 0.002 * std::pow(100.0, k / 39.0);
+					const float a = (float) (kk * b2 * (1.0 - b2) * force * bite / (T * zBow));
+					BowedString s = cello((float) hz, b2, impedance);
+					std::vector<float> bridge;
+					const Attack r = attack(s, (float) (force * bite), a, hz, 20, &bridge, speed);
+					if (r.periodsBefore < 0)
+						continue;
+					const double rough = startRoughness(bridge, r.firstSlip);
+					if (moved.periods < 0 || r.periodsBefore < moved.periods
+							|| (r.periodsBefore == moved.periods && rough < moved.roughness)) {
+						moved.beta = b2;
+						moved.bite = bite;
+						moved.accel = a;
+						moved.periods = r.periodsBefore;
+						moved.roughness = rough;
+					}
+				}
+		}
+		if (moved.periods >= 0 && (best.periods < 0 || moved.periods < best.periods))
+			best = moved;
+	}
+	best.soonest = soonest;
+	return best;
+}
+

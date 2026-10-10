@@ -157,6 +157,9 @@ struct BowedString {
 	/** WHAT THE BOW DID LAST SAMPLE, for a bench: whether the string was stuck to the hair, the
 	velocity of its surface under the bow in metres a second, and the friction force in newtons. */
 	bool sticking() const { return stuck; }
+	/** THE FORCE THE STRING PUTS ON THE BRIDGE, newtons, last sample: what drives the body. The
+	string's impedance times the wave arriving less the wave sent back. */
+	float bridgeForce() const { return atBridgeForce; }
 	float velocityAtBow() const { return atBowVelocity; }
 	float frictionForce() const { return atBowForce; }
 
@@ -205,7 +208,7 @@ private:
 	float lastOut = 0.f, lastOutB = 0.f;
 	static const int DISPERSION_STAGES = 4;
 	float dIn[DISPERSION_STAGES] = {}, dOut[DISPERSION_STAGES] = {};
-	float atBridge = 0.f;
+	float atBridge = 0.f, atBridgeForce = 0.f;
 	// The DC blocker's.
 	float dcIn = 0.f, dcOut = 0.f;
 	/** WHAT EACH END PASSES BACK UNTOUCHED: a steady velocity, exactly. See tune. The lowpass that
