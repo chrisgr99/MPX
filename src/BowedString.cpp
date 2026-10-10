@@ -34,6 +34,14 @@ void BowedString::setSampleRate(float r) {
 }
 
 
+int BowedString::oversampling(float hz, float rate) {
+	int factor = 1;
+	while (factor < 16 && rate * (float) factor / std::fmax(1.f, hz) < (float) SAMPLES_A_PERIOD)
+		factor *= 2;
+	return factor;
+}
+
+
 void BowedString::setFrequency(float hz) {
 	hz = std::fmax(20.f, std::fmin(hz, rate * 0.25f));
 	if (hz != freq) {
@@ -199,7 +207,7 @@ void BowedString::tune() {
 		const float k = lossless ? 0.f : b * rate * rate / (2.f * PI * PI * freq);
 		auto coefficient = [](float k) {
 			const float s = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
-			return std::fmax(0.f, std::fmin(0.97f, s));
+			return std::fmax(0.f, std::fmin(0.9995f, s));
 		};
 		lossS = coefficient((1.f - beta) * k);
 		lossSB = coefficient(beta * k);
@@ -350,7 +358,7 @@ void BowedString::tune() {
 		const float kAll = (sAll > 0.f) ? sAll / ((1.f - sAll) * (1.f - sAll)) : 0.f;
 		auto coefficient = [](float k) {
 			const float s = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
-			return std::fmax(0.f, std::fmin(0.97f, s));
+			return std::fmax(0.f, std::fmin(0.9995f, s));
 		};
 		tLossB = coefficient(beta * kAll);
 		tLossN = coefficient((1.f - beta) * kAll);

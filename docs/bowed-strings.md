@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: phases 1 and 2 built — the string and the bow. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
+Status: phases 1, 2 and 4 built — the string, the bow, and the pitch range with its oversampling schedule. Phase 3, the acceptance benches, is under way: with the friction curve held notes play where Schelleng's diagram says a cello does and notes do not start the way Guettler's says they should; with the bristle friction it is the other way round. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`, `make bowplay`; the sources checked for all of it are in `research/bowed-strings/sources.md`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -120,7 +120,7 @@ And the slip can only be timed to the nearest sample. Sticking and slipping once
 
 **The module oversamples internally rather than requiring the engine to run faster.** It costs processing only where the problem is, instead of speeding up every module in a quartet patch to fix one of them; the factor can follow the pitch being played, so a low cello note costs nothing and a high violin note gets four or eight times, which a fixed engine rate cannot do; and it works for somebody who does not know the problem exists. Running Rack at 96 kHz lets the module use a lower factor and so makes it cheaper, which belongs in the help text as an optimisation and not as a requirement.
 
-The schedule — how much oversampling at which pitch — comes from sweeping Schelleng's diagram at one, two, four and eight times and finding where the playable region starts to deform. Not from the table above, which only says where to expect trouble.
+**The schedule**, measured in phase 4: run the string fast enough that a period is at least three hundred samples, in powers of two, at most sixteen times (`BowedString::oversampling`). At 48 kHz that is none up to 160 Hz, so the cello's three lower strings; two times to 320 Hz; four to 640, eight to 1,280, and sixteen above, to the top of the violin's E string. A string costs 18 to 40 nanoseconds a sample, so at sixteen times one violin string takes about one and a half per cent of a processor core.
 
 ## One engine, four instruments
 
@@ -236,13 +236,25 @@ See phase 7.
 
 Worth stopping if: the playable region cannot be made to resemble the published one. Everything after this assumes a player can be given force and speed and get a note.
 
-### 4. Pitch, and the oversampling schedule
+### 4. Pitch, and the oversampling schedule — built
 
-Raise the benches to violin pitches, including high positions, and run both sweeps at one, two, four and eight times oversampled. Find where the playable region starts to deform, and from that write the schedule: how much oversampling at which pitch.
+Schelleng's limits from the cello's A to the top of the violin's E string, at one to thirty-two times 48 kHz (`make bowplay ARGS=oversampling`). Each limit is found as a bowing machine finds it: Helmholtz motion started in the middle of the band at 0.2 m/s, then the force slid down, and separately up, an octave every 0.3 s until three periods running are not one slip each or the period has stretched past three per cent. A grid of separate notes scatters stray cells, because the glide into each cell is chaotic; a ramp gives one number per limit. Eleven bow positions from 0.04 to 0.16 at each pitch, and the result at each rate compared with the median of the three fastest, in octaves of force, the median over the positions:
 
-Internal to the module, following the pitch being played, so a low note costs nothing.
+| | samples a period at 48 kHz | x1 | x2 | x4 | x8 | x16 |
+|---|---|---|---|---|---|---|
+| cello A3 | 218 | 0.35 | **0.06** | 0.04 | 0.03 | 0.03 |
+| violin G3 | 245 | 0.19 | **0.12** | 0.08 | 0.05 | 0.02 |
+| violin D4 | 163 | 0.22 | **0.07** | 0.05 | 0.02 | 0.01 |
+| violin A4 | 109 | 0.29 | 0.12 | **0.06** | 0.01 | 0.03 |
+| violin E5 | 73 | 0.53 | 0.25 | 0.01 | **0.02** | 0.00 |
+| violin E6 | 36 | 1.52 | 0.63 | 0.08 | 0.04 | **0.00** |
+| violin E7 | 18 | 3.55 | 1.22 | 0.57 | 0.06 | **0.00** |
 
-Worth stopping if: eight times is not enough at the top of the E string. Then the violin is the wrong instrument to ship first after all, and the cello is.
+What decides it is samples a period at the rate the string runs at. At three hundred or more the limits are within an eighth of an octave of the fastest rates', mostly a twentieth; below about two hundred they can move by a quarter of an octave or more, and at seventy-three, the open E unoversampled, by half. Hence the schedule (Sample rate, above), the factor in bold. Eight times is enough even at E7, a tenth of an octave out, so the stopping test is passed: the violin can ship first.
+
+Some limits are bimodal — on the violin's G at 0.06 of the length the motion breaks either at about 0.14 N or at 0.21 N, at any rate, and a ramp lands on one or the other — which is why the comparison is a median over eleven positions. The cello's C is left out: its notes are hard to start at all, which is phase 3's attack problem and not the sample rate's. At thirty-two times a low note's loss filter needs a coefficient close to one, which the engine now allows.
+
+**For the module.** The factor is chosen at each note's start, from its pitch, and kept through the note, so vibrato and slides do not change the rate under a sounding string; the string's output is decimated back to the engine's rate. Both are phase 8's.
 
 ### 5. The body
 

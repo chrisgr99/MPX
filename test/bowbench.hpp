@@ -13,7 +13,9 @@ test/bowplay.cpp sweeps where it plays and how notes start, phase 3. Each includ
 using namespace px;
 
 
-static const float RATE = 48000.f;
+/** THE SAMPLE RATE THE BENCHES RUN AT. A variable, so a section can oversample: phase 4 runs the same
+diagrams at two, four, eight and sixteen times. */
+static float RATE = 48000.f;
 static int failures = 0;
 
 

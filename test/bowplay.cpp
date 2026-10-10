@@ -21,6 +21,8 @@ WHAT EACH SECTION TESTS AGAINST.
              measured with a robot arm and a real bow.
   rehearse   How hard starting notes is for a player under the friction the string plays with, and
              what a player who rehearses each attack on a copy of the string gets.
+  oversampling  Phase 4: Schelleng's limits from the cello up to the top of the violin's E string, at
+             one to thirty-two times the sample rate, and the schedule that follows from them.
   listen     A clean start, a creaky one and a slipping one, to hear.
 
     make bowplay                      all of it
@@ -30,6 +32,8 @@ WHAT EACH SECTION TESTS AGAINST.
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
+#include <thread>
 
 
 // ---- ONE ATTACK -----------------------------------------------------------------------------
@@ -466,15 +470,17 @@ static void publishedBristles(BowedString& s) {
 Schelleng's diagram from — as Galluzzo started each of his. Brought there once by bowing a newton
 at 0.2 m/s, scaled with the speed, reached over 50 ms, and held for a second; whether that worked
 is checked, since how a note starts is the other diagram's question. */
-static bool helmholtzStart(float speed, BowedString* out, float* startForce) {
+static bool helmholtzStart(double hz, float speed, BowedString* out, float* startForce) {
+	// A newton on the cello's D at 0.2 m/s, scaled with the string's impedance and the speed.
+	const float scale = impedanceOf((float) hz) / 0.67f * speed / 0.2f;
 	for (float force : {1.f, 0.5f, 2.f, 0.25f})
 		for (float rise : {0.05f, 0.3f}) {
-			BowedString s = cello((float) CELLO_D3, 0.1f);
-			const Bowing b = bow(s, force * speed / 0.2f, speed, 1.5f, rise);
-			const Helmholtz h = helmholtz(b, CELLO_D3, 1.1, 1.5);
+			BowedString s = cello((float) hz, 0.1f);
+			const Bowing b = bow(s, force * scale, speed, 1.5f, rise);
+			const Helmholtz h = helmholtz(b, hz, 1.1, 1.5);
 			if (h.periods > 0 && h.periodsWithOne == h.periods) {
 				*out = s;
-				*startForce = force * speed / 0.2f;
+				*startForce = force * scale;
 				return true;
 			}
 		}
@@ -485,7 +491,7 @@ static bool helmholtzStart(float speed, BowedString* out, float* startForce) {
 /** WHAT A HELD NOTE SETTLES INTO at one force and bow position: the string in Helmholtz motion at a
 tenth of the length, moved to the cell over 0.15 s, held, and the last 0.4 s read. 'H' Helmholtz,
 a digit that many slips a period, '-' irregular. */
-static char heldMotion(const BowedString& start, float f0, float beta, float force, float speed) {
+static char heldMotion(const BowedString& start, double hz, float f0, float beta, float force, float speed) {
 	BowedString s = start;
 	const size_t n = (size_t) (1.0 * RATE);
 	std::vector<uint8_t> stuck(n);
@@ -500,7 +506,7 @@ static char heldMotion(const BowedString& start, float f0, float beta, float for
 		const bool slips = watch.update(s, fNow, speed);
 		stuck[i] = (s.bristling() ? !slips : s.sticking()) ? 1 : 0;
 	}
-	const double period = RATE / CELLO_D3;
+	const double period = RATE / hz;
 	int first = -1;
 	bool same = true;
 	for (double t0 = 0.6 * RATE; t0 + period <= (double) n; t0 += period) {
@@ -560,7 +566,7 @@ static void schellengSection() {
 		const double k = speed / 0.05;
 		BowedString start;
 		float f0 = 0.f;
-		if (!helmholtzStart(speed, &start, &f0)) {
+		if (!helmholtzStart(CELLO_D3, speed, &start, &f0)) {
 			check(false, "  the string reaches Helmholtz motion to start from", 0.0);
 			continue;
 		}
@@ -571,7 +577,7 @@ static void schellengSection() {
 			std::printf("  %-6.2f", be);
 			char cells[16];
 			for (int j = 0; j < nf; j++) {
-				cells[j] = heldMotion(start, f0, be, forces[j], speed);
+				cells[j] = heldMotion(start, CELLO_D3, f0, be, forces[j], speed);
 				std::printf("%6c", cells[j]);
 			}
 			// The run of Helmholtz motion that holds the middle of the measured band, or the
@@ -802,6 +808,158 @@ static void rehearseSection() {
 }
 
 
+// ---- PITCH, AND THE OVERSAMPLING SCHEDULE -----------------------------------------------------
+
+/** SCHELLENG'S LIMITS BY RAMPS, as a bowing machine finds them: Helmholtz motion started in the
+middle of the band, then the force slid down, and separately up, an octave every 0.3 s until three
+periods running are not one slip each or the period has stretched past three per cent. Steadier
+than a grid of separate notes, whose glides into each cell are chaotic enough to scatter stray
+cells across the map. -1 where the limit was not reached, or the note would not start. */
+struct RampLimits { double lower = -1.0, upper = -1.0; bool started = false; };
+
+static RampLimits rampLimits(double hz, float beta, float speed, double middle) {
+	RampLimits r;
+	BowedString start;
+	double f0 = middle;
+	for (double m : {1.0, 2.0, 0.5, 4.0, 0.25}) {
+		BowedString s = cello((float) hz, beta);
+		const Bowing b = bow(s, (float) (middle * m), speed, 1.2f);
+		const Helmholtz h = helmholtz(b, hz, 0.9, 1.2);
+		if (h.periods > 0 && h.periodsWithOne == h.periods) {
+			start = s;
+			f0 = middle * m;
+			r.started = true;
+			break;
+		}
+	}
+	if (!r.started)
+		return r;
+	const double period = RATE / hz;
+	for (int dir : {-1, 1}) {
+		BowedString s = start;
+		bool was = s.sticking();
+		std::vector<size_t> slips;
+		int count = 0, bad = 0;
+		double found = -1.0;
+		for (size_t i = 0; i < (size_t) (3.0 * RATE) && found < 0.0; i++) {
+			const double force = f0 * std::pow(2.0, dir * (i / RATE) / 0.3);
+			s.setBow((float) force, speed);
+			s.process();
+			const bool stuck = s.sticking();
+			if (i && was && !stuck)
+				slips.push_back(i);
+			was = stuck;
+			if (++count < (int) period)
+				continue;
+			count = 0;
+			int k = 0;
+			for (size_t q = slips.size(); q-- > 0 && slips[q] + (size_t) period > i; )
+				k++;
+			const bool stretched = k == 1 && slips.size() >= 2
+				&& slips[slips.size() - 2] + 2 * (size_t) period > i
+				&& (double) (slips.back() - slips[slips.size() - 2]) > 1.03 * period;
+			bad = (k != 1 || stretched) ? bad + 1 : 0;
+			if (bad >= 3)
+				found = force;
+		}
+		(dir < 0 ? r.lower : r.upper) = found;
+	}
+	return r;
+}
+
+
+/** HOW FAR APART TWO SETS OF LIMITS ARE, in octaves of force: the median over the bow positions of
+the larger of the two limits' differences, so one stray position does not decide it. */
+static double limitsApart(const std::vector<RampLimits>& a, const std::vector<RampLimits>& b) {
+	std::vector<double> d;
+	for (size_t i = 0; i < a.size(); i++) {
+		if (a[i].lower <= 0.0 || b[i].lower <= 0.0 || a[i].upper <= 0.0 || b[i].upper <= 0.0) {
+			d.push_back(a[i].started == b[i].started ? 0.0 : 9.0);
+			continue;
+		}
+		d.push_back(std::fmax(std::fabs(std::log2(a[i].lower / b[i].lower)), std::fabs(std::log2(a[i].upper / b[i].upper))));
+	}
+	std::sort(d.begin(), d.end());
+	return d.empty() ? 0.0 : (d.size() % 2 ? d[d.size() / 2] : 0.5 * (d[d.size() / 2 - 1] + d[d.size() / 2]));
+}
+
+
+static void oversamplingSection() {
+	std::printf("\nPITCH, AND THE OVERSAMPLING SCHEDULE: Schelleng's limits by ramps at 0.2 m/s, eleven bow positions from\n"
+		"  0.04 to 0.16, at one to thirty-two times 48 kHz; against the median of eight, sixteen and thirty-two times.\n"
+		"  In octaves of force, the median over the positions. * the schedule's factor, BowedString::oversampling.\n");
+	struct Note { double hz; const char* name; };
+	const Note notes[] = {{220.0, "cello A3"}, {196.0, "violin G3"}, {293.66, "violin D4"}, {440.0, "violin A4"},
+	                      {659.26, "violin E5"}, {1318.51, "violin E6"}, {2637.02, "violin E7"}};
+	// ELEVEN POSITIONS, so the median is not decided by the one or two where the motion breaks in
+	// one of two ways and a ramp lands on either: the violin's G does that at 0.06 and 0.08.
+	const float betas[] = {0.04f, 0.05f, 0.06f, 0.07f, 0.08f, 0.09f, 0.1f, 0.11f, 0.12f, 0.14f, 0.16f};
+	const int nb = (int) (sizeof betas / sizeof betas[0]);
+	const int factors[] = {1, 2, 4, 8, 16, 32};
+	const float speed = 0.2f;
+	const float base = RATE;
+	std::printf("  %-10s %8s", "", "samples");
+	for (int f : factors)
+		std::printf("   x%-4d", f);
+	std::printf("\n");
+	int scheduledGood = 0, highNeeded = 0;
+	for (const Note& n : notes) {
+		const double zs = impedanceOf((float) n.hz) / 0.67;
+		std::vector<std::vector<RampLimits>> got(6, std::vector<RampLimits>(nb));
+		for (int fi = 0; fi < 6; fi++) {
+			RATE = base * factors[fi];
+			std::vector<std::thread> ts;
+			for (int bi = 0; bi < nb; bi++)
+				ts.emplace_back([&, fi, bi]() {
+					const double lower = 4.0 * 0.00086 / (betas[bi] * betas[bi]) * zs * zs;
+					const double upper = 4.0 * 0.13 / betas[bi] * zs;
+					got[fi][bi] = rampLimits(n.hz, betas[bi], speed, std::sqrt(lower * upper));
+				});
+			for (auto& t : ts)
+				t.join();
+		}
+		RATE = base;
+		// THE REFERENCE: position by position, the median of the three fastest rates' limits.
+		std::vector<RampLimits> ref(nb);
+		for (int bi = 0; bi < nb; bi++) {
+			double lo[3], hi[3];
+			int k = 0;
+			for (int fi = 3; fi < 6; fi++)
+				if (got[fi][bi].lower > 0.0 && got[fi][bi].upper > 0.0) {
+					lo[k] = got[fi][bi].lower;
+					hi[k] = got[fi][bi].upper;
+					k++;
+				}
+			if (k == 0)
+				continue;
+			std::sort(lo, lo + k);
+			std::sort(hi, hi + k);
+			ref[bi].lower = lo[k / 2];
+			ref[bi].upper = hi[k / 2];
+			ref[bi].started = true;
+		}
+		const int scheduled = BowedString::oversampling((float) n.hz, base);
+		std::printf("  %-10s %8.0f", n.name, base / n.hz);
+		for (int fi = 0; fi < 6; fi++) {
+			const double apart = limitsApart(got[fi], ref);
+			std::printf("  %5.2f%c", apart, factors[fi] == scheduled ? '*' : ' ');
+			if (factors[fi] == scheduled && apart <= 0.2)
+				scheduledGood++;
+			if (factors[fi] == 1 && n.hz > 1000.0 && apart > 0.5)
+				highNeeded++;
+		}
+		std::printf("\n");
+	}
+	check(scheduledGood == (int) (sizeof notes / sizeof notes[0]),
+		"  notes within a fifth of an octave at the schedule's factor", scheduledGood);
+	check(highNeeded == 2, "  the high E's notes more than half an octave out without it", highNeeded);
+	std::printf("  the schedule: ");
+	for (double hz : {100.0, 200.0, 400.0, 800.0, 1600.0, 2640.0})
+		std::printf("%.0f Hz x%d  ", hz, BowedString::oversampling((float) hz, base));
+	std::printf("\n");
+}
+
+
 // ---- TO LISTEN TO -----------------------------------------------------------------------------
 
 static void listenSection() {
@@ -896,6 +1054,7 @@ int main(int argc, char** argv) {
 	if (run("schelleng")) schellengSection();
 	if (run("measured")) measuredSection();
 	if (run("rehearse")) rehearseSection();
+	if (run("oversampling")) oversamplingSection();
 	if (run("listen")) listenSection();
 	std::printf("\n%s\n", failures ? "SOME CHECKS FAILED" : "all passed");
 	return failures ? 1 : 0;

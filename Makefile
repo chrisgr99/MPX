@@ -434,10 +434,10 @@ bowtest:
 
 # Where the bowed string plays and how its notes start: Schelleng's and Guettler's diagrams, phase 3
 # of docs/bowed-strings.md. ARGS names one section: buildup, firstslip, guettler, attacks,
-# schelleng, measured, rehearse or listen.
+# schelleng, measured, rehearse, oversampling or listen.
 bowplay:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/bowplay.cpp src/BowedString.cpp -o build/bowplay
+	@c++ -std=c++11 -O2 -Wall -pthread test/bowplay.cpp src/BowedString.cpp -o build/bowplay
 	@./build/bowplay $(ARGS)
 
 # The fretting hand: the shapes it finds against the familiar ones. No Rack in it.

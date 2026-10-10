@@ -48,6 +48,15 @@ struct BowedString {
 	BowedString();
 
 	void setSampleRate(float rate);
+
+	/** THE OVERSAMPLING SCHEDULE: how many times faster than `rate` the string should run to play a
+	note at `hz` as it would at any faster rate — the smallest power of two giving the period at
+	least SAMPLES_A_PERIOD samples, at most sixteen. Measured in phase 4 of docs/bowed-strings.md
+	(make bowplay ARGS=oversampling): with fewer, Schelleng's limits move; at three hundred they are
+	within an eighth of an octave of the fastest rates', mostly a twentieth. A low cello note needs none, the top of
+	the violin's E string sixteen. */
+	static const int SAMPLES_A_PERIOD = 300;
+	static int oversampling(float hz, float rate);
 	/** The pitch, in hertz. May change while the string sounds: that is a slide or a vibrato,
 	and the loop's length follows it. */
 	void setFrequency(float hz);
