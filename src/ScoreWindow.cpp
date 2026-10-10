@@ -107,13 +107,26 @@ struct ScoreWindow : widget::OpaqueWidget {
 	/** Which instrument is being shown, and which one the worker last fetched. */
 	int wantPart = 0;
 	int partNow = 0;
+	/** WHETHER THIS IS THE MODULE'S OWN SCORE, so the instrument chosen here is the module's to
+	remember. A MusicXML file opened from the menu belongs to nobody, and choosing a part of it
+	must not change which part the module's own score opens on. */
+	bool ownScore = false;
+	/** SET WHEN AN INSTRUMENT IS PICKED HERE, and cleared once the worker has laid it out. Only
+	then is it handed to the module to remember: one that could not be laid out would otherwise
+	be what the window opened on every time after, showing the same error. */
+	bool partChosen = false;
+	/** Set when a window on a file that is not the module's makes a loop. Those bars are another
+	piece's, so that loop ends when the window does. */
+	bool loopedHere = false;
 	/** Which staves the music is written on, and which the worker last wrote. See GpStaves. */
 	GpStaves wantStaves = GP_BOTH;
 	GpStaves stavesNow = GP_BOTH;
 
-	/** THE BARS BEING LOOPED, as the file numbers them, counting from nought; minus one for none.
-	Held here as well as published so the window can draw what it asked for without reading back
-	something a module may not have taken yet. */
+	/** THE BARS BEING LOOPED, as the page numbers them; minus one for none. THE MODULE'S LOOP, not
+	the window's: it is read back from the module every frame in step, so a loop set before the
+	window was opened shows when it opens, and one stopped from the module's menu goes from here
+	too. A click here writes the module's loop and this copy at once, so what is drawn never lags
+	what was asked for. */
 	int loopFrom = -1, loopTo = -1;
 	/** The bar last clicked, which a shift-click makes a loop back to. */
 	int anchor = -1;
@@ -191,10 +204,11 @@ struct ScoreWindow : widget::OpaqueWidget {
 	}
 
 	~ScoreWindow() override {
-		// THE LOOP GOES WITH THE WINDOW THAT ASKED FOR IT. The module would otherwise be left
-		// going round a bar with nothing on screen admitting to it and nothing to click to stop
-		// it, which is a state a patch cannot be got out of.
-		if (loopFrom >= 0)
+		// THE LOOP STAYS WHEN THE WINDOW GOES. A passage is looped to be listened to, and the
+		// window is in the way of listening to anything else on the rack. The module's panel says
+		// it is looping and its menu stops it, so closing this leaves nothing hidden. Except a
+		// loop made on another file's bars: see loopedHere.
+		if (!ownScore && loopedHere)
 			px::scoreFollowSetLoop(moduleId, -1, -1, false);
 		if (worker.joinable())
 			worker.join();
@@ -229,9 +243,19 @@ struct ScoreWindow : widget::OpaqueWidget {
 			(void) aspect;
 			if (doc) {
 				// THE WRITER'S OWN DOCUMENT, cut to one part as a file opened by name is.
-				if (load)
+				if (load) {
 					ok = score.loadBytes(*doc, name, &reason);
-				else if (part != score.part())
+					// ONTO THE INSTRUMENT REMEMBERED, in this same piece of work, so the window
+					// never shows the first part on its way there. One that is not in the file
+					// any more, after the file was edited, leaves it on the first. Tried even
+					// when the first part would not lay out: the list of parts is read before
+					// that, and the one remembered may be fine.
+					if (part > 0 && part < (int) score.parts().size())
+						ok = score.setPart(part, &reason);
+				}
+				// AND AGAIN WHEN NOTHING IS LAID OUT, after a part that would not go: asking
+				// for the same part a second time must not find a blank page and call it done.
+				else if (part != score.part() || !score.ready())
 					ok = score.setPart(part, &reason);
 				partNow = score.part();
 			}
@@ -239,7 +263,8 @@ struct ScoreWindow : widget::OpaqueWidget {
 				// FROM THE SONG ITSELF, one track written out as MusicXML. Converting is quick —
 				// thousandths of a second against the tenths that laying it out takes — so there
 				// is nothing to be gained by keeping the last one.
-				if (load || part != partNow || staves != stavesNow) {
+				// Converted again whenever nothing is laid out: see the document's case above.
+				if (load || part != partNow || staves != stavesNow || !score.ready()) {
 					std::string note;
 					const std::string xml = gpToMusicXML(*carried, part, staves, &note);
 					if (xml.empty()) {
@@ -256,11 +281,13 @@ struct ScoreWindow : widget::OpaqueWidget {
 					partNow = part;
 					stavesNow = staves;
 				}
+				else
+					partNow = -1;
 			}
 			else {
 				if (load)
 					ok = score.loadFile(file, &reason);     // Which opens on the first part.
-				else if (part != score.part())
+				else if (part != score.part() || !score.ready())
 					ok = score.setPart(part, &reason);
 				partNow = score.part();
 			}
@@ -322,7 +349,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 	song knows what string and fret each note is played at. A MusicXML file from elsewhere is
 	written however it was written. */
 	void offerParts() {
-		if (!usable())
+		// OFFERED EVEN WHEN THE SCORE COULD NOT BE SHOWN, so an instrument that will not lay out
+		// can be left for another. Not while the worker is rebuilding the list.
+		if (working.load() || partCount() < 1)
 			return;
 		ui::Menu* menu = createMenu();
 
@@ -367,6 +396,7 @@ struct ScoreWindow : widget::OpaqueWidget {
 		if (index == wantPart)
 			return;
 		wantPart = index;
+		partChosen = true;
 		flow = flowWant = 0.f;
 		beginWork(false);
 	}
@@ -399,11 +429,45 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// to, and that relayout was where the fitted width was lost.
 		if (wantReload && !working.load()) {
 			wantReload = false;
+			// THE INSTRUMENT AS THE MODULE HAS IT NOW, read when the work starts and not when it
+			// was asked for: a patch or preset loading into the module hands over the document
+			// first and the instrument after it.
+			const int remembered = ownScore ? px::scoreFollowPart(moduleId) : -1;
+			if (remembered >= 0 && (!song || remembered < (int) song->tracks.size()))
+				wantPart = remembered;
+			// Written here, where the worker is known to be idle, and not when the new score was
+			// handed over, when a layout of the old one could still be running and write it back.
+			partNow = -1;
 			unitsNow = 0;
 			beginWork(true);
 		}
+		// AN INSTRUMENT PICKED HERE, LAID OUT, is the module's to remember, with the patch, so the
+		// window opens on it next time and in the next session. One that failed is not. See
+		// ScoreFollow::part.
+		if (partChosen && !working.load()) {
+			if (!ready.load())
+				partChosen = false;
+			else if (partNow == wantPart) {
+				if (ownScore)
+					px::scoreFollowSetPart(moduleId, partNow);
+				partChosen = false;
+			}
+		}
 		// AND IT MOVES WITH ITS MODULE. See rideAlong.
 		rideAlong();
+		// WHAT THE MODULE IS LOOPING, which may have been set before this window opened or
+		// stopped from the module's menu since. See loopFrom.
+		if (!px::scoreFollowLoop(moduleId, loopFrom, loopTo, NULL))
+			loopFrom = loopTo = -1;
+		// A SHIFT-CLICK ON A LOOP SET BEFORE THIS WINDOW OPENED extends it from its first bar, as
+		// it would in the window that set it. With no bar clicked yet it would otherwise clear it.
+		if (anchor < 0 && loopFrom >= 0)
+			anchor = loopFrom;
+		// AN INSTRUMENT THE FILE DOES NOT HAVE, remembered from before it was edited. The worker
+		// stayed on the first part; asking again would ask for ever.
+		if (!working.load() && ready.load() && !song
+				&& (wantPart < 0 || wantPart >= partCount()))
+			wantPart = partNow;
 		if (!working.load() && ready.load()
 				&& (wantUnits != unitsNow || wantPart != partNow
 					|| (song && wantStaves != stavesNow))) {
@@ -672,6 +736,8 @@ struct ScoreWindow : widget::OpaqueWidget {
 					loopFrom = std::min(anchor, bar);
 					loopTo = std::max(anchor, bar);
 					px::scoreFollowSetLoop(moduleId, loopFrom, loopTo, true);
+					if (!ownScore)
+						loopedHere = true;
 				}
 				else {
 					anchor = bar;
@@ -1279,7 +1345,8 @@ struct ScoreWindow : widget::OpaqueWidget {
 
 void scoreWindowReplaceFor(int64_t moduleId, const std::shared_ptr<const std::string>& musicxml,
 		const std::string& title) {
-	if (!gScoreWindow || gScoreWindow->moduleId != moduleId || !musicxml || musicxml->empty())
+	if (!gScoreWindow || gScoreWindow->moduleId != moduleId || !gScoreWindow->ownScore
+			|| !musicxml || musicxml->empty())
 		return;
 	if (gScoreWindow->document == musicxml)
 		return;
@@ -1287,10 +1354,36 @@ void scoreWindowReplaceFor(int64_t moduleId, const std::shared_ptr<const std::st
 	gScoreWindow->song.reset();
 	gScoreWindow->path.clear();
 	gScoreWindow->name = title;
-	gScoreWindow->wantPart = 0;
-	gScoreWindow->partNow = -1;
+	// THE SAME FILE READ AGAIN KEEPS ITS INSTRUMENT; another file has already let it go. See
+	// ScoreFollow::part.
+	gScoreWindow->wantPart = std::max(0, px::scoreFollowPart(moduleId));
+	gScoreWindow->partChosen = false;
 	gScoreWindow->flow = gScoreWindow->flowWant = 0.f;
-	gScoreWindow->loopFrom = gScoreWindow->loopTo = -1;
+	gScoreWindow->wantReload = true;
+}
+
+
+bool scoreWindowShowingFor(int64_t moduleId) {
+	return gScoreWindow && gScoreWindow->moduleId == moduleId && gScoreWindow->ownScore;
+}
+
+
+void scoreWindowReplaceSongFor(int64_t moduleId, const std::shared_ptr<const GpSong>& song,
+		int track, const std::string& title) {
+	if (!scoreWindowShowingFor(moduleId) || !song)
+		return;
+	gScoreWindow->song = song;
+	gScoreWindow->document.reset();
+	gScoreWindow->path.clear();
+	gScoreWindow->name = title;
+	// THE INSTRUMENT REMEMBERED, where the song still has it, and otherwise the one the first row
+	// plays. See scoreWindowShowSong.
+	const int remembered = px::scoreFollowPart(moduleId);
+	const int tracks = (int) song->tracks.size();
+	gScoreWindow->wantPart = (remembered >= 0 && remembered < tracks) ? remembered
+		: math::clamp(track, 0, std::max(1, tracks) - 1);
+	gScoreWindow->partChosen = false;
+	gScoreWindow->flow = gScoreWindow->flowWant = 0.f;
 	gScoreWindow->wantReload = true;
 }
 
@@ -1335,7 +1428,13 @@ void scoreWindowShowSong(const std::shared_ptr<const GpSong>& song, int track,
 	ScoreWindow* window = makeWindow(moduleId);
 	window->song = song;
 	window->name = title;
-	window->wantPart = math::clamp(track, 0, (int) std::max<size_t>(1, song->tracks.size()) - 1);
+	window->ownScore = true;
+	// THE INSTRUMENT LAST CHOSEN HERE, and where none has been, or it is not in the song any
+	// more, the one the first row plays.
+	const int remembered = px::scoreFollowPart(moduleId);
+	const int tracks = (int) song->tracks.size();
+	window->wantPart = (remembered >= 0 && remembered < tracks) ? remembered
+		: math::clamp(track, 0, std::max(1, tracks) - 1);
 	window->partNow = -1;
 	window->beginWork(true);
 }
@@ -1353,7 +1452,9 @@ void scoreWindowShowDocument(const std::shared_ptr<const std::string>& musicxml,
 	ScoreWindow* window = makeWindow(moduleId);
 	window->document = musicxml;
 	window->name = title;
-	window->wantPart = 0;
+	window->ownScore = true;
+	// THE INSTRUMENT LAST CHOSEN HERE, or the first. Checked against the file once it is read.
+	window->wantPart = std::max(0, px::scoreFollowPart(moduleId));
 	window->partNow = -1;
 	window->beginWork(true);
 }

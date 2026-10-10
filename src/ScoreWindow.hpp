@@ -47,12 +47,24 @@ else written between the staves. Taken by copy, for the reason the song is. */
 void scoreWindowShowDocument(const std::shared_ptr<const std::string>& musicxml,
 	const std::string& title, int64_t moduleId);
 
-/** GIVES AN OPEN WINDOW A NEW DOCUMENT, and does nothing where none is open for this module.
+/** GIVES AN OPEN WINDOW A NEW DOCUMENT, and does nothing where none is open on this module's own
+score. A window on a file opened from the menu is left on it.
 
 A module that loads another file while its window is up was showing the old score: the window is
 told what to display when it is opened and never again. Called from the module after it loads. */
 void scoreWindowReplaceFor(int64_t moduleId, const std::shared_ptr<const std::string>& musicxml,
 	const std::string& title);
+
+/** THE SAME FOR A GUITAR PRO SONG: an open window on this module's own score is given the song
+the module has just loaded, which is a different piece or the same file saved again from Guitar
+Pro. `track` is the instrument to show where none is remembered. Taken by copy, as for
+scoreWindowShowSong. */
+void scoreWindowReplaceSongFor(int64_t moduleId, const std::shared_ptr<const GpSong>& song,
+	int track, const std::string& title);
+
+/** Whether a window is open on this module's own score, so a module need not copy a song for a
+window that is not there. */
+bool scoreWindowShowingFor(int64_t moduleId);
 
 /** Closes the window if it belongs to this module. Called when the module goes. */
 void scoreWindowCloseFor(int64_t moduleId);

@@ -29,16 +29,19 @@ static const int MAX_FOLLOWED = 16;
 
 struct ScoreFollow {
 	std::atomic<int64_t> moduleId{-1};
-	/** The bar being played, as the file numbers it, counting from nought. Minus one for a module
-	that is not playing anything. */
+	/** The bar being played, as the page numbers it. Minus one for a module that is not playing
+	anything. */
 	std::atomic<int> bar{-1};
 	/** How far through that bar, nought to one, for a line that moves rather than a bar that
 	lights up. */
 	std::atomic<float> through{0.f};
 	std::atomic<bool> running{false};
 
-	/** THE BARS TO GO ROUND, written from the window and read by the module. Both minus one for no
-	loop. Inclusive: a loop of one bar has the same number at each end. */
+	/** THE BARS TO GO ROUND, as the page numbers them. Set from the window and kept by the module
+	after the window closes; the module lets them go when it loads a different file, when its own
+	file is edited and loses those bars, when it is initialised and when it is deleted. A loop made
+	in a window on some other file ends with that window. Both minus one for no loop. Inclusive: a
+	loop of one bar has the same number at each end. */
 	std::atomic<int> loopFrom{-1};
 	std::atomic<int> loopTo{-1};
 	/** Raised by the window when it wants the music moved to the start of the loop, and lowered by
@@ -61,6 +64,12 @@ struct ScoreFollow {
 	is the one that holds the setting, and two places each holding their own idea of whether the
 	music is running is a pair that can disagree. */
 	std::atomic<int> wantTransport{0};
+
+	/** THE INSTRUMENT THE WINDOW SHOWS for the module's own score: the part of a MusicXML file or
+	the track of a Guitar Pro song, counting from nought; minus one for none chosen. Set from the
+	window when one is picked, read back when the window opens again, and saved by the module with
+	the patch. Let go with the loop when the module loads a different file. */
+	std::atomic<int> part{-1};
 };
 
 
@@ -70,8 +79,8 @@ void scoreFollowPublish(int64_t moduleId, int bar, float through, bool running);
 /** Where that module has got to. False when nothing has published for it. */
 bool scoreFollowRead(int64_t moduleId, int& bar, float& through, bool& running);
 
-/** Called by the window. `from` and `to` are written bars counting from nought, or both minus one
-to stop looping. `seek` asks for the music to jump to the start of the loop. */
+/** `from` and `to` are bars as the page numbers them, or both minus one to stop looping. `seek`
+asks for the music to jump to the start of the loop. */
 void scoreFollowSetLoop(int64_t moduleId, int from, int to, bool seek);
 
 /** Read by the module. Returns false where no loop is set. `takeSeek` is true once per request. */
@@ -88,6 +97,11 @@ int scoreFollowTakeTransport(int64_t moduleId);
 
 /** Taken by the module: the bar asked for, or minus one. Answers once per request. */
 int scoreFollowTakeGoTo(int64_t moduleId);
+
+/** The instrument the window last showed for this module's score, or minus one. See
+ScoreFollow::part. */
+void scoreFollowSetPart(int64_t moduleId, int part);
+int scoreFollowPart(int64_t moduleId);
 
 /** Forgets a module, so its slot is free for the next one. */
 void scoreFollowDrop(int64_t moduleId);

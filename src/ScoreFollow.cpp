@@ -12,6 +12,11 @@ static ScoreFollow gFollow[MAX_FOLLOWED];
 /** The slot this module has, taking a free one where it has none yet. Minus one only when every
 slot is spoken for, which needs sixteen score modules in a patch. */
 static ScoreFollow* slotFor(int64_t moduleId, bool claim) {
+	// NO ID, NO SLOT. A free slot is marked minus one, so a module not yet given its id — one being
+	// pasted, whose data is read before Rack assigns it — would otherwise find a free slot as its
+	// own and write into it without claiming it.
+	if (moduleId < 0)
+		return NULL;
 	for (int i = 0; i < MAX_FOLLOWED; i++) {
 		if (gFollow[i].moduleId.load(std::memory_order_acquire) == moduleId)
 			return &gFollow[i];
@@ -49,7 +54,9 @@ bool scoreFollowRead(int64_t moduleId, int& bar, float& through, bool& running) 
 
 
 void scoreFollowSetLoop(int64_t moduleId, int from, int to, bool seek) {
-	ScoreFollow* f = slotFor(moduleId, true);
+	// A SLOT IS CLAIMED TO SET A LOOP AND NOT TO CLEAR ONE. A module with no slot has no loop, and
+	// claiming one under the id of a module already deleted would keep it for ever.
+	ScoreFollow* f = slotFor(moduleId, from >= 0);
 	if (!f)
 		return;
 	// THE END BEFORE THE START, so a module that catches the two between stores sees a loop that
@@ -99,15 +106,32 @@ int scoreFollowTakeTransport(int64_t moduleId) {
 }
 
 
+void scoreFollowSetPart(int64_t moduleId, int part) {
+	ScoreFollow* f = slotFor(moduleId, part >= 0);   // As for the loop.
+	if (f)
+		f->part.store(part, std::memory_order_relaxed);
+}
+
+
+int scoreFollowPart(int64_t moduleId) {
+	const ScoreFollow* f = slotFor(moduleId, false);
+	return f ? f->part.load(std::memory_order_relaxed) : -1;
+}
+
+
 void scoreFollowDrop(int64_t moduleId) {
 	ScoreFollow* f = slotFor(moduleId, false);
 	if (!f)
 		return;
 	f->bar.store(-1, std::memory_order_relaxed);
+	f->through.store(0.f, std::memory_order_relaxed);
+	f->running.store(false, std::memory_order_relaxed);
 	f->loopFrom.store(-1, std::memory_order_relaxed);
 	f->loopTo.store(-1, std::memory_order_relaxed);
 	f->wantSeek.store(false, std::memory_order_relaxed);
 	f->goTo.store(-1, std::memory_order_relaxed);
+	f->wantTransport.store(0, std::memory_order_relaxed);
+	f->part.store(-1, std::memory_order_relaxed);
 	f->moduleId.store(-1, std::memory_order_release);
 }
 

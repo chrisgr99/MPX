@@ -211,6 +211,10 @@ struct SongModule : Module, NoteSource {
 	Changing it rebuilds the panel and restarts the synthesiser, which is sized by the count. */
 	int rows = DEFAULT_ROWS;
 	std::string filePath;
+	/** THE INSTRUMENT A PASTED MODULE BROUGHT WITH IT, held until Rack gives the module its id.
+	A paste reads the module's data before the id is assigned, and the remembered instrument is
+	kept under the id. See onAdd. */
+	int pendingPart = -1;
 	/** For the panel, which reads from the main thread while the audio thread plays. */
 	std::atomic<int> playedBar{0};
 	std::atomic<float> soundingBpm{120.f};
@@ -325,9 +329,6 @@ struct SongModule : Module, NoteSource {
 		core.startEngine(rate, false, false, SoundCore::bankFolder() + "/" + CHART_BANK);
 	}
 
-	void onAdd(const AddEvent& e) override {
-		updateBand();
-	}
 
 	void onRemove(const RemoveEvent& e) override {
 		core.stopEngine();
@@ -372,9 +373,23 @@ struct SongModule : Module, NoteSource {
 	}
 #endif
 
+	void onAdd(const AddEvent& e) override {
+#if CHART_AUDIO
+		updateBand();
+#endif
+		// THE ID HAS ARRIVED, so a pasted module's instrument can be kept under it now.
+		if (pendingPart >= 0)
+			scoreFollowSetPart(id, pendingPart);
+		pendingPart = -1;
+	}
+
 	~SongModule() {
 		for (int r = 0; r < ROWS; r++)
 			busRelease(slot[r]);
+		// THE LOOP AND THE PLAYHEAD GO WITH THE MODULE, and its place among the followed scores
+		// is free for the next one. A patch opened again in the same session brings its modules
+		// back with the same ids, and they would otherwise find this one's loop waiting.
+		scoreFollowDrop(id);
 	}
 
 	int busSlotFor(int outputId, uint32_t* gen) override {
@@ -388,6 +403,16 @@ struct SongModule : Module, NoteSource {
 
 	void onReset() override {
 		rewind();
+		scoreFollowSetLoop(id, -1, -1, false);
+	}
+
+	/** The bars being looped, as the page numbers them, or false for none — including a loop
+	naming bars this piece does not have, which plays as no loop at all. Main thread. */
+	bool looping(int& from, int& to) {
+		if (!scoreFollowLoop(id, from, to, NULL))
+			return false;
+		double at = 0.0, end = 0.0;
+		return loopRange(loaded[live.load()], from, to, at, end);
 	}
 
 	/** WHERE A NOTE FALLS ONCE THE MUSIC SWINGS, in quarter notes.
@@ -539,6 +564,25 @@ struct SongModule : Module, NoteSource {
 		return written + 1;
 	}
 
+	/** WHERE A LOOP OF PAGE BARS FALLS ON THE PLAYED TIMELINE, in quarter notes: from the start of
+	the first pass through `from` to the end of `to` after it. The first pass is the one meant, since
+	looping a repeated section would otherwise jump between its passes. False where the piece has
+	no such bars, which a loop kept across an edit of the file can name. */
+	static bool loopRange(const Playing& L, int from, int to, double& at, double& end) {
+		at = end = -1.0;
+		for (size_t i = 0; i < L.line.bars.size(); i++) {
+			const GpPlayedBar& b = L.line.bars[i];
+			const int n = writtenNumber(L, b.written);
+			if (at < 0.0 && n == from)
+				at = b.startQuarters;
+			if (at >= 0.0 && n == to) {
+				end = b.startQuarters + b.quarters;
+				break;
+			}
+		}
+		return end > at && at >= 0.0;
+	}
+
 	/** A bus for every row that carries a track, and none for the rest. Main thread. */
 	void claimBuses(const Playing& L) {
 		for (int r = 0; r < ROWS; r++) {
@@ -644,13 +688,42 @@ struct SongModule : Module, NoteSource {
 		// zip and sniffs as MusicXML, and only the reading tells them apart. The score window
 		// shows the writer's own document where there is one. See showScore.
 		fileIsMusicXML = wasMusicXML;
+		// A LOOP IS BARS OF ONE PIECE. Another file's bar numbers mean nothing in this one, so
+		// loading a different file lets the loop go; the same file read again, as it is each time
+		// it is saved from an editor, keeps it. The window no longer clears a loop when it closes,
+		// so this is where a loop from the last piece would otherwise survive.
+		if (path != filePath) {
+			scoreFollowSetLoop(id, -1, -1, false);
+			// And the instrument the window was showing, for the same reason.
+			scoreFollowSetPart(id, -1);
+		}
+		else {
+			// THE SAME FILE, EDITED, may have lost the bars the loop names.
+			int from = -1, to = -1;
+			double at = 0.0, end = 0.0;
+			if (scoreFollowLoop(id, from, to, NULL) && !loopRange(next, from, to, at, end))
+				scoreFollowSetLoop(id, -1, -1, false);
+		}
 		filePath = path;
 		// A WINDOW ALREADY OPEN ON THIS MODULE GETS THE NEW SCORE. It is told what to show when
 		// it is opened and was never told again, so loading another piece left it showing the
-		// one before.
+		// one before — and a window left on the old piece would set a loop and an instrument for
+		// the new one from the old one's bars and parts. A Guitar Pro song goes the same way,
+		// which is also how an edit saved from Guitar Pro reaches the window.
 		if (wasMusicXML)
 			px::scoreWindowReplaceFor(id, std::make_shared<const std::string>(fileBytes),
 				next.title.empty() ? std::string("Score") : next.title);
+		else if (px::scoreWindowShowingFor(id)) {
+			int track = 0;
+			for (int r = 0; r < ROWS; r++) {
+				if (next.track[r] >= 0) {
+					track = next.track[r];
+					break;
+				}
+			}
+			px::scoreWindowReplaceSongFor(id, std::make_shared<const GpSong>(next.song), track,
+				next.title.empty() ? std::string("Score") : next.title);
+		}
 		params[P_TEMPO].setValue(math::clamp(next.openingBpm, 20.f, 400.f));
 		rewind();
 		nameOutputs();
@@ -687,6 +760,11 @@ struct SongModule : Module, NoteSource {
 		json_object_set_new(rootJ, "rows", rowsJ);
 		json_object_set_new(rootJ, "rowCount", json_integer(rows));
 		json_object_set_new(rootJ, "pedal", json_boolean(sendPedal.load()));
+		// THE INSTRUMENT THE SCORE WINDOW WAS SHOWING, so it opens on the same one next session.
+		// See ScoreFollow::part.
+		const int part = scoreFollowPart(id);
+		if (part >= 0)
+			json_object_set_new(rootJ, "scorePart", json_integer(part));
 #if CHART_AUDIO
 #endif
 		return rootJ;
@@ -707,6 +785,15 @@ struct SongModule : Module, NoteSource {
 		std::string why;
 		if (!setSongBytes(bytes, json_is_string(pathJ) ? json_string_value(pathJ) : "", &why))
 			return;
+		// AFTER THE SONG, which lets go of any instrument remembered for the file before it. A
+		// pasted module has no id yet; it keeps the instrument until onAdd.
+		if (json_t* partJ = json_object_get(rootJ, "scorePart")) {
+			const int part = (int) json_integer_value(partJ);
+			if (id >= 0)
+				scoreFollowSetPart(id, part);
+			else
+				pendingPart = part;
+		}
 		// The rows as they were left, over the guess the loading made.
 		json_t* rowsJ = json_object_get(rootJ, "rows");
 		if (!json_is_array(rowsJ))
@@ -847,9 +934,12 @@ struct SongModule : Module, NoteSource {
 		// which the score window sets over the bars you choose.
 		if (quarters >= L.line.quarters) {
 			// UNLESS A PASSAGE IS BEING LOOPED, and that passage runs to the last bar: the loop
-			// below brings the music back to its start, and stopping here would get in first.
+			// below brings the music back to its start, and stopping here would get in first. A
+			// loop naming bars this piece does not have is no loop, and must not stop the piece
+			// ending: the music would run on past the last bar in silence.
 			int from = -1, to = -1;
-			if (!scoreFollowLoop(id, from, to, NULL)) {
+			double at = 0.0, end = 0.0;
+			if (!scoreFollowLoop(id, from, to, NULL) || !loopRange(L, from, to, at, end)) {
 				params[P_PLAY].setValue(0.f);
 				rewind();
 				// AND STOPPED FOR THE REST OF THIS SAMPLE TOO, which is the whole point.
@@ -908,26 +998,14 @@ struct SongModule : Module, NoteSource {
 		{
 			int from = -1, to = -1;
 			bool seek = false;
-			if (scoreFollowLoop(id, from, to, &seek)) {
-				double at = -1.0, end = -1.0;
-				for (size_t i = 0; i < L.line.bars.size(); i++) {
-					const GpPlayedBar& b = L.line.bars[i];
-					const int n = writtenNumber(L, b.written);
-					if (at < 0.0 && n == from)
-						at = b.startQuarters;
-					if (at >= 0.0 && n == to) {
-						end = b.startQuarters + b.quarters;
-						break;
-					}
-				}
-				if (end > at && at >= 0.0) {
-					if (seek || quarters < at || quarters >= end) {
-						quarters = at;
-						barIndex = 0;
-						pedalIndex = -1;
-						for (int r = 0; r < ROWS; r++)
-							reseek[r].store(true);
-					}
+			double at = -1.0, end = -1.0;
+			if (scoreFollowLoop(id, from, to, &seek) && loopRange(L, from, to, at, end)) {
+				if (seek || quarters < at || quarters >= end) {
+					quarters = at;
+					barIndex = 0;
+					pedalIndex = -1;
+					for (int r = 0; r < ROWS; r++)
+						reseek[r].store(true);
 				}
 			}
 		}
@@ -1505,10 +1583,44 @@ struct SongTitle : widget::OpaqueWidget {
 				const int at = math::clamp(module->playedBar.load(), 0,
 					(int) L.line.bars.size() - 1);
 				const GpPlayedBar& bar = L.line.bars[(size_t) at];
-				std::string said = string::f("BAR %d OF %d", bar.written + 1,
-					(int) L.song.masterBars.size());
+				// AS THE PAGE NUMBERS THEM, which is how the loop beside it, the score window and
+				// the menu all count: a pickup is bar nought.
+				// THE HIGHEST NUMBER IN THE PIECE, which is not always the last bar's: an
+				// editor can leave the final bar out of the count.
+				int last = 0;
+				for (int b = 0; b < (int) L.song.masterBars.size(); b++)
+					last = std::max(last, SongModule::writtenNumber(L, b));
+				std::string said = string::f("BAR %d OF %d",
+					SongModule::writtenNumber(L, bar.written), last);
 				if (bar.pass > 1)
 					said += string::f("  (%d)", bar.pass);
+				// AND WHAT IT IS GOING ROUND, since the loop goes on after the score window is
+				// closed and nothing else on the rack would say so. Left off where it would run
+				// into the LOAD caption; the module's menu says it in full either way. WHETHER IT
+				// FITS IS DECIDED BY THE WIDEST COUNT THE PIECE CAN SHOW, not the one showing now,
+				// or it would come and go as the count changed width going round the loop.
+				int from = -1, to = -1;
+				if (module->looping(from, to)) {
+					int most = 1;
+					for (const GpPlayedBar& b : L.line.bars)
+						most = std::max(most, b.pass);
+					std::string widest = string::f("BAR %d OF %d", last, last);
+					if (most > 1)
+						widest += string::f("  (%d)", most);
+					const std::string loop = (to > from)
+						? string::f("   LOOP %d–%d", from, to) : string::f("   LOOP %d", from);
+					nvgFontFaceId(vg, font->handle);
+					nvgFontSize(vg, 8.f);
+					float room = box.size.x - mm2px(2.f);
+					if (loadCx > 0.f) {
+						nvgFontSize(vg, 7.f);
+						room = loadCx - mm2px(3.6f) - nvgTextBounds(vg, 0.f, 0.f, "LOAD", NULL, NULL)
+							- mm2px(2.f) - mm2px(1.f);
+						nvgFontSize(vg, 8.f);
+					}
+					if (nvgTextBounds(vg, 0.f, 0.f, (widest + loop).c_str(), NULL, NULL) <= room)
+						said += loop;
+				}
 				nvgFontSize(vg, 8.f);
 				nvgFillColor(vg, nvgRGB(0xff, 0xff, 0xff));
 				nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -1847,6 +1959,18 @@ struct SongWidget : ModuleWidget {
 		}
 		if (!m->filePath.empty())
 			menu->addChild(createMenuLabel(m->filePath));
+		// THE WAY OUT OF A LOOP WITH THE WINDOW CLOSED. The loop outlives the window, so the
+		// module has to be able to stop it on its own.
+		{
+			int from = -1, to = -1;
+			if (m->looping(from, to)) {
+				menu->addChild(createMenuItem(to > from
+					? string::f("Stop looping bars %d to %d", from, to)
+					: string::f("Stop looping bar %d", from), "", [=]() {
+					scoreFollowSetLoop(m->id, -1, -1, false);
+				}));
+			}
+		}
 
 		// A MUSICXML FILE FROM SOMEWHERE ELSE, which is how the engraving was built and is still
 		// the way to read a score this plugin did not load.
