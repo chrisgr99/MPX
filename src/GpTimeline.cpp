@@ -14,6 +14,22 @@ trills at much the same speed in a slow piece as in a fast one, somewhere around
 second, so this is a time and not a fraction of the note. */
 static const double TRILL_SECONDS = 0.08;
 
+/** HOW MUCH LIGHTER AN ORNAMENT'S QUICK NOTES ARE than the note they decorate, on the dynamic
+scale where a whole marking is about a seventh: about one marking.
+
+THE STRESS IS ON THE FIRST NOTE, the one on the beat, and what follows it is a flick of the finger
+— which every source from Leopold Mozart and Türk to Hummel says, and which a pianist does without
+thinking. Played at the note's own dynamic, every note of a mordent in a forte passage was a forte
+strike: in the Pathétique's bars 87 and 88 all three came from the piano's hard top layers, three
+hard hammer blows inside a tenth of a second, which was heard as metallic beside the mordents a
+layer or two softer around them. */
+static const float ORNAMENT_LIGHTER = 0.12f;
+
+/** AND A MORDENT'S TWO MORE, a second marking lighter again: the quickest flick of all, two notes
+in the time a trill takes over one, and heard as a grace on the note rather than as notes of their
+own. Judged by ear on the Pathétique's second theme against one marking. */
+static const float MORDENT_LIGHTER = 0.24f;
+
 /** HOW MUCH LONGER A BEAT UNDER A FERMATA IS HELD. Nothing says; players hold about half as long
 again to twice, and this is the middle of that. */
 static const double FERMATA_HELD = 1.75;
@@ -796,6 +812,8 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					GpPlayedNote one = n;
 					one.note.trill = false;
 					one.note.midi = (k % 2) ? above : n.note.midi;
+					if (k > 0)
+						one.dynamic = std::max(0.f, n.dynamic - ORNAMENT_LIGHTER);
 					one.note.tied = false;
 					one.startSeconds = n.startSeconds + trilled * (double) k / count;
 					one.lengthSeconds = trilled / (double) count;
@@ -807,27 +825,49 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 				continue;
 			}
 			// A FLICK AND THEN THE NOTE. The ornament never takes more than half of what it is
-			// on, so a short note keeps something of itself to be heard as.
+			// on, so a short note keeps something of itself to be heard as. THE HALF IS SHARED BY
+			// THE QUICK NOTES ONLY: a figure ending on the written note holds that last note, so
+			// a mordent's half is two notes and not three. Divided by three, the Pathétique's
+			// mordents ran at thirty milliseconds a note, half again as fast as its own engraver
+			// spelled them out, and three hammer strikes that close sound hard.
+			const bool holdsLast = pitches[count - 1] == n.note.midi;
+			const int quickNotes = holdsLast ? count - 1 : count;
 			double each = TRILL_SECONDS;
-			if (each * count > n.lengthSeconds * 0.5)
-				each = n.lengthSeconds * 0.5 / count;
+			if (each * quickNotes > n.lengthSeconds * 0.5)
+				each = n.lengthSeconds * 0.5 / quickNotes;
 			const double perQuarter = (n.lengthSeconds > 0.0)
 				? n.lengthQuarters / n.lengthSeconds : 0.0;
 			double at = 0.0;
+			// THE LAST NOTE OF THE FIGURE IS HELD. Every one of these ends on the written note, and
+			// a pianist plays that last note and keeps it down for the rest of the length — it is
+			// the note the ornament is an ornament of. Played as a note of the figure and then
+			// struck again for the rest, the key was hit three times inside a tenth of a second,
+			// which in the Pathétique's second theme was heard as a rattle on every mordent.
+			const bool endsOnIt = holdsLast;
 			for (int k = 0; k < count; k++) {
 				GpPlayedNote one = n;
 				one.note.mordent = one.note.invertedMordent = one.note.turn = false;
 				one.note.invertedTurn = false;
 				one.note.midi = pitches[k];
 				one.note.tied = false;
+				if (k > 0) {
+					const bool mordent = n.note.mordent || n.note.invertedMordent;
+					one.dynamic = std::max(0.f, n.dynamic - (mordent ? MORDENT_LIGHTER : ORNAMENT_LIGHTER));
+				}
 				one.startSeconds = n.startSeconds + at;
 				one.lengthSeconds = each;
 				one.startQuarters = n.startQuarters + at * perQuarter;
 				one.lengthQuarters = each * perQuarter;
+				if (k == count - 1 && endsOnIt) {
+					one.lengthSeconds = n.lengthSeconds - at;
+					one.lengthQuarters = n.lengthQuarters - at * perQuarter;
+				}
 				grown.push_back(one);
 				at += each;
 			}
-			// AND THE REST OF THE NOTE, which is what the ornament was an ornament of.
+			if (endsOnIt)
+				continue;
+			// AND THE REST OF THE NOTE, for a figure that does not end on it.
 			GpPlayedNote rest = n;
 			rest.note.mordent = rest.note.invertedMordent = rest.note.turn = false;
 			rest.note.invertedTurn = false;
