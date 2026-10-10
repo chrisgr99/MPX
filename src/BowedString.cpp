@@ -68,6 +68,24 @@ void BowedString::setStiffness(float amount) {
 }
 
 
+void BowedString::setImpedance(float kgPerSecond) {
+	z = std::fmax(0.001f, kgPerSecond);
+}
+
+
+void BowedString::setBow(float forceNewtons, float speedMetresPerSecond) {
+	bowForce = std::fmax(0.f, forceNewtons);
+	bowSpeed = speedMetresPerSecond;
+}
+
+
+void BowedString::setFriction(float staticCoefficient, float dynamicCoefficient, float speed) {
+	muStatic = std::fmax(0.f, staticCoefficient);
+	muDynamic = std::fmax(0.f, std::fmin(muStatic, dynamicCoefficient));
+	fallSpeed = std::fmax(1e-4f, speed);
+}
+
+
 void BowedString::setContact(float b) {
 	b = std::fmax(0.005f, std::fmin(0.5f, b));
 	if (b != beta) {
@@ -299,7 +317,102 @@ void BowedString::pluck(float level, float hardness) {
 }
 
 
+/** THE BOW, SOLVED FOR ONE SAMPLE.
+
+`unbowed` is the velocity the string would have under the bow if nothing touched it: the two waves
+arriving there, added. The bow's friction force f adds f / 2Z to both outgoing waves, so the string
+under the bow moves at
+
+    v = unbowed + f / 2Z,    and the friction is    f = F x mu(bow speed - v),
+
+where F is how hard the bow presses and mu, the coefficient, depends on how fast the string slides
+against the hair. Writing x for that sliding speed, bow minus string, and k for F / 2Z, the two
+together are one equation in x:
+
+    x + k mu(x) = bow speed - unbowed.
+
+STUCK, x is nought and mu can be anything from minus to plus the static coefficient: the string
+moves with the bow, held there by whatever friction it takes, and it can stay so as long as that
+is no more than the static coefficient allows.
+
+SLIPPING, mu is the hyperbolic curve, mu_d + (mu_s - mu_d) v0 / (v0 + |x|), signed with the slide.
+For a slide in the positive direction that makes the equation a quadratic,
+
+    x^2 + (v0 + k mu_d - u) x + v0 (k mu_s - u) = 0,    with u = bow speed - unbowed,
+
+and the same with signs turned for the other way.
+
+THERE CAN BE THREE ANSWERS AT ONCE: stuck, and two slipping speeds. The middle one is unstable; of
+the other two, the string keeps to the one it is on. Stuck, it stays stuck until the friction it
+needs would be more than the static coefficient gives; slipping, it stays on the outer slipping
+answer — the faster one — until that answer stops existing, and only then sticks. That memory is
+the hysteresis of the classical model, and it is what makes the slip begin late and end abruptly,
+which is the Helmholtz corner. */
+float BowedString::bowJunction(float unbowed) {
+	if (bowForce <= 0.f) {
+		stuck = false;
+		slide = 0.f;
+		atBowVelocity = unbowed;
+		atBowForce = 0.f;
+		return 0.f;
+	}
+	const double k = (double) bowForce / (2.0 * (double) z);
+	const double u = (double) bowSpeed - (double) unbowed;
+	const double holdLimit = k * (double) muStatic;
+
+	// The faster of the slipping answers in direction `s`, or a negative number where there is
+	// none. Worked in double: the two terms nearly cancel close to where the answer vanishes.
+	auto outer = [&](double s) {
+		const double su = s * u;
+		const double b = (double) fallSpeed + k * (double) muDynamic - su;
+		const double c = (double) fallSpeed * (k * (double) muStatic - su);
+		const double disc = b * b - 4.0 * c;
+		if (disc < 0.0)
+			return -1.0;
+		const double y = 0.5 * (-b + std::sqrt(disc));
+		return (y > 0.0) ? y : -1.0;
+	};
+
+	double x = 0.0;
+	if (stuck && std::fabs(u) <= holdLimit) {
+		x = 0.0;
+	}
+	else {
+		// Slipping, or breaking away: the way it was slipping, or the way it is being pulled.
+		double s = (!stuck && slide != 0.f) ? (slide > 0.f ? 1.0 : -1.0) : (u >= 0.0 ? 1.0 : -1.0);
+		double y = outer(s);
+		if (y < 0.0) {
+			// THE SLIP HAS RUN OUT. Stick if the bow can hold it; otherwise it is slipping the
+			// other way, which a big enough reversal of the pull can do.
+			if (std::fabs(u) <= holdLimit) {
+				stuck = true;
+				x = 0.0;
+			}
+			else {
+				s = -s;
+				y = outer(s);
+				x = (y > 0.0) ? s * y : 0.0;
+				stuck = (y <= 0.0);
+			}
+		}
+		else {
+			x = s * y;
+			stuck = false;
+		}
+	}
+	slide = (float) x;
+	const float v = bowSpeed - (float) x;
+	const float added = v - unbowed;
+	atBowVelocity = v;
+	atBowForce = (float) (2.0 * (double) z * (double) added);
+	return added;
+}
+
+
 void BowedString::silence() {
+	stuck = false;
+	slide = 0.f;
+	atBowVelocity = atBowForce = 0.f;
 	for (int i = 0; i < MAX_DELAY; i++)
 		bowToBridge[i] = bridgeToBow[i] = bowToNut[i] = nutToBow[i] = 0.f;
 	lastOut = atBridge = 0.f;
@@ -317,9 +430,9 @@ Reading everything before writing anything is what makes the four lines one loop
 and is why a segment may be as short as the interpolator allows without the order of the writes
 mattering.
 
-THE BOW JUNCTION IS TRANSPARENT in this phase. What arrives from one side leaves towards the
-other, which is a string with nothing touching it. The friction goes here in phase 2, as a
-velocity added to both outgoing waves. */
+THE BOW JUNCTION. What arrives from one side leaves towards the other, as it would with nothing
+touching the string, plus whatever velocity the bow's friction adds, the same to both. See
+bowJunction. */
 float BowedString::process() {
 	if (dirty)
 		tune();
@@ -346,10 +459,11 @@ float BowedString::process() {
 	// THE NUT: a reflection and almost nothing else.
 	nutToBow[write] = -NUT_REFLECT * arrivingAtNut;
 
-	// THE BOW: straight through, plus the pluck while one is going in.
+	// THE BOW: straight through, plus what the friction adds, plus the pluck while one is going in.
 	float push = 0.f;
 	if (excitePos < exciteLength)
 		push = excite[excitePos++];
+	push += bowJunction(fromBridge + fromNut);
 	bowToBridge[write] = fromNut + push;
 	bowToNut[write] = fromBridge + push;
 

@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled bowed string instrumen
 
 Names: not fixed. One module while the engine is unproven, then one slug per instrument.
 
-Status: phase 1 built — the string, with no bow. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`. The build is in ten phases, at the end of this document; the violin ships first.
+Status: phase 1 built — the string. Phase 2, the bow, is under way: the friction junction is built and holds Helmholtz motion; the string's losses are still to be made physical. `src/BowedString.hpp`, `src/BowedString.cpp`, `make bowtest`. The build is in ten phases, at the end of this document; the violin ships first.
 
 ## Purpose
 
@@ -168,9 +168,13 @@ Two things it cost. The round trip meets each end once, not twice, and counting 
 
 The bench also prints how close to the bridge the contact point can be had, which is the figure phase 4 needs. At 48 kHz, with the shortest segment the interpolated read allows: cello C2 reaches 0.006 of the length, cello A3 0.019, violin G3 0.017, violin A4 0.039, violin E5 0.059, violin E6 0.125, violin E7 0.288. So a cello can be bowed anywhere a player would, and a violin cannot be bowed near the bridge above about the A string without oversampling.
 
-### 2. The bow
+### 2. The bow — under way
 
 The nonlinear junction at the contact point, solved once per sample, with the classical friction curve that depends on sliding speed alone. Bow force, bow speed and sounding point as explicit inputs.
+
+**Where it stands.** The junction is built (`BowedString::bowJunction`): the hyperbolic friction curve, and the hysteresis rule that keeps a stuck string stuck until the static limit is passed and a slipping one on its outer branch until that branch disappears, which matches the published closed form exactly. A held cello D3 at a newton and 0.2 m/s, bowed at a tenth of the length, settles into Helmholtz motion: one slip a period, stuck for 0.885 of it, in tune to a quarter of a cent. Once going, Helmholtz motion survives over a band of force and bow position with Schelleng's shape — at a tenth of the length from 0.2 N to 4 N. Starting a note is erratic: from rest the string falls into two, three or more slips a period depending on the attack, and the cello's low C almost never starts cleanly. Simulations with this friction model are known for exactly that (Woodhouse and Galluzzo found a quarter of attacks succeeding), which is the case for the thermal model.
+
+**Still to do in this phase.** Both end reflections pass a steady velocity back exactly, so the string cannot drift; at present they lose a little of it, which skews the balance of sticking and slipping. The losses become physical: the fundamental at a Q of about five hundred, as a cello's open strings measure, and the high-frequency loss set per hertz rather than per sample, which the oversampling of phase 4 needs anyway. The friction constants become the published ones (static 0.8, dynamic 0.4, falling over 0.2 m/s), and each string its own measured impedance.
 
 This is the first bowed sound. It will be thin, because there is no body, and it should already be recognisably a bowed string rather than a synthesiser, because Helmholtz motion is a strong attractor.
 

@@ -9,12 +9,21 @@ A DIGITAL WAVEGUIDE SPLIT AT THE BOW. GuitarString is one delay line closed in a
 plucked string is only ever touched at the start. A bowed string is driven continuously at one
 point, so the travelling waves have to be available there: the string is four one-way delay lines,
 a pair each side of the contact point, carrying what is going towards the bridge, coming back from
-it, going towards the nut, and coming back from that. The bow will be solved at the junction where
-the four meet, in phase 2. This phase has no bow in it.
+it, going towards the nut, and coming back from that. The bow is solved at the junction where the
+four meet.
 
-WHAT TRAVELS. Velocity waves. The junction then adds the bow's velocity to both outgoing waves,
-which is the form the friction model wants, and the bridge sees the sum of what arrives and what
-it sends back.
+WHAT TRAVELS. Velocity waves, in metres a second, so that the bow's force in newtons and its speed
+in metres a second mean what a player's do, and the published limits on them can be tested. What
+arrives at the junction from the two sides adds to the velocity the string would have there if
+nothing touched it; the bow's force adds the same velocity to both outgoing waves, the force over
+twice the string's impedance, because a force at a point pushes both ways at once.
+
+THE BOW IS FRICTION, solved once a sample. The classical model, in which the friction depends on
+the sliding speed alone: the string either sticks to the hair and moves with it, or slips and is
+held back by a dynamic friction that falls as it slips faster. That is McIntyre, Schumacher and
+Woodhouse's, and it is known to get transients wrong — the rosin's friction depends on its
+temperature, not its speed — but it gives Helmholtz motion and is the thing to test everything
+else against. See docs/bowed-strings.md.
 
 WHERE THE LOSSES ARE. At the bridge, because that is where a string's energy actually leaves: the
 loss filter and the dispersion allpasses sit in the bridge reflection, so each is crossed once per
@@ -60,10 +69,32 @@ struct BowedString {
 	/** True while the contact point being asked for cannot be had at this pitch and rate. */
 	bool contactClamped() const { return clamped; }
 
-	/** Plucks the string at the contact point: pizzicato, and the only way to set it going until
-	there is a bow. `level` nought to one is how hard, `hardness` nought to one is the finger.
-	The shape is GuitarString's, halved into the two outgoing waves. */
+	/** Plucks the string at the contact point: pizzicato. `level` nought to one is how hard,
+	`hardness` nought to one is the finger. The shape is GuitarString's, halved into the two
+	outgoing waves. */
 	void pluck(float level, float hardness);
+
+	/** THE STRING'S WAVE IMPEDANCE, in kilograms a second: the square root of its tension times
+	its mass per metre. How far a given force moves it, so it is what makes the same bow need more
+	force on a cello than on a violin. */
+	void setImpedance(float kgPerSecond);
+	float impedance() const { return z; }
+
+	/** THE BOW, as the player has it at this moment: how hard it presses, in newtons, and how
+	fast it is drawn, in metres a second, positive for a down-bow and negative for an up-bow.
+	Force nought is the bow off the string. Both may change every sample, which is what bowing is. */
+	void setBow(float forceNewtons, float speedMetresPerSecond);
+
+	/** THE FRICTION CURVE: the coefficient while sticking, the one the slipping falls towards, and
+	the sliding speed, in metres a second, over which it falls halfway. The hyperbolic curve of the
+	classical model; see process. */
+	void setFriction(float staticCoefficient, float dynamicCoefficient, float fallSpeed);
+
+	/** WHAT THE BOW DID LAST SAMPLE, for a bench: whether the string was stuck to the hair, its
+	velocity under the bow in metres a second, and the friction force in newtons. */
+	bool sticking() const { return stuck; }
+	float velocityAtBow() const { return atBowVelocity; }
+	float frictionForce() const { return atBowForce; }
 
 	/** Stops the string at once. */
 	void silence();
@@ -110,6 +141,19 @@ private:
 	float atBridge = 0.f;
 	// The DC blocker's.
 	float dcIn = 0.f, dcOut = 0.f;
+
+	// The bow and the friction.
+	float z = 0.5f;
+	float bowForce = 0.f, bowSpeed = 0.f;
+	float muStatic = 0.8f, muDynamic = 0.3f, fallSpeed = 0.1f;
+	bool stuck = false;
+	/** The sliding speed last sample, bow minus string: which way the string is slipping. */
+	float slide = 0.f;
+	float atBowVelocity = 0.f, atBowForce = 0.f;
+
+	/** The velocity the bow adds to both outgoing waves, given what the string would be doing
+	under it with nothing touching it. */
+	float bowJunction(float unbowed);
 
 	// The pluck, played in over one period, half into each outgoing wave.
 	float excite[MAX_DELAY] = {};
