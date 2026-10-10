@@ -25,9 +25,13 @@ Woodhouse's, and it is known to get transients wrong — the rosin's friction de
 temperature, not its speed — but it gives Helmholtz motion and is the thing to test everything
 else against. See docs/bowed-strings.md.
 
-WHERE THE LOSSES ARE. At the bridge, because that is where a string's energy actually leaves: the
-loss filter and the dispersion allpasses sit in the bridge reflection, so each is crossed once per
-round trip exactly as GuitarString's are. The nut reflects almost everything.
+WHERE THE LOSSES ARE. The bridge takes the fundamental's loss, the same at every frequency: that is
+the bridge's resistance, Schelleng's R, where the string's energy leaves for the body. What the
+string loses inside itself grows with frequency and is spread along its length, so it is shared
+between the two ends by the length of string on each side: beta of it in the bridge's reflection,
+the rest in the nut's. A ripple running between the bow and the bridge then loses what that much
+string would. The stiffness sits at the nut, at the far end of the long segment, where its few
+samples of delay cannot move the bow.
 
 THE SPLIT IS THE POINT OF THIS PHASE. Two half-lengths must add to the same loop a single line
 would have given, and must keep adding to it while the contact point moves — which is what the
@@ -57,6 +61,10 @@ struct BowedString {
 	/** How stiff the string is, nought to one. Less of a bowed string's character than of a
 	piano's, and still there. */
 	void setStiffness(float amount);
+	/** NOTHING LOST AT EITHER END: the string of the analyses. A bench uses it to test the junction
+	against Guettler's equations for how a note starts, which assume it. Never for playing: under
+	a bow a string that loses nothing has no stable motion at all. */
+	void setLossless(bool on);
 
 	/** WHERE THE BOW TOUCHES, as a fraction of the string's length from the bridge. A player
 	works between about 0.02, hard by the bridge, and 0.2, over the fingerboard. May move while
@@ -82,6 +90,15 @@ struct BowedString {
 	void setImpedance(float kgPerSecond);
 	float impedance() const { return z; }
 
+	/** THE STRING TWISTS AS WELL AS MOVES. The bow's friction acts on the string's surface, so it
+	turns the string about its axis as well as pushing it sideways, and the twist travels as waves of
+	its own: faster, heavily damped, and carrying away what would otherwise ring between the bow and
+	the bridge. `impedanceRatio` is the torsional wave impedance over the transverse one, nought for
+	none; `speedRatio` how much faster the torsional waves travel; `q` how quickly they die. A second
+	waveguide, split at the bow as the first is. The defaults are Woodhouse and Loach's cello D: 1.8
+	against 0.55 kg/s, 5.2 times as fast, Q 45. */
+	void setTorsion(float impedanceRatio, float speedRatio = 5.2f, float q = 45.f);
+
 	/** THE BOW, as the player has it at this moment: how hard it presses, in newtons, and how
 	fast it is drawn, in metres a second, positive for a down-bow and negative for an up-bow.
 	Force nought is the bow off the string. Both may change every sample, which is what bowing is. */
@@ -92,8 +109,8 @@ struct BowedString {
 	classical model; see process. */
 	void setFriction(float staticCoefficient, float dynamicCoefficient, float fallSpeed);
 
-	/** WHAT THE BOW DID LAST SAMPLE, for a bench: whether the string was stuck to the hair, its
-	velocity under the bow in metres a second, and the friction force in newtons. */
+	/** WHAT THE BOW DID LAST SAMPLE, for a bench: whether the string was stuck to the hair, the
+	velocity of its surface under the bow in metres a second, and the friction force in newtons. */
 	bool sticking() const { return stuck; }
 	float velocityAtBow() const { return atBowVelocity; }
 	float frictionForce() const { return atBowForce; }
@@ -116,6 +133,7 @@ private:
 	float damping = 0.3f;
 	float stiffness = 0.f;
 	float beta = 0.12f;
+	bool lossless = false;
 
 	// THE FOUR LINES, named for what they carry: written at one end, read at the other.
 	float bowToBridge[MAX_DELAY] = {};
@@ -129,15 +147,17 @@ private:
 	float toNutDelay = 100.f;     // one way, bow to nut
 	float shortest = 20.f;
 	bool clamped = false;
-	float lossS = 0.3f;
+	float lossS = 0.3f;           // the nut side's share of the string's own loss
+	float lossSB = 0.f;           // the bridge side's
 	float dispersionA = 0.f;
 	float dispersionFor = 0.f;
 	float dispersionStiff = -1.f;
 	float gain = 0.99f;           // what is left after one round trip
+	float nutReflect = 0.995f;    // what the nut sends back
 	bool dirty = true;
 
-	// The bridge reflection's memories.
-	float lastOut = 0.f;
+	// The two loss filters' memories, and the stiffness allpasses'.
+	float lastOut = 0.f, lastOutB = 0.f;
 	static const int DISPERSION_STAGES = 4;
 	float dIn[DISPERSION_STAGES] = {}, dOut[DISPERSION_STAGES] = {};
 	float atBridge = 0.f;
@@ -146,6 +166,19 @@ private:
 	/** WHAT EACH END PASSES BACK UNTOUCHED: a steady velocity, exactly. See tune. The lowpass that
 	carries it, its pole, and the nut's own. */
 	float bridgeLow = 0.f, nutLow = 0.f, lowPole = 0.99f;
+
+	// THE TWIST: four more lines, the same shape as the first four, a speedRatio-th as long.
+	static const int TORSION_DELAY = MAX_DELAY / 4;
+	float twistRatio = 3.27f, twistSpeed = 5.2f, twistQ = 45.f;
+	float tBowToBridge[TORSION_DELAY] = {};
+	float tBridgeToBow[TORSION_DELAY] = {};
+	float tBowToNut[TORSION_DELAY] = {};
+	float tNutToBow[TORSION_DELAY] = {};
+	int tWrite = 0;
+	float tToBridgeDelay = 4.f, tToNutDelay = 20.f;
+	float tGain = 0.97f, tLowB = 0.f, tLowN = 0.f, tPole = 0.99f;
+	// Its loss filters, one at each end, and their memories.
+	float tLossB = 0.f, tLossN = 0.f, tLastB = 0.f, tLastN = 0.f;
 
 	// The bow and the friction.
 	float z = 0.5f;
@@ -171,6 +204,7 @@ private:
 	void tune();
 	float random();
 	float read(const float* line, float d) const;
+	float readTwist(const float* line, float d) const;
 };
 
 

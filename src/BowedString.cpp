@@ -16,9 +16,11 @@ out of reach; on a violin's top string there are 36, and anything under about 0.
 is. That is the sample rate problem, and the figure the oversampling schedule has to beat. */
 static const float MIN_SEGMENT = 2.f;
 
-/** How much the nut sends back. Not quite all of it: a stopped string against a finger loses more
-than an open one against the nut, and nothing here is perfectly rigid. */
-static const float NUT_REFLECT = 0.995f;
+/** How much the nut sends back: almost all of it, an open string's nut being nearly rigid. The bridge
+takes the rest of the fundamental's loss, which puts its resistance at about 350 times the string's
+impedance on a cello's open strings, where measurements put it at 340 to 390. A finger stopping
+the string loses more, which is for the instrument to set. */
+static const float NUT_REFLECT = 0.9995f;
 
 
 BowedString::BowedString() {}
@@ -65,6 +67,22 @@ void BowedString::setStiffness(float amount) {
 		stiffness = amount;
 		dirty = true;
 	}
+}
+
+
+void BowedString::setLossless(bool on) {
+	if (on != lossless) {
+		lossless = on;
+		dirty = true;
+	}
+}
+
+
+void BowedString::setTorsion(float impedanceRatio, float speedRatio, float q) {
+	twistRatio = std::fmax(0.f, impedanceRatio);
+	twistSpeed = std::fmax(1.f, speedRatio);
+	twistQ = std::fmax(1.f, q);
+	dirty = true;
 }
 
 
@@ -133,9 +151,13 @@ static void lagrangeResponse(float d, float w, float* delay, float* magnitude) {
 /** THE LOOP, WORKED OUT FOR THE NOTE AND THE CONTACT POINT.
 
 The round trip is twice each segment, because every one is crossed once going and once coming
-back, plus whatever the bridge reflection's filters delay a sine at the fundamental. So the sum of
-the two segments is half of what GuitarString solves for a single line, and the only new thing is
+back, plus whatever the two reflections' filters delay a sine at the fundamental. So the sum of the
+two segments is half of what GuitarString solves for a single line, and the only new thing is
 dividing it by the contact point.
+
+DIVIDED SO THE BOW IS WHERE IT WAS ASKED TO BE: the bridge side's round trip, its two reads and the
+bridge's reflection, is beta of the period, and the nut side, with the loss filter and the
+stiffness allpasses in its reflection, takes the rest.
 
 SOLVED, NOT ASSUMED. Four interpolated reads each put their own small phase error into the loop,
 and the four are not equal because the segments are not. The total is measured at the fundamental
@@ -151,23 +173,29 @@ void BowedString::tune() {
 	const float period = rate / freq;
 	const float w = 2.f * PI * freq / rate;
 
-	// A ONE-POLE LOWPASS IN THE BRIDGE REFLECTION, as GuitarString's loss filter — SET PER HERTZ.
-	// Its coefficient used to be a fixed number per sample, so the same setting lost far less a
-	// second at a low note than a high one, and less again at a higher sample rate. Now `damping`
-	// names a Q for a partial at two kilohertz, internal friction makes a partial's decay rate go
-	// as its frequency squared, and the coefficient is what gives that rate at this pitch and this
-	// rate: per round trip the filter takes away about s / (1 - s)^2 times w^2 / 2 nepers.
+	// THE STRING'S OWN LOSS, A ONE-POLE LOWPASS AT EACH END, as GuitarString's loss filter — SET
+	// PER HERTZ. `damping` names a Q for a partial at two kilohertz, internal friction makes a
+	// partial's decay rate go as its frequency squared, and a lowpass of coefficient s takes away
+	// about s / (1 - s)^2 times w^2 / 2 nepers a pass. So k = s / (1 - s)^2 is what the whole round
+	// trip needs, and it is shared by length: beta of it at the bridge, the rest at the nut.
+	float lossDelay = 0.f, lossDelayB = 0.f, lossGain = 1.f;
 	{
 		const float q2k = 1000.f * std::pow(0.02f, damping);
 		const float b = PI / (q2k * 2000.f);
-		const float k = b * rate * rate / (2.f * PI * PI * freq);
-		lossS = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
-		lossS = std::fmax(0.f, std::fmin(0.97f, lossS));
+		const float k = lossless ? 0.f : b * rate * rate / (2.f * PI * PI * freq);
+		auto coefficient = [](float k) {
+			const float s = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
+			return std::fmax(0.f, std::fmin(0.97f, s));
+		};
+		lossS = coefficient((1.f - beta) * k);
+		lossSB = coefficient(beta * k);
+		auto response = [&](float s, float* delay) {
+			const float re = 1.f - s * std::cos(w), im = s * std::sin(w);
+			*delay = std::atan2(im, re) / w;
+			return (1.f - s) / std::sqrt(re * re + im * im);
+		};
+		lossGain = response(lossS, &lossDelay) * response(lossSB, &lossDelayB);
 	}
-	const float denRe = 1.f - lossS * std::cos(w);
-	const float denIm = lossS * std::sin(w);
-	const float lossDelay = std::atan2(denIm, denRe) / w;
-	const float lossGain = (1.f - lossS) / std::sqrt(denRe * denRe + denIm * denIm);
 
 	// Stiffness, worked out for the note so the eighth partial sits the same number of cents
 	// sharp whatever is played, as in GuitarString. Only when the pitch has moved a quarter tone.
@@ -229,16 +257,17 @@ void BowedString::tune() {
 		const float disc = std::fmax(0.f, qb * qb - 4.f * qa * qc);
 		return std::fmax(0.f, std::fmin(0.99999f, (-qb + std::sqrt(disc)) / (2.f * qa)));
 	};
+	nutReflect = lossless ? 1.f : NUT_REFLECT;
 	float nutDelay = 0.f;
-	const float nutGain = through(NUT_REFLECT, &nutDelay);
+	const float nutGain = through(nutReflect, &nutDelay);
 	const float perPass = std::pow(0.001f, 1.f / (decay * freq));
 	float bridgeDelay = 0.f;
-	through(solveFor(perPass / std::fmax(lossGain * nutGain, 1e-6f)), &bridgeDelay);
+	through(lossless ? 1.f : solveFor(perPass / std::fmax(lossGain * nutGain, 1e-6f)), &bridgeDelay);
 
 	// What the four reads have to give between them, and how it divides.
-	const float want = period - lossDelay - dispersionDelay - nutDelay - bridgeDelay;
+	const float want = period - lossDelay - lossDelayB - dispersionDelay - nutDelay - bridgeDelay;
 	float half = std::fmax(2.f * MIN_SEGMENT, want) * 0.5f;
-	float db = beta * half;
+	float db = std::fmin(0.5f * (beta * period - lossDelayB - bridgeDelay), half - MIN_SEGMENT);
 	float dn = half - db;
 	clamped = false;
 	if (db < MIN_SEGMENT) {
@@ -274,7 +303,51 @@ void BowedString::tune() {
 	// trip meets each end once, not twice: bow to bridge, back to bow, on to the nut, back
 	// again. Counting the nut's reflection for each of the two segments it borders left a
 	// string asked for six seconds ringing for nearly nine.
-	gain = solveFor(perPass / std::fmax(lossGain * readGain * nutGain, 1e-6f));
+	gain = lossless ? 1.f : solveFor(perPass / std::fmax(lossGain * readGain * nutGain, 1e-6f));
+
+	// THE TWIST'S LOOP, the same division at speedRatio times the speed: its period is the note's
+	// over speedRatio, and the bow is beta of the way along it as along the other. Its loss is
+	// shared between its two ends, Q cycles of its own to fall by e^-pi, and each end passes a
+	// steady turning back exactly, as the transverse ends pass a steady velocity: the string's ends
+	// are held, so a steady torque twists it and does not set it spinning.
+	{
+		const float tPeriod = period / twistSpeed;
+		const float tHalf = std::fmax(2.f * MIN_SEGMENT, tPeriod) * 0.5f;
+		float tb = std::fmax(MIN_SEGMENT, beta * tHalf);
+		float tn = tHalf - tb;
+		if (tn < MIN_SEGMENT) {
+			tn = MIN_SEGMENT;
+			tb = std::fmax(MIN_SEGMENT, tHalf - tn);
+		}
+		const float room = (float) TORSION_DELAY - 4.f;
+		tToBridgeDelay = std::fmin(tb, room);
+		tToNutDelay = std::fmin(tn, room);
+		// EVERY PARTIAL OF THE TWIST AT THE SAME Q, as the measured reflection functions have it:
+		// the n-th loses e^(-pi n / Q) a round trip, so the tenth about half. A one-pole lowpass
+		// matched there takes the high ones, shared between the ends by length as the transverse
+		// loss is, and a flat gain makes up the fundamental's own.
+		const float wt = 2.f * PI * freq * twistSpeed / rate;
+		const float wm = std::fmin(10.f * wt, 2.5f);
+		const float target = lossless ? 1.f : std::exp(-PI * (wm / wt) / twistQ);
+		// The coefficient whose lowpass gives `target` at wm: (1 - s)^2 = target^2 (1 - 2 s cos wm + s^2).
+		const float t2 = target * target, c = std::cos(wm);
+		const float qa = 1.f - t2, qb = -2.f + 2.f * t2 * c, qc = 1.f - t2;
+		const float sAll = (qa > 1e-6f) ? (-qb - std::sqrt(std::fmax(0.f, qb * qb - 4.f * qa * qc))) / (2.f * qa) : 0.f;
+		const float kAll = (sAll > 0.f) ? sAll / ((1.f - sAll) * (1.f - sAll)) : 0.f;
+		auto coefficient = [](float k) {
+			const float s = (k > 1e-6f) ? ((2.f * k + 1.f) - std::sqrt(4.f * k + 1.f)) / (2.f * k) : 0.f;
+			return std::fmax(0.f, std::fmin(0.97f, s));
+		};
+		tLossB = coefficient(beta * kAll);
+		tLossN = coefficient((1.f - beta) * kAll);
+		auto magnitude = [&](float s) {
+			const float re = 1.f - s * std::cos(wt), im = s * std::sin(wt);
+			return (1.f - s) / std::sqrt(re * re + im * im);
+		};
+		const float atFundamental = magnitude(tLossB) * magnitude(tLossN);
+		tGain = lossless ? 1.f : std::sqrt(std::fmin(1.f, std::exp(-PI / twistQ) / atFundamental));
+		tPole = std::exp(-2.f * PI * (freq * twistSpeed / 8.f) / rate);
+	}
 }
 
 
@@ -283,6 +356,21 @@ float BowedString::random() {
 	noise ^= noise >> 17;
 	noise ^= noise << 5;
 	return (float) noise / 2147483648.f - 1.f;
+}
+
+
+float BowedString::readTwist(const float* line, float d) const {
+	const int base = (int) std::floor(d) - 1;
+	float h[4];
+	lagrange(d - (float) base, h);
+	float out = 0.f;
+	for (int j = 0; j < 4; j++) {
+		int at = tWrite - base - j;
+		while (at < 0)
+			at += TORSION_DELAY;
+		out += h[j] * line[at];
+	}
+	return out;
 }
 
 
@@ -400,7 +488,11 @@ float BowedString::bowJunction(float unbowed) {
 		atBowForce = 0.f;
 		return 0.f;
 	}
-	const double k = (double) bowForce / (2.0 * (double) z);
+	// THE STRING'S SURFACE answers a force through both of its motions at once, so it gives way
+	// as the two impedances in parallel would: Z Zt / (Z + Zt), Zt the torsional one.
+	const double zt = (double) z * (double) twistRatio;
+	const double zBow = (twistRatio > 0.f) ? (double) z * zt / ((double) z + zt) : (double) z;
+	const double k = (double) bowForce / (2.0 * zBow);
 	const double u = (double) bowSpeed - (double) unbowed;
 	const double holdLimit = k * (double) muStatic;
 
@@ -448,7 +540,7 @@ float BowedString::bowJunction(float unbowed) {
 	const float v = bowSpeed - (float) x;
 	const float added = v - unbowed;
 	atBowVelocity = v;
-	atBowForce = (float) (2.0 * (double) z * (double) added);
+	atBowForce = (float) (2.0 * zBow * (double) added);
 	return added;
 }
 
@@ -459,11 +551,14 @@ void BowedString::silence() {
 	atBowVelocity = atBowForce = 0.f;
 	for (int i = 0; i < MAX_DELAY; i++)
 		bowToBridge[i] = bridgeToBow[i] = bowToNut[i] = nutToBow[i] = 0.f;
-	lastOut = atBridge = 0.f;
+	lastOut = lastOutB = atBridge = 0.f;
 	for (int i = 0; i < DISPERSION_STAGES; i++)
 		dIn[i] = dOut[i] = 0.f;
 	dcIn = dcOut = 0.f;
 	bridgeLow = nutLow = 0.f;
+	for (int i = 0; i < TORSION_DELAY; i++)
+		tBowToBridge[i] = tBridgeToBow[i] = tBowToNut[i] = tNutToBow[i] = 0.f;
+	tLowB = tLowN = tLastB = tLastN = 0.f;
 	exciteLength = excitePos = 0;
 }
 
@@ -488,9 +583,15 @@ float BowedString::process() {
 	const float fromNut = read(nutToBow, toNutDelay);
 	atBridge = arrivingAtBridge;
 
-	// THE BRIDGE: the loss filter, the stiffness allpasses, the round trip's gain, and the sign
-	// change a reflection from a near-rigid end makes.
-	const float lossy = (1.f - lossS) * arrivingAtBridge + lossS * lastOut;
+	// THE BRIDGE: the bridge side's share of the string's loss, the round trip's gain, the same at
+	// every frequency, and the sign change a reflection from a near-rigid end makes.
+	const float lossyB = (1.f - lossSB) * arrivingAtBridge + lossSB * lastOutB;
+	lastOutB = lossyB;
+	bridgeLow += (1.f - lowPole) * (lossyB - bridgeLow);
+	bridgeToBow[write] = -(gain * lossyB + (1.f - gain) * bridgeLow);
+
+	// THE NUT: the rest of the string's loss, the stiffness allpasses, and the reflection.
+	const float lossy = (1.f - lossS) * arrivingAtNut + lossS * lastOut;
 	lastOut = lossy;
 	float stiff = lossy;
 	for (int i = 0; i < DISPERSION_STAGES; i++) {
@@ -499,20 +600,43 @@ float BowedString::process() {
 		dOut[i] = y;
 		stiff = y;
 	}
-	bridgeLow += (1.f - lowPole) * (stiff - bridgeLow);
-	bridgeToBow[write] = -(gain * stiff + (1.f - gain) * bridgeLow);
+	nutLow += (1.f - lowPole) * (stiff - nutLow);
+	nutToBow[write] = -(nutReflect * stiff + (1.f - nutReflect) * nutLow);
 
-	// THE NUT: a reflection and almost nothing else.
-	nutLow += (1.f - lowPole) * (arrivingAtNut - nutLow);
-	nutToBow[write] = -(NUT_REFLECT * arrivingAtNut + (1.f - NUT_REFLECT) * nutLow);
+	// THE TWIST, read where it arrives, and reflected at both ends with nothing but its loss.
+	const bool twisting = twistRatio > 0.f;
+	float tFromBridge = 0.f, tFromNut = 0.f;
+	if (twisting) {
+		const float tAtBridge = readTwist(tBowToBridge, tToBridgeDelay);
+		const float tAtNut = readTwist(tBowToNut, tToNutDelay);
+		tFromBridge = readTwist(tBridgeToBow, tToBridgeDelay);
+		tFromNut = readTwist(tNutToBow, tToNutDelay);
+		tLastB = (1.f - tLossB) * tAtBridge + tLossB * tLastB;
+		tLowB += (1.f - tPole) * (tLastB - tLowB);
+		tBridgeToBow[tWrite] = -(tGain * tLastB + (1.f - tGain) * tLowB);
+		tLastN = (1.f - tLossN) * tAtNut + tLossN * tLastN;
+		tLowN += (1.f - tPole) * (tLastN - tLowN);
+		tNutToBow[tWrite] = -(tGain * tLastN + (1.f - tGain) * tLowN);
+	}
 
 	// THE BOW: straight through, plus what the friction adds, plus the pluck while one is going in.
+	// What it adds to the surface's velocity divides between the two motions as their admittances
+	// do: the sideways share Zt / (Z + Zt), the twist's the rest.
 	float push = 0.f;
 	if (excitePos < exciteLength)
 		push = excite[excitePos++];
-	push += bowJunction(fromBridge + fromNut);
+	const float added = bowJunction(fromBridge + fromNut + tFromBridge + tFromNut);
+	const float sideways = twisting ? twistRatio / (1.f + twistRatio) : 1.f;
+	push += added * sideways;
 	bowToBridge[write] = fromNut + push;
 	bowToNut[write] = fromBridge + push;
+	if (twisting) {
+		const float turn = added * (1.f - sideways);
+		tBowToBridge[tWrite] = tFromNut + turn;
+		tBowToNut[tWrite] = tFromBridge + turn;
+		if (++tWrite >= TORSION_DELAY)
+			tWrite = 0;
+	}
 
 	if (++write >= MAX_DELAY)
 		write = 0;

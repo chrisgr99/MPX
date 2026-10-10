@@ -432,6 +432,14 @@ bowtest:
 	@c++ -std=c++11 -O2 -Wall test/bowtest.cpp src/BowedString.cpp -o build/bowtest
 	@./build/bowtest
 
+# Where the bowed string plays and how its notes start: Schelleng's and Guettler's diagrams, phase 3
+# of docs/bowed-strings.md. ARGS names one section: buildup, firstslip, guettler, attacks,
+# schelleng or listen.
+bowplay:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall test/bowplay.cpp src/BowedString.cpp -o build/bowplay
+	@./build/bowplay $(ARGS)
+
 # The fretting hand: the shapes it finds against the familiar ones. No Rack in it.
 fretboardtest:
 	@mkdir -p build
@@ -554,7 +562,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: styletest pianobench bowtest scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: styletest pianobench bowtest bowplay scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
