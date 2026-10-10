@@ -1568,13 +1568,25 @@ struct SongTitle : widget::OpaqueWidget {
 	void choose() {
 		if (!module)
 			return;
+		// NO FILTER ON A MAC. Its dialog does not match a file by extension but by the type the
+		// system has recorded for it, and those records are not to be trusted for Guitar Pro files:
+		// once something has claimed Guitar Pro's types (MuseScore does) and the system has
+		// labelled the files with a type it does not itself define, a .gp file matches neither its
+		// extension nor that type's name, and is hidden, from the dialog's search too. So every file
+		// is offered, and one that is not a score is refused when it is read, with the reason.
+		// Elsewhere the dialog matches extensions and the filter does what it says.
+#if defined ARCH_MAC
+		osdialog_filters* filters = NULL;
+#else
 		osdialog_filters* filters = osdialog_filters_parse(
 			"Scores:gp,gpx,gp5,gp4,gp3,gpif,xml,musicxml,mxl");
+#endif
 		// WHERE SCORES ARE KEPT, not where the patch was last saved. See LastFolder.hpp.
 		const std::string start = px::lastFolderFor("score", module->filePath);
 		char* path = osdialog_file(OSDIALOG_OPEN, start.empty() ? NULL : start.c_str(),
 			NULL, filters);
-		osdialog_filters_free(filters);
+		if (filters)
+			osdialog_filters_free(filters);
 		if (!path)
 			return;
 		const std::string picked = path;
