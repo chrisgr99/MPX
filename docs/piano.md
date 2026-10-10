@@ -160,7 +160,9 @@ The wavy stroke down the front of a chord says to play it from the bottom up, or
 
 Thirty-five milliseconds a note, so a four-note roll takes a little over a tenth of a second. The score does not say — MusicXML's arpeggiate sign carries a direction and nothing else, no speed — so how long the hand takes over it is the player's, which is where it belongs.
 
-**By the module's own pitch order, not by the index on the cable.** That index is counted within one voice of one staff, and a pianist rolls a chord through both hands: the two staves arrive as separate beats, each numbering its own notes from nought, so the published index starts again halfway up the chord. What is wanted is the order across everything struck at that instant, which is the order the notes have already been sorted into.
+**By the module's own pitch order, not by the index on the cable.** That index is counted within one voice of one staff, and a pianist rolls a chord through both hands: the two staves arrive as separate beats, each numbering its own notes from nought, so the published index starts again halfway up the chord. What is wanted is the order across the marked notes struck at that instant, which is the order the notes have already been sorted into.
+
+**Only the notes the sign is written on are rolled.** A left-hand chord rolled under a right-hand melody note, as in the seventh bar of Chopin's first Ballade, has the sign on the left hand's notes alone, and the melody note sounds with the first of them. Anything struck at the same instant without the sign is played then, unspread. A roll written through both hands has the sign on the notes of both, and so goes through both.
 
 ### Where the weight of the bar goes
 
@@ -213,7 +215,7 @@ What each module does with them:
 - **mpxIn** has sustain and soft inputs and puts them on the cable: a gate is a pedal down, and 0 to 10 V is part way, for half-pedalling.
 - **mpxScore sends the pedal the score is marked with**, read from the file's pedal brackets, and lifts and retakes it where two brackets touch. A right-click item turns it off for a patch that would rather pedal by hand.
 - **Every processor passes them through unchanged**: mpxComp, mpxArp, mpxRand, mpxMonitor, mpxPhrase and mpxMelody's voices each forward them as they forward the harmony.
-- **mpxOut** sustain and soft outputs, so any voice in the rack can be pedalled from an MPX cable, and **mpxMonitor** showing the pedals, are not built yet.
+- **mpxOut has a sustain output**, nought to ten volts on one channel, so any voice in the rack can be pedalled from an MPX cable — a VST piano in Host through its sustain pedal parameter, for one. **The soft pedal comes out of its timbre jack** when the right-click menu says so, since una corda is a change of tone. **mpxMonitor** showing the pedals is not built yet.
 - **mpxPhrase** may later write pedalling of its own, lifting the pedal at chord changes. Not part of the first version.
 
 This is a change to the transport; `design.md` has still to be updated with it.
@@ -230,9 +232,19 @@ For what is adjusted while playing.
 
   **A release follows the note it ends.** When a key comes up, the release sample is scaled by how loud that note still is at that moment — loud when the string is still ringing hard, faint when it has died away, as the damper sounds on a real piano. The Release knob sets the level on top of that. The note's loudness is already tracked for choosing which note to take when polyphony runs out, so this costs nothing further.
 - **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from mpxIn's timbre input.
-- **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full twenty-two decibels from ppp to fff, and 0.7 gives fifteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
+- **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full 18.5 decibels from ppp to fff, and 0.7 gives thirteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
 - **Pedalling**: how the piano pedals a passage its score does not mark, from off through a lift every beat, every half bar, every bar, every two bars, to held down. See below.
+### As recorded
+
+A right-click item, first in the menu: **As recorded: no level shaping, no tone filter.** It plays the recordings as the set's own SFZ asks for them and nothing else, so that when the piano sounds wrong beside another instrument it can be told whether the fault is in the samples or in what is done to them.
+
+With it on, the velocity picks the layer and the amplitude follows the velocity at the SFZ's seventy-three per cent; each kind of recording plays at its group's volume. Gone are the marking aimed at a number of decibels, the crest blend, Dynamics, Emphasis, Brightness, the soft pedal's imitation, the chord's share, its voicing and spread, the melody lead, the rolled chord, what a written accent or staccato is turned into, the bloom of a re-struck string and the soft clip. Volume, Release, Damping, Pedalling and the sustain pedal still act. The limiter stays as a guard but moves out to ten volts, so below where the interface clips nothing is done to the level.
+
+The velocity is the straight one, one plus 126 times the level, whatever the velocity curve menu says. That is what a MIDI instrument receives from mpxOut's level output, so with this on, the piano and an instrument fed from mpxOut on the same score are being sent the same notes, at the same velocities, at the same moments.
+
+It is a check and not a way to play. Quiet passages come out very much quieter than the module normally plays them, because nothing lifts them: the SFZ's own pianissimo is about twenty decibels under its own forte.
+
 - **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.
 
 ### Jacks

@@ -622,6 +622,25 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	performance. Beside the pedal's own noise in the menu now. */
 	float hammerNoise = 1.f;
 
+	/** THE RECORDINGS AS THEY WERE MADE, with nothing of this module's in between. A check, not a
+	way to play: when the piano sounds wrong beside another instrument, this says whether the fault
+	is in the samples or in what is done to them.
+
+	WHAT IT TAKES AWAY. Every level this module decides for itself — the marking aimed at a number
+	of decibels, the crest blend, the DYNAMICS knob, the chord's share, the voicing of a chord, the
+	melody lead, the lean of the bar, what a written accent or staccato is turned into, the bloom of
+	a re-struck string, the soft pedal's imitation — and the BRIGHT knob's filter, the spread of a
+	chord's notes in time, and the soft clip that bends the loudest peaks.
+
+	WHAT IS LEFT is what the set's own SFZ asks for and nothing else: the velocity picks the layer,
+	the amplitude follows the velocity at the set's own seventy-three per cent, and each kind of
+	recording plays at its group's volume. The velocity is the straight one, one plus 126 times the
+	level, whatever the curve menu says, because that is what a MIDI instrument fed from mpxOut's
+	level output receives — so beside another instrument on the same score, the two are being sent
+	the same notes. The limiter stays as a guard and moves out to ten volts, where it acts only on
+	what the interface would otherwise clip. */
+	bool asRecorded = false;
+
 	/** HOW FAR A SLURRED NOTE IS HELD PAST ITS WRITTEN END, in seconds. A pianist's finger overlap
 	is a few tens of milliseconds whatever the note is worth; forty is in the middle of what is
 	measured of real playing. The written notes of a score do not overlap at all — in the Ballade
@@ -1034,7 +1053,7 @@ static float partGain(int part) {
 		// The key coming up is heard whatever the pedal is doing.
 		if (heard && bank)
 			startOneShot(bank->find(PART_HAMMER, v.key, v.vel),
-				hammerNoise * v.amp, PART_HAMMER, v.key, sampleRate);
+				(asRecorded ? 1.f : hammerNoise) * v.amp, PART_HAMMER, v.key, sampleRate);
 		if (sustain < 0.95f)
 			damp(v, sampleRate, sustain);
 	}
@@ -1322,13 +1341,16 @@ static float partGain(int part) {
 			return;
 		const float m = noteOf(pitchV);
 		const int key = math::clamp((int) std::lround(m), 21, 108);
-		int vel = velocityOf(level);
+		int vel = asRecorded
+			? math::clamp((int) std::lround(1.f + 126.f * math::clamp(level, 0.f, 1.f)), 1, 127)
+			: velocityOf(level);
 		// THE LAYER FOLLOWS WHAT WAS WRITTEN, and DYNAMICS no longer touches it: see the gain
 		// worked out below.
 		float layerVel = (float) vel;
 		// THE SOFT PEDAL, imitated: the set has no una corda recording, so it favours the softer
 		// layers here and darkens the tone in the mix.
-		layerVel *= 1.f - 0.35f * soft;
+		if (!asRecorded)
+			layerVel *= 1.f - 0.35f * soft;
 		const int lv = math::clamp((int) std::lround(layerVel), 1, 127);
 		const PianoRegion* r = bank->find(PART_STRINGS, key, lv);
 		if (!r)
@@ -1407,6 +1429,15 @@ static float partGain(int part) {
 		// table says that marking is worth. The first version of the share divided the level,
 		// and a six-note chord at forte came out quieter than a single forte note, which is the
 		// opposite of the fault it was written to cure.
+		if (asRecorded) {
+			// THE SFZ'S OWN: amp_veltrack=73 on the strings' groups, which is a blend between
+			// full level and the square of the velocity. Nothing carried from a string still
+			// ringing — that bloom is this module's idea, not the recording's.
+			const float x = (float) lv / 127.f;
+			v->amp = (0.27f + 0.73f * x * x) * partGain(PART_STRINGS);
+			aim(*v, sampleRate);
+			return;
+		}
 		const float fresh = aimedAt(level, r) * (1.f - 0.2f * soft) * share;
 		// WHAT WAS STILL RINGING, ADDED TO THE NEW STRIKE, up to a ceiling: a string driven over
 		// and over settles at an amplitude a little above one strike's, it does not keep growing.
@@ -1667,6 +1698,15 @@ static float partGain(int part) {
 			Event struck[MAX_CHORD];
 			int chord = 0;
 			while (reader.next(e)) {
+				// AS RECORDED, every note goes straight to a string with the level and the length
+				// the cable gave it, at the moment it arrived: no voicing, no share, no lean, no
+				// spread, no roll, nothing a written mark is turned into. What mpxOut hands a MIDI
+				// instrument is exactly this, which is what makes the two comparable.
+				if (asRecorded && e.kind == Event::ON) {
+					melodyTop = std::fmax(melodyTop, noteOf(e.pitch));
+					noteOn(e.handle, e.pitch, e.level, sr, 0.f, e.duration, 1.f);
+					continue;
+				}
 				if (e.kind == Event::ON) {
 					if (chord < MAX_CHORD)
 						struck[chord++] = e;
@@ -1732,19 +1772,34 @@ static float partGain(int part) {
 				// within one voice of one staff. A pianist rolls a chord through both hands and
 				// the two staves arrive as separate beats, each numbering its own notes from
 				// nought, so the published index would start again halfway up the chord. What
-				// is wanted is the order across everything struck at this instant, which is
-				// exactly the order these have already been sorted into.
-				int rolling = 0;
+				// is wanted is the order across the marked notes struck at this instant, which
+				// is the order these have already been sorted into.
+				//
+				// ONLY THE NOTES THE MARK IS WRITTEN ON. A left-hand chord rolled under a
+				// right-hand melody note — the seventh bar of Chopin's first Ballade — has the
+				// sign on the left hand's notes alone, and the melody note is played with the
+				// first of them. Rolling everything struck at the instant put the melody, the
+				// highest note, last of all, a tenth of a second behind the beat. A roll written
+				// through both hands has the sign on both, and so still goes through both.
+				int rolling = 0, rolled = 0;
 				for (int a = 0; a < chord; a++)
-					if (struck[a].strum != 0)
+					if (struck[a].strum != 0) {
 						rolling = struck[a].strum;
+						rolled++;
+					}
 
+				int rolledBelow = 0;
 				for (int a = 0; a < chord; a++) {
 					// WHEN EACH NOTE OF THE CHORD SPEAKS: see the constants above.
 					float late;
-					if (rolling != 0 && chord > 1) {
-						const int step = (rolling > 0) ? a : (chord - 1 - a);
-						late = (float) step * ROLL_PER_NOTE;
+					if (rolling != 0) {
+						// A note without the mark sounds with the first that has it.
+						late = 0.f;
+						if (struck[a].strum != 0) {
+							const int step = (rolling > 0) ? rolledBelow : (rolled - 1 - rolledBelow);
+							late = (float) step * ROLL_PER_NOTE;
+							rolledBelow++;
+						}
 					}
 					else {
 						late = (loudest - levels[a]) * SPREAD_PER_LEVEL;
@@ -1779,7 +1834,7 @@ static float partGain(int part) {
 			const bool wasDown = sustainWas >= 0.5f, isDown = sustain >= 0.5f;
 			if (isDown != wasDown) {
 				startOneShot(bank->pedal(isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, random::uniform()),
-					pedalNoise, isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, 60, sr);
+					asRecorded ? 1.f : pedalNoise, isDown ? PART_PEDAL_DOWN : PART_PEDAL_UP, 60, sr);
 				if (!isDown)
 					for (PianoVoice& v : voices)
 						if (v.active && v.part == PART_STRINGS && !v.keyDown)
@@ -1868,7 +1923,7 @@ static float partGain(int part) {
 			float L = lr[0] * g, R = lr[1] * g;
 
 			// BRIGHTNESS: the knob, this note's own timbre, and the soft pedal darkening it.
-			if (v.part == PART_STRINGS || v.part == PART_RESONANCE) {
+			if (!asRecorded && (v.part == PART_STRINGS || v.part == PART_RESONANCE)) {
 				const float b = math::clamp(bright + (v.timbre - 0.5f) * 0.8f - 0.25f * soft, 0.f, 1.f);
 				if (b < 0.995f) {
 					const float fc = 300.f * std::pow(20000.f / 300.f, b);
@@ -1910,7 +1965,10 @@ static float partGain(int part) {
 		// across. Fast to take hold and slow to let go, which is what makes it inaudible: coming
 		// off the gain quickly is what a listener hears as pumping.
 		const float peak = std::fmax(std::fabs(left), std::fabs(right));
-		const float want = (peak > LIMIT_VOLTS) ? LIMIT_VOLTS / peak : 1.f;
+		// AS RECORDED the guard moves out to where the interface clips, so below that nothing
+		// at all is done to the level. See asRecorded.
+		const float ceiling = asRecorded ? MPX_CLIP_TO : LIMIT_VOLTS;
+		const float want = (peak > ceiling) ? ceiling / peak : 1.f;
 		const float towards = (want < limitGain)
 			? (1.f - std::exp(-1.f / (LIMIT_ATTACK * sr)))
 			: (1.f - std::exp(-1.f / (LIMIT_RELEASE * sr)));
@@ -1922,8 +1980,10 @@ static float partGain(int part) {
 		// mpxSoftClip. With the limiter at the same knee this is reached only by the front of a
 		// transient, which is all a waveshaper should ever be given: it bends towards ten and
 		// never arrives, so there is nothing left for the clamp to do.
-		left = mpxSoftClip(left);
-		right = mpxSoftClip(right);
+		if (!asRecorded) {
+			left = mpxSoftClip(left);
+			right = mpxSoftClip(right);
+		}
 
 		outputs[O_L].setVoltage(math::clamp(left, -MPX_CLIP_TO, MPX_CLIP_TO));
 		outputs[O_R].setVoltage(math::clamp(right, -MPX_CLIP_TO, MPX_CLIP_TO));
@@ -1938,6 +1998,7 @@ static float partGain(int part) {
 		json_object_set_new(rootJ, "pedalNoise", json_real((double) pedalNoise));
 		json_object_set_new(rootJ, "hammerNoise", json_real((double) hammerNoise));
 		json_object_set_new(rootJ, "melodyBalance", json_real((double) melodyBalance));
+		json_object_set_new(rootJ, "asRecorded", json_boolean(asRecorded));
 		return rootJ;
 	}
 
@@ -1953,6 +2014,8 @@ static float partGain(int part) {
 			hammerNoise = math::clamp((float) json_number_value(j), 0.f, 2.f);
 		if (json_t* j = json_object_get(rootJ, "melodyBalance"))
 			melodyBalance = math::clamp((float) json_number_value(j), 0.1f, 1.f);
+		if (json_t* j = json_object_get(rootJ, "asRecorded"))
+			asRecorded = json_boolean_value(j);
 	}
 };
 
@@ -2204,6 +2267,10 @@ struct PianoWidget : ModuleWidget {
 		if (!m)
 			return;
 		menu->addChild(new ui::MenuSeparator);
+		// FIRST IN THE LIST, because while it is on every knob but VOLUME, RELEASE and DAMPING
+		// is doing nothing, and a person turning BRIGHT and hearing no change needs to find why.
+		menu->addChild(createBoolPtrMenuItem(
+			"As recorded: no level shaping, no tone filter", "", &m->asRecorded));
 		menu->addChild(createSubmenuItem("Velocity curve", "", [=](ui::Menu* sub) {
 			const char* names[3] = {"Soft", "Normal", "Hard"};
 			for (int i = 0; i < 3; i++)
