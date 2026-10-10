@@ -79,6 +79,10 @@ struct GpNote {
 	file spells nothing, and the timeline falls back to the key. */
 	int upper = -1;
 	int lower = -1;
+	/** TIED ONWARD: the tie starts here, so the next note of this pitch that begins where this
+	one ends is this one held. Set from a MusicXML file, which marks both ends of a tie; a Guitar
+	Pro file marks only the continuing note. */
+	bool tiesOn = false;
 	/** AS THE FILE SPELLS IT: the letter name from C as nought, and the octave. -1 where nothing
 	is spelled, as in a Guitar Pro file. */
 	int8_t letter = -1;

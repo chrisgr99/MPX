@@ -656,8 +656,14 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 		// does not say which pedal it releases.
 		bool sostenutoOpen = false;
 		// EVERY BAR'S SPELLINGS, for the ornaments the bar itself does not settle. See
-		// neighbourInContext.
+		// neighbourInContext. And this part's own key in each bar: a clarinet and a piano in one
+		// file are in different keys, and the first part's is only the first part's.
 		std::vector<std::vector<Spelled> > spelledByBar;
+		std::vector<int> fifthsByBar;
+		int partFifths = 0;
+		// THE NOTE EACH VOICE LAST TIED ONWARD, as played and as spelled; a pitch of -1 for none.
+		// A hidden note a printed note is tied to is that printed note held: see below.
+		std::map<int, std::pair<int, Spelled> > tiedOn;
 
 		for (pugi::xml_node measure = part.child("measure"); measure;
 				measure = measure.next_sibling("measure"), barNumber++) {
@@ -711,6 +717,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 			an accidental earlier in time can come later in the file. See neighbourOf. */
 			std::vector<Spelled> spelled;
 			std::vector<Ornamented> ornamented;
+			/** Set when a hidden note that would have headed a chord is passed over, so the next
+			printed note written as a chord on it heads its own instead of joining the beat before. */
+			bool headSkipped = false;
 
 			for (pugi::xml_node node = measure.first_child(); node;
 					node = node.next_sibling()) {
@@ -719,6 +728,8 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				if (tag == "attributes") {
 					if (node.child("divisions"))
 						divisions = std::max(1, node.child("divisions").text().as_int(480));
+					if (node.child("key"))
+						partFifths = node.child("key").child("fifths").text().as_int(0);
 					if (master && first) {
 						const pugi::xml_node key = node.child("key");
 						if (key) {
@@ -963,7 +974,7 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					continue;
 
 				// ---- a note ----------------------------------------------------------------
-				const bool isChord = (bool) node.child("chord");
+				bool isChord = (bool) node.child("chord");
 				const bool isGrace = (bool) node.child("grace");
 				// NOT ON THE PAGE, NOT PLAYED. A note marked not to print, or printed with no head,
 				// is something an engraver wrote for another program's playback: a copy of a printed
@@ -976,12 +987,53 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				// IT STILL TAKES ITS TIME, read as a rest, so the voice it is in keeps its place and
 				// a printed note written as a chord on it still finds its beat. A hidden chord note
 				// or grace takes no time, and is simply passed over.
-				const bool unprinted = std::string(node.attribute("print-object").as_string()) == "no"
-					|| std::string(node.child_value("notehead")) == "none";
-				if (unprinted && (isChord || isGrace))
-					continue;
-				const bool isRest = (bool) node.child("rest") || unprinted;
+				//
+				// ITS SLURS STILL COUNT. A slur drawn from a hidden note to a printed one is drawn
+				// over the printed notes between, and they are joined; one ending on a hidden note
+				// ends there.
+				//
+				// AND A PRINTED NOTE TIED INTO ONE IS HELD. A tie says the note goes on sounding, and
+				// what the reader sees is the printed note tied onward; the hidden note's own pitch
+				// is the other program's business. The viola in bar 53 of Fauré's first quartet,
+				// third movement, ties an E flat into a hidden D, and read as a rest it left a gap.
 				const int voice = std::max(1, node.child("voice").text().as_int(1));
+				bool unprinted = std::string(node.attribute("print-object").as_string()) == "no"
+					|| std::string(node.child_value("notehead")) == "none";
+				bool tieStops = false;
+				for (pugi::xml_node tie = node.child("tie"); tie; tie = tie.next_sibling("tie"))
+					if (std::string(tie.attribute("type").as_string()) == "stop")
+						tieStops = true;
+				int heldMidi = -1;
+				Spelled heldSpelling = {0, -1, 4, 0};
+				if (unprinted && tieStops && !isChord && !isGrace) {
+					const std::map<int, std::pair<int, Spelled> >::const_iterator t = tiedOn.find(voice);
+					if (t != tiedOn.end() && t->second.first > 0) {
+						heldMidi = t->second.first;
+						heldSpelling = t->second.second;
+						unprinted = false;
+					}
+				}
+				if (unprinted) {
+					const int slurVoice = isChord ? lastVoice : voice;
+					for (pugi::xml_node sl = node.child("notations").child("slur"); sl;
+							sl = sl.next_sibling("slur")) {
+						const std::string kind = sl.attribute("type").as_string();
+						if (kind == "start")
+							inSlur[slurVoice] = true;
+						else if (kind == "stop")
+							inSlur[slurVoice] = false;
+					}
+				}
+				if (unprinted && (isChord || isGrace)) {
+					if (!isChord)
+						headSkipped = true;
+					continue;
+				}
+				// A printed note written as a chord on a hidden grace that was passed over.
+				if (isChord && headSkipped)
+					isChord = false;
+				headSkipped = false;
+				const bool isRest = (bool) node.child("rest") || unprinted;
 				const long duration = (long) node.child("duration").text().as_llong(0);
 
 				// A CHORD HANGS OFF THE NOTE BEFORE IT, at the same moment and in the same voice.
@@ -1051,7 +1103,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					GpNote note;
 					const pugi::xml_node pitch = node.child("pitch");
 					const pugi::xml_node unpitched = node.child("unpitched");
-					if (pitch) {
+					if (heldMidi > 0)
+						note.midi = heldMidi;
+					else if (pitch) {
 						note.midi = midiOf(pitch.child_value("step"),
 							pitch.child("alter").text().as_int(0),
 							pitch.child("octave").text().as_int(4));
@@ -1060,9 +1114,16 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						note.midi = midiOf(unpitched.child_value("display-step"), 0,
 							unpitched.child("display-octave").text().as_int(4));
 					}
-					// AS IT IS SPELLED, for the neighbours of any ornament in the bar.
-					Spelled spelling = {where, -1, 4, 0};
-					if (pitch) {
+					// AS IT IS SPELLED, for the neighbours of any ornament in the bar. Positions are
+					// doubled so a grace, written at the position of the note it leans on, can sit
+					// just before it: an accidental on that note is not earlier than the grace.
+					Spelled spelling = {where * 2 - (isGrace ? 1 : 0), -1, 4, 0};
+					if (heldMidi > 0) {
+						spelling = heldSpelling;
+						note.letter = (int8_t) spelling.letter;
+						note.octave = (int8_t) spelling.octave;
+					}
+					else if (pitch) {
 						spelling.letter = letterOf(pitch.child_value("step"));
 						spelling.octave = pitch.child("octave").text().as_int(4);
 						spelling.alter = pitch.child("alter").text().as_int(0);
@@ -1075,8 +1136,11 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					note.fret = -1;
 
 					for (pugi::xml_node tie = node.child("tie"); tie; tie = tie.next_sibling("tie")) {
-						if (std::string(tie.attribute("type").as_string()) == "stop")
+						const std::string kind = tie.attribute("type").as_string();
+						if (kind == "stop")
 							note.tied = true;
+						else if (kind == "start")
+							note.tiesOn = true;
 					}
 					const pugi::xml_node marks = node.child("notations");
 					bool opensSlur = false, closesSlur = false;
@@ -1136,7 +1200,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							const int alter = alterOfMark(am.child_value());
 							if (alter == NO_MARK)
 								continue;
-							if (std::string(am.attribute("placement").as_string()) == "below")
+							// NO PLACEMENT, which MusicXML allows: the note the ornament uses. A
+							// mordent goes below; everything else here goes above first.
+							const std::string placed = am.attribute("placement").as_string();
+							if (placed == "below" || (placed.empty() && note.mordent
+									&& !note.trill && !note.invertedMordent && !note.turn
+									&& !note.invertedTurn))
 								markBelow = alter;
 							else
 								markAbove = alter;
@@ -1168,6 +1237,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					if (closesSlur)
 						inSlur[useVoice] = false;
 					beat.notes.push_back(note);
+					// WHAT THIS VOICE TIES ONWARD, from the note heading the chord.
+					if (!isChord && !isGrace)
+						tiedOn[useVoice] = std::make_pair(note.tiesOn ? note.midi : -1, spelling);
 					if (spelling.letter >= 0 && (note.trill || note.mordent || note.invertedMordent
 							|| note.turn || note.invertedTurn)) {
 						Ornamented o = {useVoice, index, beat.notes.size() - 1, spelling,
@@ -1197,9 +1269,12 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 				b.notes[o.note].upper = neighbourOf(o.spelled, 1, o.markAbove, spelled);
 				b.notes[o.note].lower = neighbourOf(o.spelled, -1, o.markBelow, spelled);
 			}
-			if ((int) spelledByBar.size() <= barNumber)
+			if ((int) spelledByBar.size() <= barNumber) {
 				spelledByBar.resize((size_t) barNumber + 1);
+				fifthsByBar.resize((size_t) barNumber + 1, 0);
+			}
 			spelledByBar[(size_t) barNumber] = spelled;
+			fifthsByBar[(size_t) barNumber] = partFifths;
 
 			// THE NEXT BAR BEGINS A BAR'S LENGTH LATER, which is the metre's length for an
 			// ordinary bar and the bar's own for a short one.
@@ -1271,7 +1346,7 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 		// THE ORNAMENTS THEIR OWN BAR DID NOT SETTLE, from the music either side of them, now
 		// that every bar of the part has been read. See neighbourInContext.
 		for (size_t b = 0; b < track.bars.size(); b++) {
-			const int fifths = (b < out.masterBars.size()) ? out.masterBars[b].keyAccidentals : 0;
+			const int fifths = (b < fifthsByBar.size()) ? fifthsByBar[b] : 0;
 			for (GpBeat& beat : track.bars[b].beats) {
 				for (GpNote& n : beat.notes) {
 					if (n.letter < 0 || !(n.trill || n.mordent || n.invertedMordent || n.turn

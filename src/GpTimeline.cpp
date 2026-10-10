@@ -468,9 +468,36 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					const int key = (note.string > 0) ? note.string : -note.midi;
 
 					if (note.tied) {
-						const std::map<int, size_t>::iterator it = lastOnString.find(key);
+						std::map<int, size_t>::iterator it = lastOnString.find(key);
+						// WITH NO STRINGS, THE NOTE THAT ENDS WHERE THIS ONE BEGINS AND IS TIED
+						// ONWARD. The pitch alone names whichever voice struck it last, and in the
+						// Waldstein finale a trilled G5 tied into the next bar was continued onto
+						// the melody's G5, struck at the same moment in another voice and ending at
+						// the same moment too: the trill stopped and the melody note held for eight
+						// quarters. Of the notes ending here, one the file says is tied onward is
+						// taken first. Looked for among the recent notes; where none ends there,
+						// the last of that pitch, as before.
+						size_t ending = played.size();
+						if (note.string <= 0) {
+							const size_t from = played.size() > 256 ? played.size() - 256 : 0;
+							for (size_t q = played.size(); q-- > from; ) {
+								const GpPlayedNote& c = played[q];
+								if (c.note.midi != note.midi
+										|| std::fabs(c.startQuarters + c.lengthQuarters - start) >= 1e-6)
+									continue;
+								if (ending == played.size() || (c.note.tiesOn
+										&& !played[ending].note.tiesOn))
+									ending = q;
+							}
+						}
+						if (ending < played.size()) {
+							lastOnString[key] = ending;
+							it = lastOnString.find(key);
+						}
 						if (it != lastOnString.end() && it->second < played.size()) {
 							GpPlayedNote& before = played[it->second];
+							// Tied onward from here only if this continuation is.
+							before.note.tiesOn = note.tiesOn;
 							before.lengthQuarters = start + length - before.startQuarters;
 							before.lengthSeconds =
 								clock.secondsAt(before.startQuarters + before.lengthQuarters)
@@ -705,7 +732,10 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 					if (other.startSeconds <= n.startSeconds
 							|| other.startSeconds >= n.startSeconds + n.lengthSeconds)
 						continue;
-					if (std::abs(other.note.midi - n.note.midi) > 12)
+					// A STEP OR TWO AWAY, as a termination is. Within an octave let a scale in
+					// the other hand end the Waldstein finale's long trills where it passed
+					// under them, four quarters early.
+					if (std::abs(other.note.midi - n.note.midi) > 2)
 						continue;
 					// AND SHORT, as a termination is. A melody or an accompaniment note may pass
 					// close to a trill in pitch and is no reason to stop one; two small notes
