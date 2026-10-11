@@ -294,7 +294,7 @@ struct PathSpritesModule : Module, NoteSink, PathHost {
 		// THE BEAT, FOR THE SPRITES THAT FOLLOW IT. Taken from the chart's own beat rather than
 		// from a tempo setting, so a sprite locked to the beat stays with it while it changes.
 		Harmony h;
-		const bool haveHarmony = reader.harmony(h);
+		const bool haveHarmony = reader.published(h);
 		bool running = params[P_RUN].getValue() > 0.5f;
 		if (haveHarmony && (h.valid || h.timingValid)) {
 			clock += args.sampleTime;

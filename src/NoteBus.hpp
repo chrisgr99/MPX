@@ -596,6 +596,11 @@ struct Bus {
 	early, which nothing can hear. */
 	std::atomic<float> sustain{0.f};
 	std::atomic<float> soft{0.f};
+	/** THE SOURCE DECIDES THE PEDAL, up as much as down: a score pedalling its unmarked passages,
+	or a pedal patched into mpxIn. A pedal left up by such a source is up on purpose, and a module
+	that would otherwise pedal for itself after a while with no pedal on the cable stays out of it.
+	See Pedalling.hpp and mpxPiano's PEDALLING knob. */
+	std::atomic<bool> pedalDecided{false};
 
 	/** THE INSTRUMENT: what is playing on this cable. Its own sequence number rather than the
 	harmony's, since the two change at quite different times — the harmony several times a bar,
@@ -634,7 +639,7 @@ float busFlashVolts(int slot);
 /** Publishes the pedals on this bus. Audio thread, one writer per bus. A module that reads an
 upstream and publishes its own bus forwards them, exactly as it forwards the harmony: a processor
 that dropped them would leave everything after it unpedalled. */
-void busPublishPedals(int slot, float sustain, float soft);
+void busPublishPedals(int slot, float sustain, float soft, bool decided);
 
 /** Publishes how the parts are moving. Audio thread, one writer per bus. */
 void busPublishMotion(int slot, const PartMotion& m);
@@ -696,7 +701,14 @@ struct BusReader {
 	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
 	one player's hands, and either one holding the pedal holds it. Nought and nought with
 	nothing attached. */
-	void pedals(float& sustain, float& soft) const;
+	void pedals(float& sustain, float& soft, bool* decided = nullptr) const;
+	/** THE BEAT, from the first upstream that publishes one, with or without chords: true when
+	`out` holds a position worth believing. `harmony` above answers only for chords, and a score has
+	a perfectly good beat and no chord names. */
+	bool beat(Harmony& out) const;
+	/** WHATEVER THE FIRST UPSTREAM PUBLISHED, chords or not: what a module passing the harmony on
+	forwards, so that a score's beat, key and sounding pitches reach everything after it. */
+	bool published(Harmony& out) const;
 };
 
 /** A unique name for a note. */

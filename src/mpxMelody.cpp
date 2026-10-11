@@ -820,8 +820,9 @@ struct MelodyModule : Module, NoteSink {
 		// the melody chooses pitches and has no opinion about the sustain pedal. State, so a copy.
 		{
 			float sustain, soft;
-			v->rhythm.pedals(sustain, soft);
-			busPublishPedals(v->slot, sustain, soft);
+			bool decided = false;
+			v->rhythm.pedals(sustain, soft, &decided);
+			busPublishPedals(v->slot, sustain, soft, decided);
 		}
 
 		Event e;

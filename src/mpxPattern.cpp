@@ -673,8 +673,11 @@ struct PatternModule : Module, NoteSource, NoteSink {
 		while (reader.next(in))
 			busPush(slot, in);
 		Harmony h;
-		const bool haveHarmony = reader.harmony(h);
-		if (haveHarmony)
+		// FORWARDED WHATEVER IT CARRIES: a score's beat and key have no chords with them and are
+		// still the beat and the key.
+		const bool publishedHere = reader.published(h);
+		const bool haveHarmony = publishedHere && h.valid;
+		if (publishedHere)
 			busPublishHarmony(slot, h);
 		ChordVoicing v;
 		const bool haveVoicing = reader.voicing(v) && v.valid && v.count > 0;
@@ -682,8 +685,9 @@ struct PatternModule : Module, NoteSource, NoteSink {
 			busPublishVoicing(slot, v);
 		{
 			float sustain = 0.f, soft = 0.f;
-			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			bool decided = false;
+			reader.pedals(sustain, soft, &decided);
+			busPublishPedals(slot, sustain, soft, decided);
 		}
 
 		// THE TABS' SPEEDS, FOR WHOEVER IS PLACING SOMETHING ALONG A PATH. A module that moves

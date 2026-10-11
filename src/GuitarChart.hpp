@@ -233,6 +233,10 @@ struct SongModule : Module, NoteSource {
 	/** WHETHER THE SCORE'S OWN PEDAL IS SENT. On, because a score that is marked up should be
 	played the way it is marked; off for a patch that would rather hold the pedal itself. */
 	std::atomic<bool> sendPedal{true};
+	/** WHETHER THE PASSAGES THE SCORE LEAVES UNMARKED ARE PEDALLED, as Pedalling.hpp works out from
+	the harmony. On, because most scores mark the pedal in some places and not others, and a piano
+	played literally through the rest is dry. Saved with the patch. */
+	std::atomic<bool> fillPedal{true};
 	/** THE ORNAMENT STYLE CHOSEN IN THE MENU, one of OrnamentStyle, or -1 to take what the score
 	is worked out to be. Saved with the patch. */
 	std::atomic<int> styleChoice{-1};
@@ -807,6 +811,7 @@ struct SongModule : Module, NoteSource {
 		json_object_set_new(rootJ, "rows", rowsJ);
 		json_object_set_new(rootJ, "rowCount", json_integer(rows));
 		json_object_set_new(rootJ, "pedal", json_boolean(sendPedal.load()));
+		json_object_set_new(rootJ, "pedalUnmarked", json_boolean(fillPedal.load()));
 		if (styleChoice.load() >= 0)
 			json_object_set_new(rootJ, "ornamentStyle", json_integer(styleChoice.load()));
 		// THE INSTRUMENT THE SCORE WINDOW WAS SHOWING, so it opens on the same one next session.
@@ -826,6 +831,8 @@ struct SongModule : Module, NoteSource {
 			setRowCount((int) json_integer_value(j));
 		json_t* pedalJ = json_object_get(rootJ, "pedal");
 		sendPedal = !pedalJ || json_is_true(pedalJ);
+		json_t* fillJ = json_object_get(rootJ, "pedalUnmarked");
+		fillPedal = !fillJ || json_is_true(fillJ);
 		// BEFORE THE SONG, which is read in the style chosen.
 		json_t* styleJ = json_object_get(rootJ, "ornamentStyle");
 		styleChoice = styleJ ? (int) json_integer_value(styleJ) : -1;
@@ -1132,11 +1139,16 @@ struct SongModule : Module, NoteSource {
 		// playhead moves a fraction of a beat between samples, so the answer is nearly always
 		// the one from last time, and a seek backwards walks back.
 		{
+			// AND WITH THE UNMARKED PASSAGES PEDALLED, this source decides the pedal throughout,
+			// up as well as down: see Bus::pedalDecided.
+			const bool filling = fillPedal.load() && L.line.pedalsFilledHere;
 			const float down = (running && sendPedal.load())
-				? gpPedalAt(L.line, quarters, bar.bpm, pedalIndex) : 0.f;
+				? gpPedalAt(filling ? L.line.pedalsFilled : L.line.pedals, quarters, bar.bpm, pedalIndex)
+				: 0.f;
+			const bool decided = sendPedal.load() && filling;
 			for (int r = 0; r < ROWS; r++) {
 				if (slot[r] >= 0)
-					busPublishPedals(slot[r], down, 0.f);
+					busPublishPedals(slot[r], down, 0.f, decided);
 			}
 		}
 
@@ -2094,6 +2106,11 @@ struct SongWidget : ModuleWidget {
 		menu->addChild(createCheckMenuItem("Send the score's sustain pedal", "",
 			[=]() { return m->sendPedal.load(); },
 			[=]() { m->sendPedal = !m->sendPedal.load(); }));
+		menu->addChild(createCheckMenuItem("Pedal the passages the score leaves unmarked", "",
+			[=]() { return m->fillPedal.load(); },
+			// The place in the list is a hint the walk corrects from anywhere, so it is not reset
+			// from this thread.
+			[=]() { m->fillPedal = !m->fillPedal.load(); }));
 	}
 
 	/** Magenta means the link works: see mpxIn, which says why at length. */

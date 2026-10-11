@@ -403,8 +403,11 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 			takeOrPass(in);
 
 		Harmony h;
-		const bool haveHarmony = reader.harmony(h);
-		if (haveHarmony)
+		// FORWARDED WHATEVER IT CARRIES: a score's beat and key have no chords with them and are
+		// still the beat and the key.
+		const bool publishedHere = reader.published(h);
+		const bool haveHarmony = publishedHere && h.valid;
+		if (publishedHere)
 			busPublishHarmony(slot, h);
 		ChordVoicing v;
 		if (reader.voicing(v))
@@ -413,8 +416,9 @@ struct PlayerModule : Module, NoteSource, NoteSink, PathHost {
 		const bool haveMotion = reader.motion(sp);
 		{
 			float sustain = 0.f, soft = 0.f;
-			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			bool decided = false;
+			reader.pedals(sustain, soft, &decided);
+			busPublishPedals(slot, sustain, soft, decided);
 		}
 
 		double beatStep = 0.0;

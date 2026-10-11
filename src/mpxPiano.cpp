@@ -1593,7 +1593,7 @@ static float partGain(int part) {
 		Harmony h;
 		// NOTHING PUBLISHING A BEAT means there is no metre to pedal against. Holding the pedal
 		// down would be a guess at what the music is doing; doing nothing is not.
-		if (!reader.harmony(h) || h.barBeats < 1)
+		if (!reader.beat(h) || h.barBeats < 1)
 			return 0.f;
 		if (h.holding) {
 			autoLift = 0.f;
@@ -1743,13 +1743,14 @@ static float partGain(int part) {
 
 		// The pedals: whichever is further down, the button or the cable.
 		float busSustain = 0.f, busSoft = 0.f;
-		reader.pedals(busSustain, busSoft);
-		// THE KNOB STAYS OUT OF A PEDALLED SCORE'S WAY. While the cable's pedal is moving, the
-		// score is pedalling for itself and knows better than any rule here; once it has left the
-		// pedal up for a couple of bars it is plainly not pedalling this passage, and the knob
-		// takes over. The Ballade needs exactly this: Chopin's own marks from bar 32, and
-		// pedalling of our own through bars 9 to 25, with nothing to set either way.
-		if (busSustain > 0.5f)
+		bool decided = false;
+		reader.pedals(busSustain, busSoft, &decided);
+		// THE KNOB STAYS OUT OF A PEDALLED SOURCE'S WAY. A source that decides the pedal — a score
+		// pedalling its own unmarked passages, or a pedal patched into mpxIn — has left it up on
+		// purpose wherever it is up. Otherwise, while the cable's pedal is moving the source is
+		// pedalling for itself; once it has left the pedal up for a couple of bars it is plainly
+		// not pedalling this passage, and the knob takes over.
+		if (busSustain > 0.5f || decided)
 			cableQuiet = 0.f;
 		else
 			cableQuiet = std::min(cableQuiet + args.sampleTime, 100.f);
@@ -1831,7 +1832,7 @@ static float partGain(int part) {
 				// AND WHERE IN THE BAR THE CHORD FALLS, which is one answer for all of it: the
 				// notes were struck together, so they are in the same place in the metre.
 				Harmony now;
-				const bool timed = reader.harmony(now);
+				const bool timed = reader.beat(now);
 				// A ROLLED CHORD IS NOT A CHORD THAT MISSED. The wavy stroke down the front of
 				// one says to play it from the bottom up — or from the top down where the arrow
 				// points that way — and it is a gesture, not an untidiness, so it overrides the
@@ -1929,9 +1930,11 @@ static float partGain(int part) {
 		}
 		// THE PEDALS AS THE PIANO HAS THEM, which is the button, the cable in, and whatever the
 		// PEDALLING knob is doing — so a synthesiser on the far end is pedalled the same way this
-		// piano is. Published every sample, as state, for the reason NoteBus.hpp gives.
+		// piano is. Published every sample, as state, for the reason NoteBus.hpp gives. Decided when
+		// the cable in decided it or the knob is pedalling, so a second piano further on does not
+		// pedal over the top of this one.
 		if (slot >= 0) {
-			busPublishPedals(slot, sustain, soft);
+			busPublishPedals(slot, sustain, soft, decided || params[P_PEDAL].getValue() > 0.5f);
 			outputs[O_MPX].setVoltage(busFlashVolts(slot));
 		}
 
@@ -1942,7 +1945,7 @@ static float partGain(int part) {
 		if (--beatLook <= 0) {
 			beatLook = 32;
 			Harmony h;
-			if (reader.harmony(h)) {
+			if (reader.beat(h)) {
 				// A SEEK, A LOOP OR A FRESH START moves the position by more than any music
 				// does in thirty-two samples; nothing is forgotten for it.
 				const double moved = h.beat - beatWas;

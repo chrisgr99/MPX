@@ -79,12 +79,20 @@ struct GpPlayedPedal {
 	double startSeconds = 0.0;
 	GpPedalMark::Kind kind = GpPedalMark::DOWN;
 	bool sostenuto = false;
+	/** Written here for a passage the score leaves unmarked, rather than read from it: see
+	Pedalling.hpp. */
+	bool generated = false;
 };
 
 
 struct GpTimeline {
 	std::vector<GpPlayedBar> bars;
 	std::vector<GpPlayedPedal> pedals;   /**< In time order. */
+	/** THE SAME WITH THE UNMARKED PASSAGES PEDALLED, in time order: see gpFillPedalling. A
+	module plays this one unless told to keep to the marks. */
+	std::vector<GpPlayedPedal> pedalsFilled;
+	/** Whether the song has a pedalled track, so that `pedalsFilled` was worked out for it. */
+	bool pedalsFilledHere = false;
 	std::vector<GpSegment> clock;
 	/** One list per track of the song, in the song's own track order, each in time order. */
 	std::vector<std::vector<GpPlayedNote> > tracks;
@@ -124,6 +132,8 @@ backwards walks back. Start it at -1.
 
 Here rather than in the module that calls it because a module cannot be tested. */
 float gpPedalAt(const GpTimeline& line, double quarters, float bpm, int& index);
+/** The same from a list of moves of its own, such as `pedalsFilled`. */
+float gpPedalAt(const std::vector<GpPlayedPedal>& moves, double quarters, float bpm, int& index);
 double gpSecondsPerQuarter(const GpTimeline& line, double quarters);
 
 

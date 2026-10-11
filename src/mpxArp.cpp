@@ -298,13 +298,16 @@ struct ArpModule : Module, NoteSource, NoteSink {
 		while (reader.next(e))
 			busPush(slot, e);
 		Harmony h;
-		if (reader.harmony(h))
+		// FORWARDED WHATEVER IT CARRIES: a score's beat and key have no chords with them and are
+		// still the beat and the key.
+		if (reader.published(h))
 			busPublishHarmony(slot, h);
 		// The pedals, like the harmony, are state: forwarding them is a copy. See NoteBus.hpp.
 		{
 			float sustain, soft;
-			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			bool decided = false;
+			reader.pedals(sustain, soft, &decided);
+			busPublishPedals(slot, sustain, soft, decided);
 		}
 	}
 

@@ -184,25 +184,24 @@ The ladder is the one `Phrasing.cpp` already uses to decide where a phrase may b
 
 It is deliberately small beside the voicing and the melody lead. Heard as a pulse rather than felt as one means it is turned up too far.
 
-### Pedalling what the score does not mark
+### Pedalling a source that does not
 
-Most scores are under-marked. The Chopin Ballade marks 189 of its 262 bars and leaves the rest bare, and played literally those bars are dry: every note is stopped a fraction of a second after its written end, which is not how anybody plays a piano. The Pedalling knob fills those passages in.
+A score pedals its own unmarked passages before anything reaches the piano: see `pedalling.md`. The Pedalling knob is for everything else — mpxIn, an arpeggiator, a pattern — which sends notes and no pedal at all, and played literally is dry: every note stopped a fraction of a second after its written end.
 
-**Harmony does not decide where the foot goes.** Measured against the real pedal marks of the Ballade and the Nocturne: a bass-note change finds 98% of the lifts but fires seven times too often, because the left hand arpeggiates inside one harmony; chroma novelty, the standard harmony-change detector, found 57% of them with a quarter of its guesses right. Both were beaten by changing the pedal on every bar line and nothing else. The metre does the work — 97% of the real lifts land exactly on a beat, and they come at one every two seconds in both pieces whatever the harmony is doing.
+**The knob is an axis of how often**, from driest to wettest, and the ear picks the point: a change every beat, every half bar, every bar or every two bars, or the pedal held down. It changes on the beat the cable publishes, with or without chords, so it needs nothing but a source that knows where the beat is; where nothing publishes one, it does nothing rather than guessing. Measured against the real pedal marks of twenty-two scores, what each position finds of the real lifts, and how many of its own are real:
 
-So the knob is an axis of how often, from driest to wettest, and the ear picks the point. What each position caught of the real lifts, over 497 seconds of the Ballade and 192 of the Nocturne:
-
-| | Ballade | Nocturne |
+| | found | real |
 |---|---|---|
-| every beat | 94% | 90% |
-| every half bar | 89% | 80% |
-| every bar | 54% | 49% |
+| every beat | 96 to 98% | 24 to 29% |
+| every half bar | 86 to 91% | 45 to 67% |
+| every bar | 74 to 77% | 56 to 76% |
+| every two bars | 33 to 38% | 47 to 75% |
 
-A missed lift is the bad error, since it holds the pedal through a harmony change and smears it. Lifting too often only sounds drier than intended. So the axis is safe at one end and muddy at the other, and every half bar is the closest match to real pedalling.
+A missed lift is the bad error, since it holds the pedal through a harmony change and smears it. Lifting too often only sounds drier than intended. So the axis is safe at one end and muddy at the other, and every half bar is the closest match to real pedalling of the four.
 
-**No lookahead is needed.** A pianist's foot is reactive: it lifts as the new harmony sounds and takes the pedal again straight after. A rule that only ever acts at the moment a beat arrives can reach the same places as the marks, so this needs nothing but the beat, which arrives on the cable as state. It therefore works for anything publishing a beat and not only for a loaded file. Where nothing publishes one, the knob does nothing rather than guessing.
+**No lookahead is needed.** A pianist's foot is reactive: it lifts as the new harmony sounds and takes the pedal again straight after, so a rule that only ever acts at the moment a beat arrives can reach the same places as the marks.
 
-**It stays out of a pedalled score's way.** While the cable's pedal is moving, the score is pedalling for itself and knows better than any rule here. Once the cable has left the pedal up for two bars, it plainly is not pedalling that passage and the knob takes over. The Ballade needs exactly this and needs nothing set: Chopin's own marks from bar 32 on, and pedalling of our own through bars 9 to 25.
+**It stays out of a pedalled source's way.** A source that decides the pedal says so on the cable — a score pedalling its unmarked passages, or a pedal patched into mpxIn — and wherever such a source has the pedal up, it is up on purpose and the knob does nothing. A source that does not say so is pedalling for itself while the cable's pedal is moving; once it has left the pedal up for two bars it plainly is not pedalling that passage, and the knob takes over.
 
 ### Pedals
 
@@ -219,10 +218,10 @@ So that a phrase can carry its own pedalling rather than needing a gate patched 
 What each module does with them:
 
 - **mpxIn** has sustain and soft inputs and puts them on the cable: a gate is a pedal down, and 0 to 10 V is part way, for half-pedalling.
-- **mpxScore sends the pedal the score is marked with**, read from the file's pedal brackets, and lifts and retakes it where two brackets touch. A right-click item turns it off for a patch that would rather pedal by hand.
-- **Every processor passes them through unchanged**: mpxComp, mpxArp, mpxRand, mpxMonitor, mpxPhrase and mpxMelody's voices each forward them as they forward the harmony.
+- **mpxScore sends the pedal the score is marked with**, read from the file's pedal brackets, and lifts and retakes it where two brackets touch. **It pedals the passages the score leaves unmarked** as well, from the harmony: see `pedalling.md`. Right-click items turn off either, or both for a patch that would rather pedal by hand.
+- **A source can say it decides the pedal**, up as well as down: mpxScore does while it pedals the unmarked passages, and mpxIn does while a cable is patched into its sustain input. A pedal such a source leaves up is up on purpose, and mpxPiano's Pedalling knob leaves it alone. mpxPiano's own output says so too, while the cable in did or its knob is pedalling, so a second piano further on does not pedal over the top of the first.
+- **Every processor passes them through unchanged**: mpxComp, mpxArp, mpxRand, mpxMonitor, mpxPhrase and mpxMelody's voices each forward them as they forward the harmony, and the harmony itself whether or not it has chords in it, so a score's beat reaches a piano through any of them.
 - **mpxOut has a sustain output**, nought to ten volts on one channel, so any voice in the rack can be pedalled from an MPX cable — a VST piano in Host through its sustain pedal parameter, for one. **The soft pedal comes out of its timbre jack** when the right-click menu says so, since una corda is a change of tone. **mpxMonitor** showing the pedals is not built yet.
-- **mpxPhrase** may later write pedalling of its own, lifting the pedal at chord changes. Not part of the first version.
 
 This is a change to the transport; `design.md` has still to be updated with it.
 
@@ -240,7 +239,7 @@ For what is adjusted while playing.
 - **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from mpxIn's timbre input.
 - **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full 18.5 decibels from ppp to fff, and 0.7 gives thirteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
-- **Pedalling**: how the piano pedals a passage its score does not mark, from off through a lift every beat, every half bar, every bar, every two bars, to held down. See below.
+- **Pedalling**: how the piano pedals notes that arrive with no pedal of their own, from off through a change every beat, every half bar, every bar, every two bars, to held down. A score pedals its own unmarked passages, and the knob leaves those alone. See below.
 - **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.
 
 ### As recorded

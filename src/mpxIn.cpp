@@ -139,7 +139,10 @@ struct NoteModule : Module, NoteSource {
 				? math::clamp(inputs[I_SUSTAIN].getVoltage() / 10.f, 0.f, 1.f) : 0.f;
 			const float soft = inputs[I_SOFT].isConnected()
 				? math::clamp(inputs[I_SOFT].getVoltage() / 10.f, 0.f, 1.f) : 0.f;
-			busPublishPedals(slot, sustain, soft);
+			// A PEDAL PATCHED IN DECIDES THE PEDAL, up as much as down: whatever is driving the
+			// jack is playing the foot, and a piano that pedals for itself when nobody else does
+			// should leave it alone.
+			busPublishPedals(slot, sustain, soft, inputs[I_SUSTAIN].isConnected());
 		}
 
 

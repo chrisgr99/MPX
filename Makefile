@@ -190,13 +190,13 @@ melodytest:
 # Reading Guitar Pro files. No Rack in it, so it builds on its own and runs against a folder of
 # real files: make gptest ARGS="~/Downloads/*.gp*"
 gptest:
-	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp -o build/gptest
+	@c++ -std=c++11 -O1 -Wall test/gptest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/Pedalling.cpp src/OrnamentStyle.cpp src/Composers.cpp -o build/gptest
 	@./build/gptest $(ARGS)
 
 
 # Repeats, endings and jumps: the played order, against songs written in the test itself.
 navtest:
-	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp \
+	@c++ -std=c++11 -O1 -Wall test/navtest.cpp src/GuitarPro.cpp src/GpTimeline.cpp src/Pedalling.cpp src/OrnamentStyle.cpp src/Composers.cpp \
 		-o build/navtest
 	@./build/navtest
 
@@ -241,7 +241,7 @@ gpxmltest:
 buried:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -w -I dep/include/verovio/pugi \
-		test/buried.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/buried.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/buried
 	@./build/buried $(ARGS)
 
@@ -252,10 +252,18 @@ marksused:
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/marksused
 	@./build/marksused $(ARGS)
 
+# Generated pedalling against the pedal marks real scores carry. See test/pedaltest.cpp.
+pedaltest:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
+		test/pedaltest.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/pedaltest
+	@./build/pedaltest $(ARGS)
+
 barcheck:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
-		test/barcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/barcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/barcheck
 	@./build/barcheck $(ARGS)
 
@@ -265,7 +273,7 @@ barcheck:
 drumcheck:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -w -I dep/include/verovio/pugi \
-		test/drumcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/drumcheck.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/drumcheck
 	@./build/drumcheck $(ARGS)
 
@@ -283,7 +291,7 @@ drumsound:
 scorenotes:
 	@mkdir -p build
 	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi \
-		test/scorenotes.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/scorenotes.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scorenotes
 	@./build/scorenotes $(ARGS)
 
@@ -304,7 +312,7 @@ pianorelease:
 scoreread:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/scoreread.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/scoreread.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/scoreread
 	@./build/scoreread $(ARGS)
 
@@ -315,7 +323,7 @@ scoreread:
 harmony:
 	@mkdir -p build
 	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
-		test/harmony.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/GuitarPro.cpp \
+		test/harmony.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/harmony
 	@./build/harmony $(ARGS)
 
@@ -371,7 +379,7 @@ brushscan:
 #   make ringcheck ARGS="a-file.gp4 0"
 ringcheck:
 	@mkdir -p build
-	@c++ -std=c++11 -O1 -Wall test/ringcheck.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
+	@c++ -std=c++11 -O1 -Wall test/ringcheck.cpp src/GpTimeline.cpp src/Pedalling.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
 		-o build/ringcheck
 	@./build/ringcheck $(ARGS)
 
@@ -379,7 +387,7 @@ ringcheck:
 #   make strumcheck ARGS="a-file.gp5 0"
 strumcheck:
 	@mkdir -p build
-	@c++ -std=c++11 -O1 -Wall test/strumcheck.cpp src/GpTimeline.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
+	@c++ -std=c++11 -O1 -Wall test/strumcheck.cpp src/GpTimeline.cpp src/Pedalling.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GuitarPro.cpp \
 		-o build/strumcheck
 	@./build/strumcheck $(ARGS)
 
@@ -577,7 +585,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: styletest pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pedaltest styletest pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -592,7 +600,9 @@ pathread:
 
 
 # mpxScore playing into mpxPiano from a command line, with the clicks found. See test/pianobench.cpp.
-BENCH_OBJS = $(filter-out build/src/plugin.cpp.o build/src/mpxPiano.cpp.o build/src/mpxScore.cpp.o,$(wildcard build/src/*.o))
+# From the sources that exist, not the objects lying in build: a module that has been deleted leaves
+# its object behind, built against whatever the shared code was then.
+BENCH_OBJS = $(filter-out build/src/plugin.cpp.o build/src/mpxPiano.cpp.o build/src/mpxScore.cpp.o,$(patsubst %,build/%.o,$(wildcard src/*.cpp src/*.mm)))
 pianobench:
 	@mkdir -p build
 	@$(CXX) -std=c++20 -O2 -g $(BENCH_FLAGS) -I dep/include -I dep/include/verovio -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \

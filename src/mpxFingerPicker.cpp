@@ -370,11 +370,14 @@ struct FingerPickerModule : Module, NoteSource, NoteSink {
 	and the instrument, which is this module's own — six strings in standard tuning. */
 	void publish() {
 		Harmony h;
-		if (reader.harmony(h))
+		// FORWARDED WHATEVER IT CARRIES: a score's beat and key have no chords with them and are
+		// still the beat and the key.
+		if (reader.published(h))
 			busPublishHarmony(slot, h);
 		float sustain, soft;
-		reader.pedals(sustain, soft);
-		busPublishPedals(slot, sustain, soft);
+		bool decided = false;
+		reader.pedals(sustain, soft, &decided);
+		busPublishPedals(slot, sustain, soft, decided);
 		if (!instrumentSent) {
 			Instrument p;
 			p.valid = true;

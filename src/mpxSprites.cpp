@@ -1976,8 +1976,11 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 		while (reader.next(e))
 			takeOrPass(e);
 		Harmony h;
-		const bool haveHarmony = reader.harmony(h);
-		if (haveHarmony)
+		// FORWARDED WHATEVER IT CARRIES: a score's beat and key have no chords with them and are
+		// still the beat and the key.
+		const bool publishedHere = reader.published(h);
+		const bool haveHarmony = publishedHere && h.valid;
+		if (publishedHere)
 			busPublishHarmony(slot, h);
 		if (haveHarmony)
 			followChart(h);
@@ -1989,8 +1992,9 @@ struct SpritesModule : Module, NoteSource, NoteSink {
 			busPublishVoicing(slot, v);
 		{
 			float sustain = 0.f, soft = 0.f;
-			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			bool decided = false;
+			reader.pedals(sustain, soft, &decided);
+			busPublishPedals(slot, sustain, soft, decided);
 		}
 	}
 };

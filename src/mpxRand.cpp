@@ -510,8 +510,9 @@ struct RandModule : Module, NoteSource, NoteSink {
 		// has nothing to do with a chart.
 		if (slot >= 0) {
 			float sustain, soft;
-			reader.pedals(sustain, soft);
-			busPublishPedals(slot, sustain, soft);
+			bool decided = false;
+			reader.pedals(sustain, soft, &decided);
+			busPublishPedals(slot, sustain, soft, decided);
 		}
 
 		if (lightFade > 0.f)

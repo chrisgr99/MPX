@@ -1,6 +1,7 @@
 /** See GpTimeline.hpp. */
 #include <cmath>
 #include "GpTimeline.hpp"
+#include "Pedalling.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -967,6 +968,12 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 		}
 	}
 
+	// ---- pedalling the passages the score does not mark ------------------------------------
+	//
+	// LAST, because it listens to the notes as they will be played: the ornaments written out, the
+	// tremolos alternating. See Pedalling.hpp.
+	gpFillPedalling(song, out);
+
 	return true;
 }
 
@@ -1005,22 +1012,26 @@ float gpHarmonyWeight(const GpTimeline& line, const GpSong& song, const GpPlayed
 namespace px {
 
 float gpPedalAt(const GpTimeline& line, double quarters, float bpm, int& index) {
-	if (line.pedals.empty()) {
+	return gpPedalAt(line.pedals, quarters, bpm, index);
+}
+
+float gpPedalAt(const std::vector<GpPlayedPedal>& moves, double quarters, float bpm, int& index) {
+	if (moves.empty()) {
 		index = -1;
 		return 0.f;
 	}
-	const int last = (int) line.pedals.size() - 1;
+	const int last = (int) moves.size() - 1;
 	if (index > last)
 		index = last;
 	if (index < -1)
 		index = -1;
-	while (index < last && line.pedals[(size_t) index + 1].startQuarters <= quarters)
+	while (index < last && moves[(size_t) index + 1].startQuarters <= quarters)
 		index++;
-	while (index >= 0 && line.pedals[(size_t) index].startQuarters > quarters)
+	while (index >= 0 && moves[(size_t) index].startQuarters > quarters)
 		index--;
 	if (index < 0)
 		return 0.f;
-	const GpPlayedPedal& p = line.pedals[(size_t) index];
+	const GpPlayedPedal& p = moves[(size_t) index];
 	// THE MIDDLE PEDAL IS NOT THE RIGHT ONE. Sostenuto holds the keys that are already down and
 	// nothing struck after them, which nothing downstream can do, so it is carried in the model
 	// and never answered here as a sustain it is not.

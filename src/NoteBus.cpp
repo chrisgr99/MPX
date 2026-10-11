@@ -38,21 +38,25 @@ void busRelease(int slot) {
 	// start with somebody else's foot down.
 	gBuses[slot].sustain.store(0.f, std::memory_order_relaxed);
 	gBuses[slot].soft.store(0.f, std::memory_order_relaxed);
+	gBuses[slot].pedalDecided.store(false, std::memory_order_relaxed);
 	gBuses[slot].claimed.store(false, std::memory_order_release);
 }
 
 
-void busPublishPedals(int slot, float sustain, float soft) {
+void busPublishPedals(int slot, float sustain, float soft, bool decided) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return;
 	gBuses[slot].sustain.store(sustain, std::memory_order_relaxed);
 	gBuses[slot].soft.store(soft, std::memory_order_relaxed);
+	gBuses[slot].pedalDecided.store(decided, std::memory_order_relaxed);
 }
 
 
-void BusReader::pedals(float& sustain, float& soft) const {
+void BusReader::pedals(float& sustain, float& soft, bool* decided) const {
 	sustain = 0.f;
 	soft = 0.f;
+	if (decided)
+		*decided = false;
 	for (int i = 0; i < count; i++) {
 		const Link& link = links[i];
 		if (link.slot < 0 || link.slot >= MAX_BUSES)
@@ -64,6 +68,8 @@ void BusReader::pedals(float& sustain, float& soft) const {
 			continue;
 		sustain = std::fmax(sustain, bus.sustain.load(std::memory_order_relaxed));
 		soft = std::fmax(soft, bus.soft.load(std::memory_order_relaxed));
+		if (decided && bus.pedalDecided.load(std::memory_order_relaxed))
+			*decided = true;
 	}
 }
 
@@ -268,6 +274,33 @@ bool BusReader::harmony(Harmony& out) const {
 	for (int i = 0; i < count; i++) {
 		if (busReadHarmony(links[i].slot, out))
 			return true;
+	}
+	return false;
+}
+
+
+bool BusReader::beat(Harmony& out) const {
+	for (int i = 0; i < count; i++) {
+		Harmony h;
+		// busReadHarmony fills `h` whenever it read one, and answers for the chords alone.
+		const bool chords = busReadHarmony(links[i].slot, h);
+		if (chords || h.timingValid) {
+			out = h;
+			return true;
+		}
+	}
+	return false;
+}
+
+
+bool BusReader::published(Harmony& out) const {
+	for (int i = 0; i < count; i++) {
+		Harmony h;
+		const bool chords = busReadHarmony(links[i].slot, h);
+		if (chords || h.timingValid || h.keyValid || h.pitchesValid) {
+			out = h;
+			return true;
+		}
 	}
 	return false;
 }
