@@ -1217,11 +1217,25 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							if (arts.child("staccatissimo"))
 								note.staccato = true;
 						}
-						// A NOTE SOUNDED REPEATEDLY FOR ITS LENGTH. A trill is not this — it
-						// alternates with the note above, which nothing downstream can do — so
-						// only a written tremolo is read.
-						if (marks.child("ornaments").child("tremolo"))
-							note.tremolo = true;
+						// A TREMOLO. Of one note, sounded repeatedly for its length; or BETWEEN TWO,
+						// the first marked where the alternation starts and the second where it
+						// stops, each written at the whole length and squeezed to half of it, the two
+						// alternating quickly through the whole — Finlandia's bass rolls are octaves
+						// so, and played as two plain notes they were a quarter each, once. The
+						// number in the element is how many beams join them.
+						{
+							const pugi::xml_node trem = marks.child("ornaments").child("tremolo");
+							if (trem) {
+								const std::string kind = trem.attribute("type").as_string();
+								const int beams = trem.text().as_int(3);
+								if (kind == "start" || kind == "stop") {
+									note.tremoloPair = (int8_t) (kind == "start" ? 1 : -1);
+									note.tremoloMarks = (uint8_t) std::max(1, std::min(8, beams));
+								}
+								else
+									note.tremolo = true;
+							}
+						}
 						// A TRILL IS THE NOTE AND THE ONE ABOVE IT, ALTERNATING. It was passed
 						// over once as something nothing downstream could play, which was the
 						// wrong place to decide: the alternation is written out in the timeline,

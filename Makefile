@@ -252,6 +252,16 @@ marksused:
 		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/marksused
 	@./build/marksused $(ARGS)
 
+# TREMOLOS BETWEEN TWO NOTES, read and written out as alternating notes. A small score built in the
+# test, then, given a file, how many it found. See test/tremolotest.cpp.
+#   make tremolotest ARGS="a-score.mxl"
+tremolotest:
+	@mkdir -p build
+	@c++ -std=c++11 -O1 -Wall -I dep/include/verovio/pugi \
+		test/tremolotest.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/tremolotest
+	@./build/tremolotest $(ARGS)
+
 # Generated pedalling against the pedal marks real scores carry. See test/pedaltest.cpp.
 pedaltest:
 	@mkdir -p build

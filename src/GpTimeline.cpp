@@ -653,6 +653,101 @@ bool gpBuildTimeline(const GpSong& song, GpTimeline& out, std::string* why) {
 			});
 	}
 
+	// ---- tremolos between two notes ----------------------------------------------------------
+	//
+	// THE TWO NOTES ALTERNATE for the whole length they are written at between them, in notes as
+	// short as the beams joining them say: one beam eighths, two sixteenths, three thirty-seconds,
+	// starting on the first. A chord on either side alternates as a whole chord. Written out here, as
+	// an ornament is below, so that every instrument plays it and none has to know the sign. The
+	// first note of the alternation keeps whatever came before it — a slur in, an accent — and the last
+	// whatever went after.
+	//
+	// THE PAIRS. The notes marked where an alternation starts, struck together, and the notes marked
+	// where it stops that begin where they end. A start with no stop after it is left as written.
+	for (size_t t = 0; t < out.tracks.size(); t++) {
+		std::vector<GpPlayedNote>& played = out.tracks[t];
+		bool anyPair = false;
+		for (const GpPlayedNote& n : played)
+			anyPair = anyPair || n.note.tremoloPair != 0;
+		if (!anyPair)
+			continue;
+		std::vector<bool> used(played.size(), false);
+		std::vector<GpPlayedNote> grown;
+		for (size_t i = 0; i < played.size(); i++) {
+			if (used[i])
+				continue;
+			const GpPlayedNote& head = played[i];
+			if (head.note.tremoloPair != 1) {
+				if (head.note.tremoloPair == 0)
+					grown.push_back(head);
+				else {
+					// A stop with no start before it: as written.
+					GpPlayedNote plain = head;
+					plain.note.tremoloPair = 0;
+					grown.push_back(plain);
+				}
+				used[i] = true;
+				continue;
+			}
+			std::vector<size_t> first, second;
+			for (size_t j = i; j < played.size(); j++)
+				if (!used[j] && played[j].note.tremoloPair == 1
+						&& std::fabs(played[j].startSeconds - head.startSeconds) < 1e-4)
+					first.push_back(j);
+			const double meet = head.startSeconds + head.lengthSeconds;
+			for (size_t j = i + 1; j < played.size(); j++)
+				if (!used[j] && played[j].note.tremoloPair == -1
+						&& std::fabs(played[j].startSeconds - meet) < 1e-3)
+					second.push_back(j);
+			for (size_t j : first)
+				used[j] = true;
+			if (second.empty()) {
+				for (size_t j : first) {
+					GpPlayedNote plain = played[j];
+					plain.note.tremoloPair = 0;
+					grown.push_back(plain);
+				}
+				continue;
+			}
+			for (size_t j : second)
+				used[j] = true;
+			const GpPlayedNote& tail = played[second.front()];
+			const double spanSeconds = tail.startSeconds + tail.lengthSeconds - head.startSeconds;
+			const double spanQuarters = tail.startQuarters + tail.lengthQuarters - head.startQuarters;
+			const int beams = std::max(1, (int) head.note.tremoloMarks);
+			const double eachQuarters = 4.0 / std::pow(2.0, beams + 2);
+			int count = std::max(2, (int) std::lround(spanQuarters / eachQuarters));
+			if (count % 2)
+				count++;
+			const double each = spanSeconds / count, eachQ = spanQuarters / count;
+			for (int k = 0; k < count; k++) {
+				const std::vector<size_t>& side = (k % 2) ? second : first;
+				for (size_t j : side) {
+					GpPlayedNote one = played[j];
+					one.note.tremoloPair = 0;
+					one.note.tied = false;
+					one.startSeconds = head.startSeconds + each * k;
+					one.lengthSeconds = each;
+					one.startQuarters = head.startQuarters + eachQ * k;
+					one.lengthQuarters = eachQ;
+					// What came before belongs to the first note and what goes after to the last.
+					if (k > 0)
+						one.note.accent = one.note.heavyAccent = false;
+					if (k < count - 1)
+						one.note.slurred = one.note.tiesOn = false;
+					else {
+						one.note.slurred = tail.note.slurred;
+						one.note.tiesOn = tail.note.tiesOn;
+					}
+					grown.push_back(one);
+				}
+			}
+		}
+		std::stable_sort(grown.begin(), grown.end(),
+			[](const GpPlayedNote& a, const GpPlayedNote& b) { return a.startQuarters < b.startQuarters; });
+		played.swap(grown);
+	}
+
 	// ---- ornaments --------------------------------------------------------------------------
 	//
 	// AN ORNAMENT IS WRITTEN OUT AS THE NOTES IT STANDS FOR. Done here rather than left to an

@@ -64,6 +64,14 @@ struct GpNote {
 	articulation that asks for more rather than less. */
 	bool tenuto = false;
 	bool tremolo = false;    /**< Picked repeatedly for the note's length. */
+	/** A TREMOLO BETWEEN TWO NOTES: one where this note begins one, minus one where it ends one, nought
+	where it is in none. The two notes, or chords, are written each at the whole length the
+	alternation lasts and squeezed to half of it, and joined by beams not joined to their stems; the
+	sign means the two alternate quickly for the whole of that length. `tremoloMarks` is how many
+	beams: one for eighth notes, two sixteenths, three thirty-seconds. The timeline writes the
+	alternation out, as it does a trill. */
+	int8_t tremoloPair = 0;
+	uint8_t tremoloMarks = 0;
 	/** TRILLED: alternated with the note a step above it in the key, for its whole length. The
 	alternation is written out by the timeline, so what reaches an instrument is notes. */
 	bool trill = false;
