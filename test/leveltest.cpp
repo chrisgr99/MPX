@@ -18,13 +18,17 @@ so the same written dynamic is far louder in a dense texture than in a sparse on
 property of the notes rather than of any one module, so it is not something this bench can see.
 See docs/dynamics.md.
 
+mpxGuitar IS NOT HELD TO THE STANDARD. Its pluck strength drives a modelled amplifier that saturates,
+so a level turned into a gentler pluck and made up for with output gain changed its tone and not just
+its loudness, and squeezed through the shared soft clip a strum was flattened; by ear it played worse,
+and it plays as it did before the standard, the level its pluck strength (docs/dynamics.md).
+
 mpxPiano's voices live inside a Rack Module and cannot be run from here, so its note is computed
 the way the module computes it — from the same recordings, through the same formulas. The
 constants are repeated below and have to be changed together with the module's; a bench measuring
 yesterday's arithmetic is worse than no bench.
 */
 #include "../src/FluidEngine.hpp"
-#include "../src/GuitarModel.hpp"
 #include "../src/NoteBus.hpp"
 
 #include <jansson.h>
@@ -41,13 +45,13 @@ yesterday's arithmetic is worse than no bench.
 using namespace px;
 
 
-/** AS SoundCore.hpp, mpxGuitar.cpp AND mpxPiano.cpp HAVE THEM, kept here by hand since those
+/** AS SoundCore.hpp AND mpxPiano.cpp HAVE THEM, kept here by hand since those
 files need Rack. Change them together: a scale changed there and not here leaves this measuring
 the old one. */
 static const float SOUND_VOLTS = 156.8f;
-static const float GUITAR_VOLTS = 10.35f;
 /** mpxPiano's output stage: the volume knob, which starts at one, times five. */
-static const float PIANO_VOLTS = 8.f;
+/** mpxPiano at its volume knob's middle, where it starts: twice MPX_FULL_VOLTS (volumeGain). */
+static const float PIANO_VOLTS = 16.f;
 /** The set's own velocity tracking, from its SFZ. mpxPiano::noteOn. */
 static const float PIANO_VELOCITY_TRACKING = 0.73f;
 static const float RATE = 48000.f;
@@ -72,12 +76,12 @@ static double decibels(double ratio) {
 
 
 /** One line of the report. Returns whether it passed. */
-static bool report(const char* what, double volts) {
+static bool report(const char* what, double volts, double standard = (double) MPX_FULL_VOLTS) {
 	if (volts <= 0.0) {
 		std::printf("     %-34s  could not be measured\n", what);
 		return true;      // Said, but not counted against the standard.
 	}
-	const double off = decibels(volts / (double) MPX_FULL_VOLTS);
+	const double off = decibels(volts / standard);
 	const bool ok = std::fabs(off) <= ALLOWED_DB;
 	std::printf("%s %-34s  %7.2f V peak  %+6.1f dB from the standard\n",
 		ok ? "ok  " : "FAIL", what, volts, off);
@@ -118,6 +122,8 @@ static const double HEARD_WINDOW = 0.15;
 /** mpxPiano::CREST_BLEND and CREST_REFERENCE. Kept here because this program does not link the
 module; if they drift apart the bench stops describing the instrument. */
 static const double PIANO_CREST_BLEND = 0.5;
+/** mpxPiano::PIANO_RANGE_DB: its own range from ppp to fff, the DYNAMICS knob fully up. */
+static const double PIANO_RANGE_DB = 30.0;
 static const double PIANO_CREST_REFERENCE = 3.3;
 
 static WavLevel wavLevel(const std::string& path) {
@@ -371,7 +377,7 @@ static double pianoNote(float level, int key, float dyn = 1.f) {
 	// mpxPiano::aimedAt — the marking's own loudness, with the recording's divided back out,
 	// part by its peak and part by what is heard. Keep CREST_BLEND and CREST_REFERENCE the same
 	// in both places: this is the only model of the module there is.
-	const double want = std::pow(10.0, -(1.0 - (double) level) * (double) MPX_RANGE_DB
+	const double want = std::pow(10.0, -(1.0 - (double) level) * PIANO_RANGE_DB
 		* (double) dyn / 20.0);
 	const double crest = lv.peak / std::max(lv.heard, 1e-5);
 	const double lift = std::pow(crest / PIANO_CREST_REFERENCE, PIANO_CREST_BLEND);
@@ -427,7 +433,7 @@ static bool pianoOut(float level, int key, PianoOut& out, float dyn = 1.f) {
 	const WavLevel lv = wavLevel(dir + "/samples/" + file);
 	if (lv.peak <= 0.0 || lv.heard <= 0.0)
 		return false;
-	const double want = std::pow(10.0, -(1.0 - (double) level) * (double) MPX_RANGE_DB
+	const double want = std::pow(10.0, -(1.0 - (double) level) * PIANO_RANGE_DB
 		* (double) dyn / 20.0) * (double) PIANO_VOLTS;
 	// Dividing the peak out, which is what the module does now.
 	out.byPeakPeak = want;
@@ -436,39 +442,6 @@ static bool pianoOut(float level, int key, PianoOut& out, float dyn = 1.f) {
 	out.byHeardHeard = want;
 	out.byHeardPeak = want * lv.peak / lv.heard;
 	return true;
-}
-
-
-// ---- mpxGuitar ------------------------------------------------------------------------------
-
-/** `strings` of them at once, all at `level`: one for the standard, six for what a strum of open
-strings actually reaches. */
-static double guitarNote(float level, bool nylon, int strings = 1) {
-	GuitarModel g;
-	g.setSampleRate(RATE);
-	const int tuning[6] = {64, 59, 55, 50, 45, 40};
-	for (int s = 0; s < 6; s++) {
-		g.open[s] = (tuning[s] - 60) / 12.f;
-		g.openKnown[s] = true;
-		g.setPitch(s, g.open[s]);
-	}
-	g.settings.nylon = nylon;
-	g.settings.sympathy = 0.f;
-	if (strings <= 1) {
-		g.setPitch(2, (57 - 60) / 12.f);
-		g.strike(2, mpxLoudness(level), 0, 2);
-	}
-	else {
-		for (int s = 0; s < strings && s < 6; s++)
-			g.strike(s, mpxLoudness(level) * mpxShare(strings), 0, 2);
-	}
-	std::vector<float> out;
-	for (int i = 0; i < (int) RATE; i++) {
-		float l = 0.f, r = 0.f;
-		g.process(&l, &r);
-		out.push_back(l * GUITAR_VOLTS);
-	}
-	return peakOf(out);
 }
 
 
@@ -511,11 +484,9 @@ int main(int argc, char** argv) {
 	std::printf("A SINGLE NOTE AT LEVEL 1, against the standard of %.1f V peak.\n\n",
 		(double) MPX_FULL_VOLTS);
 
-	if (!report("mpxPiano, the samples", pianoNote(1.f, 60)))
-		failures++;
-	if (!report("mpxGuitar, steel", guitarNote(1.f, false)))
-		failures++;
-	if (!report("mpxGuitar, nylon", guitarNote(1.f, true)))
+	// THE PIANO AGAINST ITS OWN FIGURE: its volume knob starts at twice the standard, so that it holds
+	// its own beside the bowed strings (mpxPiano::volumeGain), and is held to that.
+	if (!report("mpxPiano, the samples, at 16 V", pianoNote(1.f, 60), (double) PIANO_VOLTS))
 		failures++;
 	if (bank) {
 		if (!report("the band, steel guitar", bandNote(bank, 1.f, 25)))
@@ -528,15 +499,6 @@ int main(int argc, char** argv) {
 	else {
 		std::printf("     the band                            no SoundFont given, so not measured\n");
 	}
-
-	// WHAT IS LEFT OVER THE STANDARD, which is the question of whether an instrument could be
-	// raised to it. Reported rather than held to a figure: the standard is about one note, and
-	// how far a full texture sits above it is the headroom that scaling a chord has to earn.
-	// mpxGuitar hard-clips at ten volts.
-	std::printf("\nA FULL TEXTURE AT LEVEL 1, for headroom:\n");
-	const double strum = guitarNote(1.f, false, 6);
-	std::printf("     mpxGuitar, six open strings     %7.2f V peak  %+6.1f dB over one note\n",
-		strum, decibels(strum / guitarNote(1.f, false)));
 
 	// THE LADDER ITSELF, as a sanity check on the quiet end: what the softest thing anybody
 	// writes comes out at. Not held to a figure — it is reported so that a change to the curve
@@ -688,22 +650,19 @@ int main(int argc, char** argv) {
 	}
 	std::printf("\nEACH INSTRUMENT'S LADDER, in dB below its own fff, against the table:\n");
 	std::printf("     %-4s %7s %8s", "", "level", "wanted");
-	std::printf(" %9s %9s %9s %9s\n", "piano", "gtr steel", "gtr nylon", bank ? "band pf" : "");
+	std::printf(" %9s %9s\n", "piano", bank ? "band pf" : "");
 	double worstOff = 0.0;
 	const char* worstWho = "";
 	for (size_t i = 0; i < sizeof(MARKS) / sizeof(MARKS[0]); i++) {
 		const float L = MARKS[i].level;
 		const double wanted = -(1.0 - (double) L) * (double) MPX_RANGE_DB;
 		std::printf("     %-4s %7.2f %8.1f", MARKS[i].name, (double) L, wanted);
-		const double got[4] = {
+		const double got[2] = {
 			decibels(pianoNote(L, 60) / pianoNote(1.f, 60)),
-			decibels(guitarNote(L, false) / guitarNote(1.f, false)),
-			decibels(guitarNote(L, true) / guitarNote(1.f, true)),
 			bank ? decibels(bandNote(bank, L, 0) / bandNote(bank, 1.f, 0)) : 0.0,
 		};
-		static const char* WHO[4] = {"mpxPiano", "mpxGuitar steel", "mpxGuitar nylon",
-			"the band's piano"};
-		for (int c = 0; c < (bank ? 4 : 3); c++) {
+		static const char* WHO[2] = {"mpxPiano", "the band's piano"};
+		for (int c = 0; c < (bank ? 2 : 1); c++) {
 			std::printf(" %+9.1f", got[c]);
 			const double off = std::fabs(got[c] - wanted);
 			if (off > worstOff) {

@@ -20,8 +20,8 @@ void* benchScoreMake(const char* path, std::string* why) {
 	return m;
 }
 
-int benchScoreSlot(void* m, uint32_t* generation) {
-	return ((SongModule*) m)->busSlotFor(SongModule::O_TRACK, generation);
+int benchScoreSlot(void* m, uint32_t* generation, int row) {
+	return ((SongModule*) m)->busSlotFor(SongModule::O_TRACK + row, generation);
 }
 
 /** To the first pass through a bar as the page numbers it, and playing. */

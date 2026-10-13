@@ -92,6 +92,10 @@ Over all 2,546 onsets of the Ballade, where 1,221 are accompaniment with no melo
 
 **Off is a real setting and not the absence of one.** A fugue has no accompaniment: its voices are equal, and holding the lower ones back is simply wrong, however right it is for a nocturne. Nothing in the notes says which a piece is, so it is in the right-click menu.
 
+**Both are the same number of decibels at every marking.** The voicing and the melody balance, and a written accent, are written as factors on a note's level, and the level still chooses the recording and the order a chord's notes speak in; but the loudness each takes off or adds is fixed, what it was worth at mezzo-forte on the 18.5 dB ladder where it was set by ear (`balanceGain`). A level is a step on a decibel scale, so a factor on it took more off the louder the marking: Normal's held-back accompaniment lost fourteen decibels at forte and three at pianissimo, and an accompanied passage hardly got louder from one to the other — the Fauré quartet's third movement, bar 71, forte over a rising arpeggio, came out seven decibels over the pianissimo bars before it, and now sixteen. Beside the modelled violin, viola and cello, the piano now climbs as they do, 3.3 dB a marking through the first movement's first minute against their 3.2.
+
+In the third movement, where the piano accompanies the strings in arpeggios, Normal holds each arpeggio's lower notes back against its top as if that top were the tune, and the piano sits about ten decibels under the violin and viola at the same marking. Light or Off is the setting for a part that is all accompaniment.
+
 It will misjudge the 1% where the left hand takes the tune, and an inner melody with figuration above it, which Brahms and Schumann write constantly. MusicXML marks the staff on every note and the model discards it; carrying it would make "accompaniment" mean "the other hand" rather than "lower than the tune", and settle both cases.
 
 ### And spread in time
@@ -231,13 +235,13 @@ This is a change to the transport; `design.md` has still to be updated with it.
 
 For what is adjusted while playing.
 
-- **Volume.**
+- **Volume**: upright, where it starts, is twice what the piano once started at, so that it holds its own beside the modelled violin, viola and cello, which overwhelmed it at that old level; the right half of the travel adds 12 decibels more, evenly in decibels, and the left half comes down to silence. It sits before the limiter, so turning it up makes the quiet and middle of a piece louder and the loudest chords hardly so. A patch saved with the old knob, a plain gain from nought to two, is read at the same gain on the new travel.
 - **Release**: how loud the strings' release resonance is, so the piano can be made realistic or clean. The strings themselves are the main sound, covered by volume.
 - **Emphasis**: where the weight of the bar goes. See below. The knob was the key noise's, which is in the right-click menu now beside the pedal mechanism's own level — a mechanical noise is a hundredth of what the metre does to a performance, and nobody sets it twice.
 
   **A release follows the note it ends.** When a key comes up, the release sample is scaled by how loud that note still is at that moment — loud when the string is still ringing hard, faint when it has died away, as the damper sounds on a real piano. The Release knob sets the level on top of that. The note's loudness is already tracked for choosing which note to take when polyphony runs out, so this costs nothing further.
 - **Brightness**: a tone control, darker or brighter than the recording. Modulated per note through the timbre lane, from mpxIn's timbre input.
-- **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up is the full 18.5 decibels from ppp to fff, and 0.7 gives thirteen. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
+- **Dynamics**: how much of the written dynamic range to use. The setting *is* the fraction of it — fully up, where it starts, is the full 30 decibels from ppp to fff, the range the modelled violin, viola and cello play over, and 0.7 gives twenty-one. It moves the floor and never the ceiling, so nothing gets quieter than it was, and it leaves the velocity layer alone, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. See `docs/dynamics.md`.
 - **Damping**: how fast a note dies once its key is released, with the sustain pedal up. Short is dry and detached; long is closer to a half-held pedal.
 - **Pedalling**: how the piano pedals notes that arrive with no pedal of their own, from off through a change every beat, every half bar, every bar, every two bars, to held down. A score pedals its own unmarked passages, and the knob leaves those alone. See below.
 - **Sustain and Soft buttons**, momentary: they hold while held, as a pedal does, so the pedal can be played by hand.

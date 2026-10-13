@@ -10,8 +10,11 @@ the bar it is in and what the voice pool was doing at that moment.
 
 pID=VALUE sets the piano's parameter ID: 0 volume, 1 release, 2 emphasis, 3 pedalling, 4
 brightness, 5 dynamics, 6 damping. at=SECONDS prints every voice, sample by sample, for three
-milliseconds either side of that moment.
+milliseconds either side of that moment. row=N plays the score's row N, from nought, the part on
+it. bars prints each bar's marking, the mean of its notes' levels on the cable, beside how loud
+the piano played it.
 */
+#include "../src/NoteBus.hpp"
 #include <rack.hpp>
 
 #include <cmath>
@@ -35,10 +38,24 @@ int benchPianoSlots(void* m, int* active, int* keys, int* parts, float* amps, fl
 	int most);
 void benchPianoPool(void* m, int* took, int* cut, int* letGo, int* sounding);
 void* benchScoreMake(const char* path, std::string* why);
-int benchScoreSlot(void* m, uint32_t* generation);
+int benchScoreSlot(void* m, uint32_t* generation, int row);
 void benchScoreStart(void* m, int bar);
 void benchScoreProcess(void* m, float sampleRate, int64_t frame);
 int benchScoreBar(void* m);
+
+/** LOUDNESS AS A METER HEARS IT: the K-weighting of ITU-R BS.1770 at 48 kHz, a shelf lifting the top
+four decibels and a high-pass under the bass, the two as biquads. */
+struct KWeight {
+	double x1 = 0, x2 = 0, y1 = 0, y2 = 0, u1 = 0, u2 = 0, z1 = 0, z2 = 0;
+	double run(double x) {
+		const double y = 1.53512485958697 * x - 2.69169618940638 * x1 + 1.19839281085285 * x2
+			+ 1.69065929318241 * y1 - 0.73248077421585 * y2;
+		x2 = x1; x1 = x; y2 = y1; y1 = y;
+		const double z = y - 2.0 * u1 + u2 + 1.99004745483398 * z1 - 0.99007225036621 * z2;
+		u2 = u1; u1 = y; z2 = z1; z1 = z;
+		return z;
+	}
+};
 
 Plugin* pluginInstance = NULL;
 
@@ -86,9 +103,15 @@ int main(int argc, char** argv) {
 	double at = -1.0;
 	double sharp = 8.0;
 	double traceFrom = -1.0, traceTo = -1.0;
+	int row = 0;
+	bool byBar = false;
 	for (int a = 4; a < argc; a++) {
 		const std::string arg = argv[a];
-		if (arg.rfind("at=", 0) == 0)
+		if (arg.rfind("row=", 0) == 0)
+			row = std::atoi(arg.c_str() + 4);
+		else if (arg == "bars")
+			byBar = true;
+		else if (arg.rfind("at=", 0) == 0)
 			at = std::atof(arg.c_str() + 3);
 		else if (arg.rfind("k=", 0) == 0)
 			sharp = std::atof(arg.c_str() + 2);
@@ -116,8 +139,14 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	uint32_t generation = 0;
-	const int slot = benchScoreSlot(score, &generation);
+	const int slot = benchScoreSlot(score, &generation, row);
 	benchPianoLink(piano, slot, generation);
+	// THE NOTES AS THE PIANO IS SENT THEM, read by a second reader of the same cable, for the marking
+	// of each bar.
+	px::BusReader listener;
+	listener.attach(slot, generation);
+	std::vector<double> barLevel(2000, 0.0);
+	std::vector<int> barNotes(2000, 0);
 	benchScoreStart(score, std::atoi(argv[2]));
 
 	const size_t n = (size_t) (std::atof(argv[3]) * RATE);
@@ -136,6 +165,18 @@ int main(int argc, char** argv) {
 		benchScoreProcess(score, RATE, (int64_t) i);
 		benchPianoProcess(piano, RATE, (int64_t) i, &L[i], &R[i]);
 		bar[i] = benchScoreBar(score);
+		{
+			px::Event e;
+			while (listener.next(e)) {
+				if (e.kind == px::Event::ON && std::getenv("BENCH_ONS"))
+					std::printf("  ON %8.3f s  bar %3d  pitch %5.0f  level %.2f  handle %lld\n", (double) i / RATE, bar[i],
+						e.pitch * 12.f + 60.f, e.level * 7.f, (long long) e.handle);
+				if (e.kind == px::Event::ON && bar[i] >= 0 && bar[i] < (int) barLevel.size()) {
+					barLevel[(size_t) bar[i]] += e.level;
+					barNotes[(size_t) bar[i]]++;
+				}
+			}
+		}
 		int t, c, g, s;
 		benchPianoPool(piano, &t, &c, &g, &s);
 		// The counts are reset every ten seconds by the module's own report.
@@ -199,6 +240,30 @@ int main(int argc, char** argv) {
 		if (found <= 60)
 			std::printf("  %7.3f s  bar %3d  jump %6.3f  %4.1f x  sounding %3d  in the 5 ms before: took %d cut %d let go %d\n",
 				i / RATE, bar[i], d[i], d[i] / around, sounding[i], t, c, g);
+	}
+	// EACH BAR: the mean marking of its notes, and how loud the piano was through it — the level over
+	// the bar, decibels under the 8 V a single fff note peaks at, and the loudest sample.
+	if (byBar) {
+		std::printf("\nBY BAR: the marking (nought ppp, seven fff) and the piano's level\n");
+		std::vector<double> e(2000, 0.0), ke(2000, 0.0);
+		std::vector<int> count(2000, 0);
+		std::vector<float> peak(2000, 0.f);
+		KWeight kl, kr;
+		for (size_t i = 0; i < n; i++) {
+			const double wl = kl.run(L[i]), wr = kr.run(R[i]);
+			if (bar[i] >= 0 && bar[i] < 2000) {
+				ke[(size_t) bar[i]] += wl * wl + wr * wr;
+				e[(size_t) bar[i]] += 0.5 * ((double) L[i] * L[i] + (double) R[i] * R[i]);
+				count[(size_t) bar[i]]++;
+				peak[(size_t) bar[i]] = std::fmax(peak[(size_t) bar[i]], std::fmax(std::fabs(L[i]), std::fabs(R[i])));
+			}
+		}
+		for (int b = 0; b < 2000; b++)
+			if (count[(size_t) b] > 0 && barNotes[(size_t) b] > 0)
+				std::printf("  bar %3d  marking %.1f  %3d notes  level %6.1f dB  peak %5.2f V  loudness %6.1f\n", b,
+					7.0 * barLevel[(size_t) b] / barNotes[(size_t) b], barNotes[(size_t) b],
+					10.0 * std::log10(e[(size_t) b] / count[(size_t) b] + 1e-30) - 20.0 * std::log10(8.0),
+					peak[(size_t) b], -0.691 + 10.0 * std::log10(ke[(size_t) b] / count[(size_t) b] / 100.0 + 1e-30));
 	}
 	// THE LEVEL, per channel, over every twentieth of a second: the loudest sample, and whether it
 	// reached the soft clip that starts at MPX_CLIP_FROM volts.

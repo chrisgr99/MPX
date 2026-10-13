@@ -46,36 +46,44 @@ This is a statement about every instrument on the cable, not about one of them. 
 
 `test/leveltest.cpp` plays one note at level 1 through each instrument and fails when any is more than three decibels from the standard, that being about the smallest difference heard as loudness rather than as character.
 
-As measured, all six now within the three decibels it allows:
+As measured, all four within the three decibels it allows:
 
 | | peak | from the standard |
 |---|---|---|
-| mpxGuitar, steel | 6.00 V | 0.0 dB |
 | mpxPiano | 5.00 V | 0.0 dB |
-| mpxGuitar, nylon | 5.91 V | -0.1 dB |
 | the band, steel guitar | 5.85 V | -0.2 dB |
 | the band, grand piano | 4.81 V | -1.9 dB |
 | the band, nylon guitar | 7.68 V | +2.1 dB |
 
-mpxPiano is exact because it aims at the figure rather than arriving at one. The band's spread of four decibels is the SoundFont's own: its programs were recorded at whatever level their samples happened to have, and one scale factor cannot take that out.
+**mpxGuitar is not held to the standard.** Its pluck strength drives a modelled amplifier that saturates, so the standard's way of meeting the figure — a level turned into a gentler pluck, made up with output gain, the chord's dynamic shared out among its strings, and a limiter and the soft clip on the output — changed its tone and not only its loudness, and flattened a loud strum. By ear it played worse. It takes the level as its pluck strength and scales its output by four, as it did before the standard.
+
+## Each instrument's range
+
+**One loudness for every instrument was the aim, and it did not hold.** Beside the modelled bowed strings, which play what a bow on a string gives, a piano on the ladder above sounded too loud in the quiet bars of the Fauré quartet and too quiet in the loud ones. Measured bar by bar over its first minute — each bar's level against the mean marking of its notes — the violin rose 3.7 dB a marking, the viola 3.5 and the cello 2.3, and the piano 1.9: its chords, its pedal and its notes dying away take some of each step back, so it gave less than the 2.6 its single notes were set to. The strings were heard as right. So the range is now each instrument's own, set where it is needed: the piano's is on its DYNAMICS knob, 30 dB from ppp to fff fully up, which is 18.5 times the strings' mean of 3.16 over the piano's 1.93, and brings it to 3.2 dB a marking. The bowed strings have no such control and need none. The band and the other instruments keep the ladder above.
+
+Equal peaks are not equal loudness between them: a single fff note peaks near 8 V on the piano and on each string, but a bowed note holds its loudness and a struck one dies away, so at the same marking the strings' bars come out several decibels over the piano's. That is a balance for the mixer, not a range.
+
+mpxPiano is exact because it aims at its figure rather than arriving at one. The band's spread of four decibels is the SoundFont's own: its programs were recorded at whatever level their samples happened to have, and one scale factor cannot take that out.
 
 mpxPiano's voices live inside a Rack Module and cannot be run from a bench, so its note is computed the way the module computes it, from the same recordings through the same formulas. Those constants are repeated in the bench and have to be changed together with the module's.
 
 ## The DYNAMICS knob
 
-Twenty-two decibels is still a wide range for a rack, and some pieces want less. The knob narrows it: the setting is the fraction of `MPX_RANGE_DB` used, and it moves the floor and never the ceiling, so nothing ever gets quieter than it was.
+The knob is mpxPiano's. Fully up, where it starts, the piano's whole range of 30 dB, the bowed strings'; turned down, less of it, for a piece that wants the quiet end brought up. The setting is the fraction of the range used, and it moves the floor and never the ceiling, so nothing ever gets louder than fff. At nought every marking plays at fff.
 
 | | level | 1.00 | 0.85 | 0.70 | 0.55 | 0.40 |
 |---|---|---|---|---|---|---|
-| ppp | 0 | -22.0 | -18.7 | -15.4 | -12.1 | -8.8 |
-| pp | 1/7 | -18.9 | -16.0 | -13.2 | -10.4 | -7.5 |
-| p | 2/7 | -15.7 | -13.4 | -11.0 | -8.6 | -6.3 |
-| mp | 3/7 | -12.6 | -10.7 | -8.8 | -6.9 | -5.0 |
-| mf | 4/7 | -9.4 | -8.0 | -6.6 | -5.2 | -3.8 |
-| f | 5/7 | -6.3 | -5.3 | -4.4 | -3.5 | -2.5 |
-| ff | 6/7 | -3.1 | -2.7 | -2.2 | -1.7 | -1.3 |
+| ppp | 0 | -30.2 | -25.7 | -21.2 | -16.7 | -12.2 |
+| pp | 1/7 | -26.0 | -22.1 | -18.2 | -14.4 | -10.5 |
+| p | 2/7 | -21.6 | -18.4 | -15.2 | -12.0 | -8.8 |
+| mp | 3/7 | -17.3 | -14.7 | -12.1 | -9.5 | -7.0 |
+| mf | 4/7 | -13.0 | -11.0 | -9.1 | -7.2 | -5.2 |
+| f | 5/7 | -8.7 | -7.4 | -6.1 | -4.8 | -3.5 |
+| ff | 6/7 | -4.2 | -3.6 | -2.9 | -2.3 | -1.7 |
 | fff | 1 | 0 | 0 | 0 | 0 | 0 |
-| **whole range** | | **22.0** | **18.7** | **15.4** | **12.1** | **8.8 dB** |
+| **whole range** | | **30.2** | **25.7** | **21.2** | **16.7** | **12.2 dB** |
+
+`make leveltest` prints this from the recordings themselves.
 
 **It does not touch the velocity layer**, so a pianissimo keeps the tone of a pianissimo and only becomes easier to hear. Which recording is chosen is a question about colour; how loud it then plays is a separate gain. Nothing jumps and nothing reorders.
 
@@ -111,7 +119,7 @@ It also replaced the set's velocity tracking of seventy-three per cent, taken fr
 
 Nothing used to say so, and notes simply added. N of them at one level sum to twenty log N — sixteen decibels for six notes, before the written dynamic is considered at all. Measured over the thirty-six scores in use, the amplitude of an attack spanned twenty-one and a half decibels between one score and another, and it followed how many notes were sounding rather than anything written: a lead sheet, one note at a time, sat at minus four, while Layla, six notes to an attack, sat at plus twelve.
 
-**`mpxShare` in `NoteBus.hpp` shares one dynamic out among the notes struck together**, by the count raised to the power `MPX_DENSITY_POWER`, which is 0.35. Every instrument uses it: mpxPiano, mpxGuitar and the band.
+**`mpxShare` in `NoteBus.hpp` shares one dynamic out among the notes struck together**, by the count raised to the power `MPX_DENSITY_POWER`, which is 0.35. mpxPiano and the band use it; mpxGuitar does not (see above).
 
 **It is counted where the cable is read and nowhere later.** A strum is spread across milliseconds by the performer, so by the time the strings speak there is no chord left to count — the share rides from the cable to the strike on the note itself. A chord is still bigger than a single note, as it should be, but by an amount a player could have chosen rather than one that follows from how many fingers the chord happens to need. Against a single note at the same marking, with `voicing` already applied:
 
@@ -137,16 +145,16 @@ It also keeps the share out of the two other things computed from those levels: 
 
 Measured as dB below each instrument's own fff, which is what the bench prints:
 
-| | wanted | piano | guitar steel | guitar nylon | band's piano |
-|---|---|---|---|---|---|
-| ppp | -18.5 | -18.5 | -18.5 | -18.5 | -19.0 |
-| pp | -15.9 | -15.9 | -15.9 | -15.9 | -15.9 |
-| p | -13.2 | -13.2 | -13.2 | -13.2 | -13.0 |
-| mp | -10.6 | -10.6 | -10.6 | -10.6 | -10.7 |
-| mf | -7.9 | -7.9 | -7.9 | -7.9 | -7.8 |
-| f | -5.3 | -5.3 | -5.3 | -5.3 | -5.2 |
-| ff | -2.6 | -2.6 | -2.6 | -2.6 | -2.5 |
-| fff | 0 | 0 | 0 | 0 | 0 |
+| | wanted | piano | band's piano |
+|---|---|---|---|
+| ppp | -18.5 | -18.7 | -19.0 |
+| pp | -15.9 | -16.1 | -15.9 |
+| p | -13.2 | -13.4 | -13.0 |
+| mp | -10.6 | -10.7 | -10.7 |
+| mf | -7.9 | -8.0 | -7.8 |
+| f | -5.3 | -5.4 | -5.2 |
+| ff | -2.6 | -2.6 | -2.5 |
+| fff | 0 | 0 | 0 |
 
 Worst deviation 0.5 dB, at the band's quiet end.
 
@@ -201,7 +209,7 @@ So the last volt and a half is a curve. `mpxSoftClip` leaves everything below 8.
 
 The thickest chord anybody writes arrives near thirteen volts and leaves at ten — two and a half decibels of rounding on the loudest moment of a piece and nothing anywhere else.
 
-**What is left for a limiter is a plateau rather than a peak**: a texture sitting over the ceiling for whole bars while the pedal holds everything on, which is the case a clipper handles badly. mpxPiano holds that at twelve volts and mpxGuitar at fourteen, high enough never to touch an ordinary loud chord.
+**What is left for a limiter is a plateau rather than a peak**: a texture sitting over the ceiling for whole bars while the pedal holds everything on, which is the case a clipper handles badly. mpxPiano holds that at twelve volts, high enough never to touch an ordinary loud chord.
 
 ## Still to do
 
@@ -209,7 +217,5 @@ The thickest chord anybody writes arrives near thirteen volts and leaves at ten 
 
 **The share is counted per instrument, not per score.** Each module sees only its own cable, so in a quartet the four parts do not know about each other. That is the right answer for balance — the written dynamics decide it — but it means a tutti chord spread across four modules is not shared out as one chord.
 
-
-**mpxGuitar's densest texture does not fit the way the piano's does.** Six open strings at full come to seven decibels over a single string, against the piano's four and a half for its thickest chord, so a full strum arrives near eighteen volts and the clip rounds it by five. That is heavy. Either the guitar wants a lower figure per note than the shared standard, or a strum wants its dynamic shared out more strongly than a piano chord — one gesture of one pick is not six fingers. Worth deciding before anybody plays loud strummed music through it.
 
 **A loudness bench over the whole library**, reporting LUFS rather than peak, so the figures above are watched rather than remembered. The measurements here were made outside the repository, which is the wrong place for them.
