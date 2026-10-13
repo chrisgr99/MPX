@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include <cmath>
 
 namespace px {
@@ -133,6 +134,9 @@ void BowedPlayer::setInstrument(const BowedInstrument::Design& design, float eng
 		live.voices[k].fingerHz = design.strings[(size_t) k].openHz;
 		live.voices[k].distance.value = 0.1f * design.length;
 	}
+	// AT REST FROM THE START: nothing is bowed and nothing rings, so there is nothing to step until the
+	// first note — and a section's players that have nothing to play cost nothing from the first.
+	live.asleep = true;
 	upcoming.clear();
 	played.clear();
 	history.clear();
@@ -508,6 +512,20 @@ bool BowedPlayer::step(State& s, double rate, float* sound) {
 float BowedPlayer::process() {
 	float sound = 0.f;
 	const int64_t prepare = (int64_t) (PREPARE * rate);
+	// AT REST WITH NOTHING DUE before the next engine sample: the strings' samples the loop below would
+	// pass through one at a time, asleep, passed over at once, to the same clock. A player in a section
+	// with nothing to play costs this and no more.
+	if (live.asleep && live.phase == 0 && !(mode != PLANNER && watchingOn)) {
+		const int64_t next = live.clock + live.inst.oversampling();
+		const bool actionDue = !live.actions.empty() && live.actions.front().at < next;
+		const bool noteDue = !upcoming.empty() && upcoming.front().start - prepare < next;
+		const bool releaseDue = anyLast && !lastReleased && releaseAt - prepare < next;
+		if (!actionDue && !noteDue && !releaseDue) {
+			live.slept += next - live.clock;
+			live.clock = next;
+			return 0.f;
+		}
+	}
 	for (;;) {
 		while (!upcoming.empty() && upcoming.front().start - prepare <= live.clock) {
 			const Pending p = upcoming.front();
@@ -800,8 +818,8 @@ void BowedPlayer::plan(const Pending& p) {
 
 	// WHAT THIS NOTE FOLLOWS FROM: the last one, if the bow is still on it and it ends where this
 	// begins.
-	const bool joined = anyLast && !lastReleased && t0 - lastEnd < (int64_t) (JOINED * rate);
-	bool slurIn = joined && last.slurred;
+	const bool joined = anyLast && !lastReleased && (last.held || t0 - lastEnd < (int64_t) (JOINED * rate));
+	bool slurIn = joined && (last.slurred || n.fromSlur);
 	bool hidden = false;
 	// A BOW CHANGE HIDDEN IN A SLUR: where the slur still has longer to run than the bow left this way
 	// lasts at the habitual speed, the bow changes at this note, as a player changes bow unnoticed in
@@ -1526,7 +1544,8 @@ void BowedPlayer::plan(const Pending& p) {
 	lastSpeed = signedSpeed;
 	direction = dir;
 	lastReleased = false;
-	releaseAt = end;
+	// A NOTE HELD UNTIL LET GO is not let go at its end: endNow does it.
+	releaseAt = n.held ? std::numeric_limits<int64_t>::max() / 4 : end;
 }
 
 

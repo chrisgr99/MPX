@@ -69,6 +69,12 @@ struct BowedPlayer {
 		/** WHAT THE PART SAYS ABOUT VIBRATO, which is usually nothing: then the player decides. */
 		enum Vibrato : uint8_t { UNSAID, SENZA, ORDINARY, MOLTO };
 		uint8_t vibrato = UNSAID;
+		/** HELD UNTIL LET GO: it sounds until endNow, however long it is written, which is then only what
+		the bow is drawn for. For a gate, which says nothing of how long a note will be. */
+		bool held = false;
+		/** JOINED UNDER ONE BOW TO THE NOTE BEFORE, said by this note rather than by that one: a held
+		note's pitch moving while its gate stays up. */
+		bool fromSlur = false;
 	};
 
 	/** WHEN THE MUSIC WAS WRITTEN, for the habits that changed with it — vibrato most of all. */

@@ -72,16 +72,17 @@ struct BowedEngine : BowedPlayer::Planning {
 	engine as the highest note would have them — the strings made ready for the note an octave down —
 	and a string nobody is playing stops once it has rung down (BowedInstrument::setQuietStringsRest).
 
-	REHEARSING: see BowedPlayer::Rehearsing. Starts guessed by default, by ear very good in a string
-	quartet and a piano quartet. LIVE has no planner: the playing copy decides every note itself as it
-	comes, so no thread is started and nothing need be announced. */
+	REHEARSING: see BowedPlayer::Rehearsing. Live by default: the least computing, and by ear good for
+	everyday playing; more is rehearsed at the higher levels for a performance. LIVE has no planner:
+	the playing copy decides every note itself as it comes, so no thread is started and nothing need be
+	announced. */
 	struct Setup {
 		BowedInstrument::Design design;
 		BowedPlayer::Habits habits;
 		float engineRate = 48000.f, highestHz = 1280.f;
 		double announcedAhead = 3.0;
 		bool sympathetic = true, economy = false;
-		BowedPlayer::Rehearsing rehearsing = BowedPlayer::STARTS_GUESSED;
+		BowedPlayer::Rehearsing rehearsing = BowedPlayer::LIVE;
 	};
 	/** Everything starts again from silence and the planning thread is begun afresh. Not on the audio
 	thread. */
