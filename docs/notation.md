@@ -60,6 +60,10 @@ The window asks and the module's own button moves, through `ScoreFollow::wantTra
 
 The tools on the right are things done to the *view* — its size, its page, which instrument, whether it follows — and they stay there. The transport is about the music, so it sits with it.
 
+**The title line** is the piece's name, the instrument shown where the file has more than one, the bar at the top of the view over the last bar (`12 / 140`), and the loop as its first and last bars (`Loop 5–8`, or `Loop 5` for one bar). It ends before the leftmost tool on the right. Where it does not fit, the names are cut short with an ellipsis and the bar and the loop are kept whole, since those are what the line is read for while the music plays.
+
+**Choosing the instrument.** The menu is opened by the instrument tool or by a right-click on the music. It lists the instruments in the file's order, the first nine each followed by its number in brackets, and typing that number with the pointer over the window shows that instrument — the digits along the top of the keyboard or the keypad's. Neither the menu nor a digit acts while the score is being laid out, since the list of instruments is being rebuilt then. One instrument is shown at a time.
+
 ## Where the cursor comes from
 
 From our own timeline, not from Verovio's timemap. The timemap exists and gives every event a time in milliseconds — but we already know, exactly, which written bar is playing and which pass through it we are on, and that is what drives the notes. Asking Verovio when things happen would put a second clock beside the one that is already right. It is asked only where things are on the page.

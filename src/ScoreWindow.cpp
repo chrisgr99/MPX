@@ -353,8 +353,6 @@ struct ScoreWindow : widget::OpaqueWidget {
 		// can be left for another. Not while the worker is rebuilding the list.
 		if (working.load() || partCount() < 1)
 			return;
-		ui::Menu* menu = createMenu();
-
 		// TABLATURE NEEDS STRINGS TO PUT THE FINGERS ON. A fugue or a quartet has none, so the
 		// choice is not offered rather than offered and refused — the converter would fall back
 		// to notation anyway, which is a menu that lies about what it does.
@@ -362,6 +360,10 @@ struct ScoreWindow : widget::OpaqueWidget {
 			&& wantPart < (int) song->tracks.size()
 			&& !song->tracks[(size_t) wantPart].tuning.empty()
 			&& !song->tracks[(size_t) wantPart].percussion;
+		// NOTHING TO CHOOSE, NO MENU: one instrument written one way.
+		if (!fretted && partCount() < 2)
+			return;
+		ui::Menu* menu = createMenu();
 
 		if (fretted) {
 			menu->addChild(createMenuLabel("Written as"));
@@ -384,7 +386,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 			menu->addChild(createMenuLabel("Instrument"));
 			for (int i = 0; i < partCount(); i++) {
 				const int index = i;
-				menu->addChild(createCheckMenuItem(partNamed(i), "",
+				// THE KEY THAT CHOOSES IT, after its name, for the first nine: see onHoverKey.
+				const std::string key = i < 9 ? " (" + std::to_string(i + 1) + ")" : "";
+				menu->addChild(createCheckMenuItem(partNamed(i) + key, "",
 					[=]() { return wantPart == index; },
 					[=]() { setPart(index); }));
 			}
@@ -650,6 +654,13 @@ struct ScoreWindow : widget::OpaqueWidget {
 	}
 
 	void onButton(const ButtonEvent& e) override {
+		// A RIGHT-CLICK ON THE MUSIC asks what is shown: the same menu as the instrument button,
+		// where the hand already is.
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && body().contains(e.pos)) {
+			offerParts();
+			claim(e, this);
+			return;
+		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (closeBox().contains(e.pos) || closeBoxLeft().contains(e.pos)) {
 				requestDelete();
@@ -945,6 +956,22 @@ struct ScoreWindow : widget::OpaqueWidget {
 			e.stopPropagating();
 			return;
 		}
+		// A NUMBER CHOOSES AN INSTRUMENT, one to nine in the order the menu lists them, which
+		// shows each one's number after its name. The digits along the top and the keypad's
+		// both. Not while the score is being laid out, when the list is being rebuilt and the
+		// menu is not offered either; a digit then does nothing.
+		int number = 0;
+		if (e.key >= GLFW_KEY_1 && e.key <= GLFW_KEY_9)
+			number = e.key - GLFW_KEY_1 + 1;
+		else if (e.key >= GLFW_KEY_KP_1 && e.key <= GLFW_KEY_KP_9)
+			number = e.key - GLFW_KEY_KP_1 + 1;
+		if (number > 0 && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			if (!working.load() && partCount() > 1 && number <= partCount())
+				setPart(number - 1);
+			e.consume(this);
+			e.stopPropagating();
+			return;
+		}
 		widget::OpaqueWidget::onHoverKey(e);
 	}
 
@@ -1166,7 +1193,9 @@ struct ScoreWindow : widget::OpaqueWidget {
 		if (!instrument.empty())
 			label += "   " + instrument;
 		// WHICH BAR, NOT WHICH PAGE. There are no pages to the reader any more, and a bar number
-		// is what a score is talked about in and what a passage being worked on is found by.
+		// is what a score is talked about in and what a passage being worked on is found by. Short:
+		// the bar shown at the top over the last, and the loop as its first and last bars.
+		std::string where;
 		if (usable()) {
 			int first = -1, last = -1;
 			const std::vector<px::ScoreSystem>& sys = score.systems();
@@ -1181,24 +1210,51 @@ struct ScoreWindow : widget::OpaqueWidget {
 						first = n;
 				}
 			}
-			if (first > 0 && last > 0) {
-				char count[64];
-				std::snprintf(count, sizeof(count), "   bar %d of %d", first, last);
-				label += count;
-			}
+			if (first > 0 && last > 0)
+				where = std::to_string(first) + " / " + std::to_string(last);
 			if (loopFrom >= 0) {
-				char loop[64];
+				if (!where.empty())
+					where += "   ";
+				where += "Loop " + std::to_string(loopFrom);
 				if (loopTo > loopFrom)
-					std::snprintf(loop, sizeof(loop), "   looping bars %d to %d",
-						loopFrom, loopTo);
-				else
-					std::snprintf(loop, sizeof(loop), "   looping bar %d", loopFrom);
-				label += loop;
+					where += "\xe2\x80\x93" + std::to_string(loopTo);   // an en dash
 			}
 		}
-		// AFTER THE TRANSPORT, which sits in front of it: see toolBox.
-		crispText(args.vg, toolBox(8).pos.x + toolBox(8).size.x + 6.f, SW_TITLE / 2.f,
-			label.c_str(), NULL);
+		// NEVER UNDER THE TOOLS ON THE RIGHT. The text ends before the leftmost one showing; where
+		// it would not, the names are shortened first, since the bar and the loop are what the strip
+		// is read for while the music plays, and a name cut short is still recognisable.
+		{
+			const float left = toolBox(8).pos.x + toolBox(8).size.x + 6.f;
+			const int leftmost = (loopFrom >= 0) ? 6 : ((partCount() > 1 || song) ? 5 : 4);
+			const float room = std::fmax(0.f, toolBox(leftmost).pos.x - 6.f - left);
+			const std::string gap = "   ";
+			auto wide = [&](const std::string& t) {
+				float bounds[4] = {0.f, 0.f, 0.f, 0.f};
+				nvgTextBounds(args.vg, 0.f, 0.f, t.c_str(), NULL, bounds);
+				return bounds[2] - bounds[0];
+			};
+			// Cut a character at a time, whole characters of UTF-8, with an ellipsis after.
+			auto fit = [&](std::string t, float within) {
+				if (wide(t) <= within)
+					return t;
+				while (!t.empty()) {
+					size_t cut = t.size() - 1;
+					while (cut > 0 && ((unsigned char) t[cut] & 0xC0) == 0x80)
+						cut--;
+					t.erase(cut);
+					while (!t.empty() && t.back() == ' ')
+						t.pop_back();
+					if (wide(t + "\xe2\x80\xa6") <= within)
+						return t + "\xe2\x80\xa6";
+				}
+				return std::string();
+			};
+			const std::string tail = where.empty() ? "" : gap + where;
+			const std::string names = fit(label, std::fmax(0.f, room - wide(tail)));
+			const std::string line = names.empty() ? fit(where, room) : names + tail;
+			// AFTER THE TRANSPORT, which sits in front of it: see toolBox.
+			crispText(args.vg, left, SW_TITLE / 2.f, line.c_str(), NULL);
+		}
 
 		drawCross(args.vg, closeBox());
 		drawCross(args.vg, closeBoxLeft());
