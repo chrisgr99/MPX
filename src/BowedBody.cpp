@@ -110,6 +110,16 @@ void BowedBody::build() {
 		r.b = (peak > 0.0) ? 1.0 / peak : 0.0;
 		r.y1 = r.y2 = 0.0;
 	}
+	const size_t pairs = (built.size() + 1) / 2;
+	pairB.assign(pairs, Two{0.0, 0.0});
+	pairA1 = pairA2 = pairY1 = pairY2 = pairRadiativity = pairB;
+	for (size_t i = 0; i < built.size(); i++) {
+		const Resonator& r = built[i];
+		pairB[i / 2][i % 2] = r.b;
+		pairA1[i / 2][i % 2] = r.a1;
+		pairA2[i / 2][i % 2] = r.a2;
+		pairRadiativity[i / 2][i % 2] = r.radiativity;
+	}
 	// THE BRIDGE: a second-order lowpass with its resonance, by the bilinear transform with the
 	// frequency prewarped, so the peak lands where it is asked to.
 	const Bridge& br = wanted.bridge;
@@ -128,6 +138,12 @@ void BowedBody::build() {
 		bb0 = 1.0;
 		bb1 = bb2 = ba1 = ba2 = 0.0;
 	}
+	// Each mode's resonator takes b times the bridge's output, which takes bb0 times the force: the
+	// same sum every sample, so made once.
+	double sum = 0.0;
+	for (const Resonator& r : built)
+		sum += r.mobility * r.b;
+	perNewton = bb0 * sum;
 	silence();
 }
 
@@ -138,6 +154,8 @@ void BowedBody::silence() {
 	velocity = 0.0;
 	for (Resonator& r : built)
 		r.y1 = r.y2 = 0.0;
+	for (size_t i = 0; i < pairY1.size(); i++)
+		pairY1[i] = pairY2[i] = Two{0.0, 0.0};
 }
 
 
@@ -152,6 +170,19 @@ float BowedBody::process(float bridgeForce) {
 	// Into the modes, every one driven by the same force.
 	double sound = 0.0, v = 0.0;
 	const double drive = f - f2;
+	if (voiceOnly) {
+		const Two d = {drive, drive};
+		Two sum = {0.0, 0.0};
+		for (size_t i = 0; i < pairB.size(); i++) {
+			const Two y = pairB[i] * d + pairA1[i] * pairY1[i] + pairA2[i] * pairY2[i];
+			pairY2[i] = pairY1[i];
+			pairY1[i] = y;
+			sum += pairRadiativity[i] * y;
+		}
+		f2 = f1;
+		f1 = f;
+		return (float) (sum[0] + sum[1]);
+	}
 	for (Resonator& r : built) {
 		const double y = r.b * drive + r.a1 * r.y1 + r.a2 * r.y2;
 		r.y2 = r.y1;
@@ -167,11 +198,7 @@ float BowedBody::process(float bridgeForce) {
 
 
 double BowedBody::velocityPerNewton() const {
-	// Each mode's resonator takes b times the bridge's output, which takes bb0 times the force.
-	double sum = 0.0;
-	for (const Resonator& r : built)
-		sum += r.mobility * r.b;
-	return bb0 * sum;
+	return perNewton;
 }
 
 

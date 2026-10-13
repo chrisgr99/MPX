@@ -207,6 +207,30 @@
       ]
     },
     {
+      "slug": "mpxViolin",
+      "name": "mpxViolin",
+      "description": "Plays one MPX part on a modelled violin: four strings bowed through a model of rosin's friction, on one bridge and one body, each note's bowing worked out ahead of it.",
+      "tags": [
+        "Physical modeling"
+      ]
+    },
+    {
+      "slug": "mpxViola",
+      "name": "mpxViola",
+      "description": "Plays one MPX part on a modelled viola: four strings bowed through a model of rosin's friction, on one bridge and one body, each note's bowing worked out ahead of it.",
+      "tags": [
+        "Physical modeling"
+      ]
+    },
+    {
+      "slug": "mpxCello",
+      "name": "mpxCello",
+      "description": "Plays one MPX part on a modelled cello: four strings bowed through a model of rosin's friction, on one bridge and one body, each note's bowing worked out ahead of it.",
+      "tags": [
+        "Physical modeling"
+      ]
+    },
+    {
       "slug": "mpxFingerPicker",
       "name": "mpxFingerPicker",
       "description": "Plays the chords on an mpxChart cable finger-style: a folk picking pattern on the chart's beat, the thumb on the bass and the fingers on the treble strings, each note sent with its string and fret for mpxGuitar.",

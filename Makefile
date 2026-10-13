@@ -447,7 +447,7 @@ leveltest:
 # One modelled bowed string: tuning, the split loop, decay, moving the contact point. No Rack.
 bowtest:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/bowtest.cpp src/BowedString.cpp -o build/bowtest
+	@c++ -std=c++11 -O2 -Wall test/bowtest.cpp src/BowedString.cpp src/BowedRehearsal.cpp -o build/bowtest
 	@./build/bowtest
 
 # The body of a bowed instrument: its response against the published measurements, and notes on the
@@ -455,22 +455,33 @@ bowtest:
 # response, filter or listen.
 bowbody:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/bowbody.cpp src/BowedString.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowbody
+	@c++ -std=c++11 -O2 -Wall test/bowbody.cpp src/BowedString.cpp src/BowedRehearsal.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowbody
 	@./build/bowbody $(ARGS)
 
 # A bowed instrument: four strings on one bridge that moves, on one body. Phase 6 of
 # docs/bowed-strings.md. ARGS names one section: still, stable, sympathy, strings or listen.
 bowinstrument:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall test/bowinstrument.cpp src/BowedString.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowinstrument
+	@c++ -std=c++11 -O2 -Wall test/bowinstrument.cpp src/BowedString.cpp src/BowedRehearsal.cpp src/BowedBody.cpp src/BowedInstrument.cpp -o build/bowinstrument
 	@./build/bowinstrument $(ARGS)
+
+# The player: a bowed instrument played from notes — bow changes rehearsed, slurs as one bow,
+# vibrato, the bow's place following the note. Phase 7 of docs/bowed-strings.md. ARGS names one
+# section, phrase or slur, or plays a score: ARGS="score a.mxl 0 30 violin" (part, seconds, instrument).
+bowplayer:
+	@mkdir -p build
+	@c++ -std=c++11 -O2 -Wall -I dep/include/verovio/pugi test/bowplayer.cpp src/BowedString.cpp \
+		src/BowedRehearsal.cpp src/BowedBody.cpp src/BowedInstrument.cpp src/BowedPlayer.cpp src/BowedEngine.cpp \
+		src/BowedTable.cpp src/MusicXML.cpp src/OrnamentStyle.cpp src/Composers.cpp src/GpTimeline.cpp src/Pedalling.cpp src/GuitarPro.cpp \
+		$(DEP_PATH)/verovio-src/src/pugi/pugixml.cpp -o build/bowplayer
+	@./build/bowplayer $(ARGS)
 
 # Where the bowed string plays and how its notes start: Schelleng's and Guettler's diagrams, phase 3
 # of docs/bowed-strings.md. ARGS names one section: buildup, firstslip, guettler, attacks,
 # schelleng, measured, rehearse, oversampling or listen.
 bowplay:
 	@mkdir -p build
-	@c++ -std=c++11 -O2 -Wall -pthread test/bowplay.cpp src/BowedString.cpp -o build/bowplay
+	@c++ -std=c++11 -O2 -Wall -pthread test/bowplay.cpp src/BowedString.cpp src/BowedRehearsal.cpp -o build/bowplay
 	@./build/bowplay $(ARGS)
 
 # The fretting hand: the shapes it finds against the familiar ones. No Rack in it.
@@ -621,6 +632,17 @@ pianobench:
 		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
 		-L$(RACK_DIR) -lRack -o build/pianobench
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/pianobench $(ARGS)
+
+# The bowed modules as Rack runs them, fed by mpxScore and timed as Rack's meter times them. See
+# test/stringbench.cpp. ARGS="score.mxl FROM_BAR SECONDS violin=ROW viola=ROW cello=ROW [piano=ROW] [realtime]".
+stringbench:
+	@mkdir -p build
+	@$(CXX) -std=c++20 -O2 -g $(BENCH_FLAGS) -I dep/include -I dep/include/verovio -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		-Wno-deprecated-this-capture -march=armv8-a+fp+simd -funsafe-math-optimizations \
+		test/stringbench.cpp test/pianobench_piano.cpp test/pianobench_score.cpp $(BENCH_OBJS) \
+		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
+		-L$(RACK_DIR) -lRack -o build/stringbench
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/stringbench $(ARGS)
 
 # What style each score's ornaments would be played in, and why. See test/styletest.cpp.
 styletest:

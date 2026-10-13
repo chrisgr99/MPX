@@ -36,7 +36,9 @@ struct Decimator {
 		}
 		for (float& t : taps)
 			t = (float) (t / sum);
-		history.assign(taps.size(), 0.f);
+		// TWICE OVER: each sample is written at its place and again a whole length on, so the window
+		// of the last `taps` samples is always one unbroken run, read straight through.
+		history.assign(2 * taps.size(), 0.f);
 	}
 	int factor() const { return n; }
 
@@ -46,18 +48,17 @@ struct Decimator {
 			*out = x;
 			return true;
 		}
+		const int len = (int) taps.size();
 		history[(size_t) pos] = x;
-		pos = (pos + 1) % (int) history.size();
+		history[(size_t) (pos + len)] = x;
+		pos = (pos + 1) % len;
 		if (++count < n)
 			return false;
 		count = 0;
 		double y = 0.0;
-		int at = pos;
-		for (size_t i = 0; i < taps.size(); i++) {
-			y += taps[i] * history[(size_t) at];
-			if (++at >= (int) history.size())
-				at = 0;
-		}
+		const float* window = &history[(size_t) pos];
+		for (int i = 0; i < len; i++)
+			y += taps[(size_t) i] * window[i];
 		*out = (float) y;
 		return true;
 	}

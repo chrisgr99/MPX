@@ -32,6 +32,9 @@ void init(Plugin* p) {
 	p->addModel(modelMpxScore);
 	p->addModel(modelMpxGuitarArticulation);
 	p->addModel(modelMpxGuitar);
+	p->addModel(modelMpxViolin);
+	p->addModel(modelMpxViola);
+	p->addModel(modelMpxCello);
 	p->addModel(modelMpxFingerPicker);
 	p->addModel(modelMpxGuitarChartExpander);
 	p->addModel(modelMpxFluidSynth);

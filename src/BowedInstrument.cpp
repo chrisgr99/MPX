@@ -63,6 +63,52 @@ BowedInstrument::Design BowedInstrument::violin() {
 }
 
 
+/** THE VIOLA, from research/bowed-strings/viola-sources.md: its strings from the maker, its body
+from one measurement of a viola beside a violin and the violin's scaled. Strings: the Thomastik
+Dominant set at its medium tensions, on the 370 mm string length it is made for, the impedance of each
+its tension over twice the length times its pitch.
+
+ITS VOICE. The signature modes' frequencies are measured: the medians of the violas measured, the air
+mode at 228 Hz and the B1 modes at 370 and 448 Hz, three to four semitones under the violin's, so the
+body sits higher against its strings than the violin's does. Their damping is the violin's, which
+nobody has measured on a viola; their mobility the violin's lowered as the one viola measured beside a
+violin on the same rig lies under it, 6 to 8 dB; their radiativity, measured on no viola, lowered the
+same, the air mode's to be settled by ear. Above 500 Hz the modes are dense, a quarter again the
+violin's density for a top a third larger, at its Q of 50, their radiativity and mobility the violin's
+curves at their own frequencies — the bridge hill measured on that viola where the violin's is — lowered
+as that viola lies under the violin: about 2 dB to 2.8 kHz, 4.6 to 6.4 dB above.
+
+ITS BRIDGE, as the strings feel it: the four signature modes that move it. */
+BowedInstrument::Design BowedInstrument::viola() {
+	Design d;
+	d.strings = {{130.81f, 0.50f}, {196.00f, 0.32f}, {293.66f, 0.23f}, {440.00f, 0.18f}};
+	d.length = 0.37f;
+	d.voice.modes = {mode(228.f, 20.f, 0.012f, 0.18f),      // A0, the air in the box
+	                 mode(310.f, 40.f, 0.04f, 0.06f),       // CBR
+	                 mode(370.f, 41.f, 0.07f, 0.49f),       // B1-
+	                 mode(390.f, 50.f, 0.f, 0.17f),         // A1, air again
+	                 mode(448.f, 43.f, 0.09f, 0.56f)};      // B1+
+	d.voice.dense.fromHz = 500.f;
+	d.voice.dense.toHz = 10000.f;
+	d.voice.dense.perHz = 0.025f;
+	d.voice.dense.loss = 0.02f;
+	d.voice.dense.radiativity = {{500.f, -12.5f}, {625.f, -12.5f}, {875.f, -9.1f}, {1125.f, -8.6f},
+	                             {1375.f, -9.3f}, {1625.f, -8.0f}, {1875.f, -5.9f}, {2125.f, -4.6f},
+	                             {2375.f, -3.0f}, {2625.f, -4.6f}, {2875.f, -7.8f}, {3125.f, -9.4f},
+	                             {3375.f, -8.9f}, {3625.f, -8.9f}, {3875.f, -9.4f}, {7750.f, -19.7f},
+	                             {10000.f, -22.8f}};
+	d.voice.dense.mobility = {{500.f, -26.f}, {1000.f, -26.f}, {1500.f, -22.f}, {2400.f, -18.f},
+	                          {3000.f, -23.f}, {5000.f, -36.f}, {10000.f, -47.f}};
+	d.voice.dense.seed = 44u;
+	d.voice.bridge.hz = 0.f;
+	d.bridge.modes = {mode(228.f, 20.f, 0.012f, 0.f), mode(310.f, 40.f, 0.04f, 0.f),
+	                  mode(370.f, 41.f, 0.07f, 0.f), mode(448.f, 43.f, 0.09f, 0.f)};
+	d.bridge.dense.perHz = 0.f;
+	d.bridge.bridge.hz = 0.f;
+	return d;
+}
+
+
 /** THE CELLO, PROVISIONAL. Strings: the D'Addario Kaplan set, on a 690 mm string length.
 
 ITS VOICE. Measured: the air mode near 97 Hz, the strongest body mode at 175 Hz with Q 18 and a
@@ -101,11 +147,41 @@ BowedInstrument::Design BowedInstrument::cello() {
 }
 
 
+/** HOW QUIET A STRING NOBODY IS PLAYING HAS TO BE TO REST, newtons of push on the bridge: about 55 dB
+under a string bowed at forte. And for how long, seconds. */
+static const float QUIET_STRING = 1e-3f;
+static const double QUIET_STRING_FOR = 0.1;
+
+
+void BowedInstrument::setQuietStringsRest(bool on) {
+	quietRest = on;
+	if (!on)
+		for (size_t i = 0; i < resting.size(); i++)
+			if (resting[i])
+				wake(i);
+}
+
+
+void BowedInstrument::wake(size_t i) {
+	resting[i] = 0;
+	strs[i].idle(restedFor[i]);
+	restedFor[i] = 0;
+	quietFor[i] = 0;
+	lately[i] = 0.f;
+}
+
+
 void BowedInstrument::setDesign(const Design& d) {
 	wanted = d;
 	strs.assign(d.strings.size(), BowedString());
 	stoppedAt.assign(d.strings.size(), 0.f);
 	bowing.assign(d.strings.size(), 0);
+	givenForce.assign(d.strings.size(), NAN);
+	givenSpeed = givenFrom = givenForce;
+	resting.assign(d.strings.size(), 0);
+	lately.assign(d.strings.size(), 0.f);
+	quietFor.assign(d.strings.size(), 0);
+	restedFor.assign(d.strings.size(), 0);
 	setRate(engine, factor);
 }
 
@@ -117,12 +193,20 @@ void BowedInstrument::setRate(float engineRate, int oversampling) {
 	for (size_t i = 0; i < strs.size(); i++) {
 		strs[i].setSampleRate(rate);
 		strs[i].setImpedance(wanted.strings[i].impedance);
+		if (wanted.friction == Design::ROSIN)
+			strs[i].setRosin(wanted.rosin);
+		else if (wanted.friction == Design::HEAT)
+			strs[i].setThermal(wanted.heat);
+		else
+			strs[i].useFrictionCurve();
 		tuneString((int) i, stoppedAt[i] > 0.f ? stoppedAt[i] : wanted.strings[i].openHz);
 	}
 	voice.setSampleRate(engine);
+	voice.setVoiceOnly(true);
 	voice.setDesign(wanted.voice);
 	coupler.setSampleRate(rate);
 	coupler.setDesign(wanted.bridge);
+	decayLately = (float) std::exp(-0.69 / (0.01 * (double) rate));
 	down.setFactor(factor);
 }
 
@@ -154,12 +238,33 @@ void BowedInstrument::stop(int string, float hz) {
 	stoppedAt[(size_t) string] = open1 ? 0.f : hz;
 	strs[(size_t) string].setStopped(!open1);
 	tuneString(string, open1 ? open : hz);
+	givenFrom[(size_t) string] = NAN;
+	if (resting[(size_t) string])
+		wake((size_t) string);
+}
+
+
+void BowedInstrument::linger(int string, float seconds) {
+	if (string < 0 || string >= (int) strs.size() || seconds <= 0.f)
+		return;
+	ghost.assign(1, strs[(size_t) string]);
+	ghost[0].setBow(0.f, 0.f);
+	ghostString = string;
+	ghostLength = ghostLeft = std::max<int64_t>(1, (int64_t) ((double) seconds * (double) engine * (double) factor));
 }
 
 
 void BowedInstrument::bow(int string, float force, float speed, float fromBridge) {
 	if (string < 0 || string >= (int) strs.size())
 		return;
+	const size_t i = (size_t) string;
+	if (force == givenForce[i] && speed == givenSpeed[i] && fromBridge == givenFrom[i])
+		return;
+	if (force > 0.f && resting[i])
+		wake(i);
+	givenForce[i] = force;
+	givenSpeed[i] = speed;
+	givenFrom[i] = fromBridge;
 	const float open = wanted.strings[(size_t) string].openHz;
 	const float hz = stoppedAt[(size_t) string] > 0.f ? stoppedAt[(size_t) string] : open;
 	// The finger shortens the string: the bow at the same distance from the bridge is a larger
@@ -177,8 +282,11 @@ void BowedInstrument::pluck(int string, float level, float fromBridge) {
 		return;
 	const float open = wanted.strings[(size_t) string].openHz;
 	const float hz = stoppedAt[(size_t) string] > 0.f ? stoppedAt[(size_t) string] : open;
+	if (resting[(size_t) string])
+		wake((size_t) string);
 	strs[(size_t) string].setContact(fromBridge / (wanted.length * open / hz));
 	strs[(size_t) string].pluck(level, 0.4f);
+	givenFrom[(size_t) string] = NAN;
 }
 
 
@@ -202,9 +310,17 @@ float BowedInstrument::process() {
 bool BowedInstrument::step(float* sound) {
 	{
 		// A string that does not feel the bridge pushes on it all the same, and gives nothing back.
-		double push = 0.0, give = 0.0;
+		double push = 0.0, give = 0.0, pushOfLingering = 0.0;
 		for (size_t i = 0; i < strs.size(); i++) {
-			push += strs[i].pushOnStillBridge();
+			// A STRING AT REST is not there: it neither pushes nor gives. See setQuietStringsRest.
+			if (resting[i]) {
+				restedFor[i]++;
+				continue;
+			}
+			const double p = strs[i].pushOnStillBridge();
+			push += p;
+			if ((int) i == ghostString)
+				pushOfLingering = p;
 			if (bowedFeels || !bowing[i])
 				give += strs[i].impedance();
 		}
@@ -216,12 +332,37 @@ bool BowedInstrument::step(float* sound) {
 		const double force = push - give * v;
 		if (sympathetic)
 			coupler.process((float) force);
-		for (size_t i = 0; i < strs.size(); i++)
+		for (size_t i = 0; i < strs.size(); i++) {
+			if (resting[i])
+				continue;
 			strs[i].finishWithBridge((bowedFeels || !bowing[i]) ? (float) v : 0.f);
+			// HOW LOUD IT HAS BEEN LATELY, a peak falling by half every 10 ms or so, and quiet for how
+			// long, for a string nobody is bowing.
+			if (quietRest && !bowing[i]) {
+				lately[i] = std::fmax(std::fabs(strs[i].bridgeForce()), lately[i] * decayLately);
+				quietFor[i] = lately[i] < QUIET_STRING ? quietFor[i] + 1 : 0;
+				if ((double) quietFor[i] >= QUIET_STRING_FOR * (double) engine * (double) factor)
+					resting[i] = 1;
+			}
+		}
 		lastBridge = v;
 		lastForce = force;
+		// WHAT IS HEARD: the force on the bridge, and while an old note lingers, the string that changed
+		// faded in under it.
+		double heard = force;
+		if (ghostLeft > 0) {
+			const double g = ghost[0].pushOnStillBridge();
+			ghost[0].finishWithBridge(0.f);
+			const double x = 1.0 - (double) ghostLeft / (double) ghostLength;
+			heard += std::cos(0.5 * 3.14159265358979 * x) * g
+				- (1.0 - std::sin(0.5 * 3.14159265358979 * x)) * pushOfLingering;
+			if (--ghostLeft == 0) {
+				ghostString = -1;
+				ghost.clear();
+			}
+		}
 		float slow;
-		if (down.push((float) force, &slow)) {
+		if (down.push((float) heard, &slow)) {
 			lastSound = voice.process(slow);
 			*sound = lastSound;
 			return true;

@@ -103,6 +103,13 @@ struct BowedBody {
 	float mobilityAt(float hz) const;
 	int resonators() const { return (int) built.size(); }
 
+	/** HEARD AND NOT FELT: a body whose motion nothing reads back — the instrument's voice, from the
+	force on the bridge to the sound. Its modes are then run two at a time, side by side, and only the
+	sound is summed, which is several times faster for the hundreds of a dense body. The sound differs
+	from running them one at a time only in the order the last sum is added in, and goes nowhere but
+	out. The bridge as the strings feel it is in the loop with them, and is never run this way. */
+	void setVoiceOnly(bool on) { voiceOnly = on; }
+
 private:
 	struct Resonator {
 		double hz = 0.0, q = 30.0, mobility = 0.0, radiativity = 0.0;
@@ -114,12 +121,19 @@ private:
 	double rate = 48000.0;
 	Design wanted;
 	std::vector<Resonator> built;
+	bool voiceOnly = false;
+	/** THE MODES TWO AT A TIME, for a voice: each pair's coefficients, memories and radiativity side by
+	side, an odd one paired with a silent one. */
+	typedef double Two __attribute__((vector_size(16)));
+	std::vector<Two> pairB, pairA1, pairA2, pairY1, pairY2, pairRadiativity;
 	// The bridge filter's coefficients and memories, a biquad.
 	double bb0 = 1.0, bb1 = 0.0, bb2 = 0.0, ba1 = 0.0, ba2 = 0.0;
 	double bx1 = 0.0, bx2 = 0.0, by1 = 0.0, by2 = 0.0;
 	// The force through the bridge, two samples back, which every resonator shares.
 	double f1 = 0.0, f2 = 0.0;
 	double velocity = 0.0;
+	/** velocityPerNewton, which depends only on the coefficients. */
+	double perNewton = 0.0;
 
 	void build();
 	/** The bridge filter's gain at a frequency, for the response functions. */

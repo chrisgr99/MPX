@@ -54,19 +54,42 @@ struct BowedInstrument {
 		BowedBody::Design voice;
 		/** THE BRIDGE AS THE STRINGS FEEL IT: the low modes that move it, with their mobility. */
 		BowedBody::Design bridge;
+		/** THE FRICTION. CURVE is the friction curve of phases 2 to 6. HEAT follows the rosin's
+		temperature alone (BowedString::setThermal), with the contact a bow's rather than a rod's: chosen
+		by ear in phase 7, since under the friction curve no player could make the bow changes of a real
+		part clean and under this one the Fauré quartet's violin part played without a squeak — but it
+		lets the string go softly, and quiet notes sound muffled. ROSIN is the thermal elasto-plastic
+		model, which shears before it slides as well as softening as it warms (BowedString::setRosin). */
+		enum Friction : uint8_t { CURVE, HEAT, ROSIN };
+		Friction friction = HEAT;
+		BowedString::Thermal heat;
+		BowedString::Rosin rosin;
 	};
 
 	/** THE VIOLIN AND THE CELLO, from the measurements in research/bowed-strings/. The cello's body
 	is provisional; see docs/bowed-strings.md, phase 5. */
 	static Design violin();
+	static Design viola();
 	static Design cello();
 
 	void setDesign(const Design& d);
 	const Design& design() const { return wanted; }
 	/** The engine's rate, and how many times faster the strings run. */
 	void setRate(float engineRate, int oversampling);
+	/** How many times faster than the engine the strings run. */
+	int oversampling() const { return factor; }
+	/** `n` SAMPLES NOT STEPPED, the instrument at rest: what the strings owe for them. */
+	void idle(int64_t n) {
+		for (BowedString& s : strs)
+			s.idle(n);
+	}
 	/** THE STRINGS AND THE BRIDGE MOVING TOGETHER, or each string against a still bridge. */
 	void setSympathetic(bool on) { sympathetic = on; }
+	/** A STRING NOBODY IS PLAYING STOPS once its ringing has stayed under QUIET_STRING for a tenth of a
+	second: not stepped, and so neither ringing on nor taking up the bridge's motion, until it is
+	bowed, stopped or plucked again. Less computing for less sympathy — a string at rest no longer
+	rings with the others. Off by default. */
+	void setQuietStringsRest(bool on);
 	/** WHETHER A STRING BEING BOWED FEELS THE BRIDGE MOVE. On a real instrument it does. Off, which
 	is how it plays: the bowed string plays against a still bridge while it pushes the bridge as
 	before, and the strings nobody is playing ring with it. Chosen by ear on the cello's low notes,
@@ -80,6 +103,13 @@ struct BowedInstrument {
 
 	/** A FINGER DOWN on `string` at the pitch `hz`, or, at the string's own pitch, none. */
 	void stop(int string, float hz);
+	/** THE OLD NOTE LINGERING, at a slurred change of a large interval: a copy of `string` as it is now,
+	the bow off it, heard fading out over `seconds` while the string itself is heard fading in. Every
+	harmonic of a note switched at once to the next note's is heard, dry, as a blip of pink noise — an
+	ideal tone switched so has it — and an old note fading under the new one, as the body and the room
+	let it, has not. What is heard only: the string's motion and its push on the bridge, which the other
+	strings feel, are its own. */
+	void linger(int string, float seconds);
 	/** THE BOW ON `string`: how hard, newtons; how fast, metres a second; and where, metres from
 	the bridge. Force nought lifts it. */
 	void bow(int string, float force, float speed, float fromBridge);
@@ -96,6 +126,8 @@ struct BowedInstrument {
 	float bridgeVelocity() const { return (float) lastBridge; }
 	/** The total force on the bridge at the strings' rate, last sample, newtons. */
 	float bridgeForce() const { return (float) lastForce; }
+	/** How strongly the body radiates a force on the bridge at a frequency: see BowedBody::radiativityAt. */
+	float radiativityAt(float hz) const { return voice.radiativityAt(hz); }
 
 private:
 	Design wanted;
@@ -108,8 +140,26 @@ private:
 	bool sympathetic = true;
 	bool bowedFeels = false;
 	std::vector<char> bowing;
+	/** WHAT BOW EACH STRING WAS LAST GIVEN, so the same again is not worked out again: the force, the
+	speed and the distance from the bridge. Not a number until given, and the distance made not a number
+	again when the finger moves, since the share of the string it is depends on where the finger is. */
+	std::vector<float> givenForce, givenSpeed, givenFrom;
+	/** The strings resting (see setQuietStringsRest): whether each is, how loud it has been lately,
+	how long it has been quiet, and how many samples it has rested, owed to its rosin's cooling. */
+	bool quietRest = false;
+	std::vector<char> resting;
+	std::vector<float> lately;
+	std::vector<int64_t> quietFor, restedFor;
+	float decayLately = 0.9999f;
+	void wake(size_t i);
 	double lastBridge = 0.0, lastForce = 0.0;
 	float lastSound = 0.f;
+	/** The lingering copy (see linger), held apart and only while it lingers — a string's lines are some
+	two hundred kilobytes, and the instrument is copied on the stack for every trial — which string it is
+	of, and how many samples it has left of how many. */
+	std::vector<BowedString> ghost;
+	int ghostString = -1;
+	int64_t ghostLeft = 0, ghostLength = 1;
 
 	void tuneString(int i, float hz);
 };

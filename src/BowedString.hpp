@@ -37,6 +37,8 @@ THE SPLIT IS THE POINT OF THIS PHASE. Two half-lengths must add to the same loop
 would have given, and must keep adding to it while the contact point moves — which is what the
 bow does on every note. Both are measured in test/bowtest.cpp. */
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace px {
 
@@ -150,6 +152,88 @@ struct BowedString {
 	};
 	/** Friction from bristles with these properties, in place of the friction curve. */
 	void setBristles(const Bristles& b);
+	/** THE ROSIN HEATS: Woodhouse's thermal friction model (Smith and Woodhouse 2000, "The tribology
+	of rosin"; Woodhouse 2003, "Bowed string simulation using a thermal friction model"). The
+	friction does not depend on how fast the string slides but on how hot the rosin is where bow and
+	string touch: cool, it holds hard; hot, it lets go. Sliding heats the contact by the friction's
+	work; it loses the heat by conduction into the string and into the bow, which is most of it, and by
+	convection, rosin carried through the contact. So the friction lags the sliding — high as a slip
+	begins, low as it ends — which is the hysteresis measured on real rosin, and which Woodhouse found
+	makes the string far more forgiving: Helmholtz motion established more readily, transients
+	shorter and more regular, and the motion less sensitive to the details of the bowing.
+
+	ONE CONTACT TEMPERATURE, in kelvin above the room, over a disk whose area grows with the bow force
+	(so that the coefficient of friction keeps its meaning, as Woodhouse assumed). The heat flowing
+	into the string and the bow is diffusion into a half-space, fast at first and slower and slower:
+	each is a stack of thin layers, thinnest at the surface, deep enough that a steady heating comes
+	to the steady temperature of a heated disk. Set field by field; the defaults are Woodhouse's
+	(2003, Table I and figure 3). */
+	struct Thermal {
+		/** THE COEFFICIENT AGAINST TEMPERATURE, figure 3: `cold` at the room's temperature, falling in
+		a straight line to `hot` at `hotAt` kelvin above it, and level beyond. */
+		float cold = 1.2f, hot = 0.35f, hotAt = 40.f;
+		/** THE CONTACT'S RADIUS AT ONE NEWTON, metres, and the thickness of rosin that shears. Woodhouse's
+		250 microns is a rosin-coated rod's single contact; a bow brings a ribbon of hair to the string
+		and a larger area, how large not measured. At the rod's the rosin overheats from 0.5 m/s and the
+		bow only slides; at 600 microns every bow speed from 0.05 to 1.2 m/s plays Helmholtz motion on
+		the violin's D and the cello's D, which covers the speeds players have been measured to use
+		(research/bowed-strings/bow-changes.md). The layer is his. */
+		float contactRadius = 600e-6f, layer = 1e-6f;
+		/** Density, kg/m^3; specific heat, J/(kg K); conductivity, W/(m K): the string's surface, the
+		bow's, and the rosin's. */
+		float stringDensity = 3000.f, stringHeat = 1000.f, stringConductivity = 1.4f;
+		float bowDensity = 600.f, bowHeat = 1680.f, bowConductivity = 0.2f;
+		float rosinDensity = 1010.f, rosinHeat = 250.f, rosinConductivity = 0.113f;
+	};
+	void setThermal(const Thermal& t);
+	/** WHETHER THE ROSIN'S TEMPERATURE MAKES THE FRICTION, in either model that has one: a bench then
+	counts slips from the string's motion, since the stuck flag does not mean what it does under the
+	friction curve. */
+	bool heating() const { return thermal || rosined; }
+	/** The contact's temperature, kelvin above the room. */
+	float contactTemperature() const {
+		catchUpHeat();
+		return (float) (rosined ? rosinHeat : heat[0]);
+	}
+
+	/** THE ROSIN AS IT IS: van Walstijn, Chatziioannou, Lampis and Matusiak's thermal elasto-plastic
+	friction (Acta Acustica 2026; research/bowed-strings/thermal-elasto-plastic-2026.md). Two things
+	make rosin hold and let go, and this has both. It is a solid that SHEARS before it slides: the
+	contact's shear z grows with the slide, and the friction is the bow force times sigma0 z. And it
+	SOFTENS AS IT WARMS: how far it can shear before it gives — and so how hard it can hold — falls
+	with the contact's temperature, which the sliding heats and the hair and the string cool.
+
+	THE RELEASE IS RAPID WITHOUT BEING FORCED. As the pull nears the limit the rosin starts to slip in
+	part, the slip warms it, it softens, it slips faster, and that feeds on itself — over a short time,
+	not an instant, and so the string breaks away sharply each period. Temperature alone lets it go
+	softly, more softly the slower the bow, and a held note at piano lost its upper harmonics to it.
+
+	Their cello G string's values (their Table 1), fitted to a robot-bowed string across forces and
+	bow positions, and the bow hair as theirs, a mass on a spring and damper over the ribbon's width.
+	Their heat balance, simpler than Thermal's: the contact's temperature, warmed by the sliding,
+	cooled into a hair surface that moves past it and steadily into the rest. Set field by field. */
+	struct Rosin {
+		/** THE FRICTION: the coefficient stuck and sliding fast at the room's temperature. */
+		float muStatic = 1.05f, muSliding = 0.3f;
+		/** sigma0, per metre: the friction is bow force times sigma0 times the shear, so 1/sigma0 is
+		the shear at a coefficient of one. About 1e6 from rosin's shear modulus and a layer of 0.05 mm. */
+		float sigma0 = 1.0e6f;
+		/** THE SOFTENING: the friction falls towards `softest` of itself as the contact warms, halfway
+		there at `glass` kelvin above the room, the roll-off as steep as `steepness`. */
+		float glass = 25.f, softest = 0.4f, steepness = 2.f;
+		/** Below `breakaway` of the sliding shear the rosin only shears; above it, it starts to slip. */
+		float breakaway = 0.5f;
+		/** THE HEAT, per newton of bow force on a metre of hair: how much it takes to warm the contact a
+		kelvin (m/K), how fast a moving hair surface carries it off (times the square root of the sliding
+		speed over the force per metre), and how fast it leaks away regardless (m/(s K)). */
+		float heatCapacity = 1.0e-6f, heatToMovingHair = 0.22f, heatAway = 1.0e-4f;
+		/** THE BOW HAIR across the ribbon: its width in metres, and per metre of it its mass (kg/m),
+		stiffness (N/m^2) and damping (kg/(s m)) between the stick and the rosin. */
+		float hairWidth = 0.01f, hairMass = 0.62f, hairStiffness = 11.0e6f, hairDamping = 1000.f;
+	};
+	void setRosin(const Rosin& r);
+	bool rosining() const { return rosined; }
+
 	/** Back to the friction curve. */
 	void useFrictionCurve();
 	bool bristling() const { return bristled; }
@@ -165,6 +249,9 @@ struct BowedString {
 
 	/** Stops the string at once. */
 	void silence();
+	/** `n` SAMPLES WITH NO BOW not stepped at all, while the instrument is at rest (see BowedPlayer's
+	sleep): the contact's cooling over them is owed, as for any unbowed sample (heatIdle). */
+	void idle(int64_t n) { heatIdle += n; }
 
 	/** One sample. What the string does at the bridge, which is what the body will hear. */
 	float process();
@@ -256,6 +343,58 @@ private:
 	bool bristled = false;
 	Bristles bristles;
 	double bend = 0.0, bendRate = 0.0, hairLag = 0.0;
+
+	/** THE ROSIN'S HEAT, when its temperature is what makes the friction: the contact and the layers
+	of string and bow under it, their temperatures (the contact's first, then the string's from the
+	surface down, then the bow's), and what a step of backward Euler through them needs. */
+	bool thermal = false;
+	bool heatDirty = true;
+	Thermal thermalSet;
+	static const int HEAT_LAYERS = 12;
+	static const int HEAT_NODES = 1 + 2 * HEAT_LAYERS;
+	/** Mutable only so that reading the temperature can first bring it up to date (catchUpHeat). */
+	mutable double heat[HEAT_NODES] = {};
+	/** THE COOLING OF A CONTACT NO BOW IS ON, not stepped sample by sample. With nothing coming in and
+	nothing carried away a step of the heat is one fixed matrix, so `heatIdle` steps of it are the
+	product of the powers of two that make up the count, applied when the bow comes back or the
+	temperature is read. The powers, HEAT_POWERS of them, are built with the coefficients and shared by
+	every copy of the string. Three strings of four are unbowed at any moment, and stepping their heat
+	was a third of what the instrument cost. */
+	static const int HEAT_POWERS = 40;
+	std::shared_ptr<const std::vector<double>> heatPowers;
+	mutable int64_t heatIdle = 0;
+	void catchUpHeat() const;
+	/** Per unit area: each node's heat capacity over the time step, and the conductance from each node
+	to the one above it (the first layer's to the contact); the last of each stack also leaks to the
+	room through `toRoom`. The contact's capacity, the convection per metre a second of sliding, and the
+	heat a newton of friction sliding a metre a second puts into a square metre. */
+	double heatCap[1 + 2 * HEAT_LAYERS] = {}, heatUp[1 + 2 * HEAT_LAYERS] = {};
+	double toRoomString = 0.0, toRoomBow = 0.0, convectPerSpeed = 0.0, heatPerWork = 0.0;
+	/** The elimination down each stack, which depends only on the capacities and conductances. */
+	double heatBeta[1 + 2 * HEAT_LAYERS] = {}, heatDiag[1 + 2 * HEAT_LAYERS] = {};
+	void buildHeat();
+	void stepHeat(double input, double convection, double renew);
+	float thermalJunction(float unbowed);
+
+	/** THE ROSIN, when it is the thermal elasto-plastic model: its settings, its contact temperature,
+	the hair's lag behind the stick and how fast it is changing; the shear is `bend`. */
+	bool rosined = false;
+	Rosin rosinSet;
+	double rosinHeat = 0.0, hairSpeed = 0.0;
+	/** THE SLIDING COEFFICIENT FOR A SPEED AND A FORCE, the Stribeck curve the steady heat balance
+	implies (their equation 32), read from a table worked out once for the settings: log10 of the
+	speed down one side, log10 of the force per metre of hair down the other. Shared between copies of
+	the string, since it does not change while it plays. */
+	struct StribeckTable {
+		static const int SPEEDS = 128, FORCES = 64;
+		float lowSpeed = -6.f, highSpeed = 1.5f, lowForce = -1.f, highForce = 3.5f;
+		float mu[SPEEDS * FORCES] = {};
+	};
+	std::shared_ptr<const StribeckTable> stribeck;
+	double stribeckAt(double speed, double forcePerMetre) const;
+	/** The softening at a temperature, and the sliding coefficient's own. */
+	double softening(double tau) const;
+	float rosinJunction(float unbowed);
 	/** The sliding speed last sample, bow minus string: which way the string is slipping. */
 	float slide = 0.f;
 	float atBowVelocity = 0.f, atBowForce = 0.f;

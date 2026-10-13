@@ -33,6 +33,10 @@ void BowedString::setSampleRate(float r) {
 	if (r > 0.f && r != rate) {
 		rate = r;
 		dirty = true;
+		heatDirty = true;
+		// Built now rather than at the first sample bowed, which may be on the audio thread.
+		if (thermal)
+			buildHeat();
 	}
 }
 
@@ -129,11 +133,434 @@ void BowedString::setBristles(const Bristles& b) {
 	bristles.fall = std::fmax(1e-4f, b.fall);
 	bristles.breakaway = std::fmax(0.f, std::fmin(0.99f, b.breakaway));
 	bristled = true;
+	thermal = false;
+	rosined = false;
 }
 
 
 void BowedString::useFrictionCurve() {
 	bristled = false;
+	thermal = false;
+	rosined = false;
+}
+
+
+void BowedString::setThermal(const Thermal& t) {
+	thermalSet = t;
+	thermalSet.hotAt = std::fmax(1e-3f, t.hotAt);
+	thermalSet.contactRadius = std::fmax(1e-6f, t.contactRadius);
+	thermalSet.layer = std::fmax(1e-8f, t.layer);
+	thermal = true;
+	bristled = false;
+	rosined = false;
+	heatDirty = true;
+	if (rate > 0.f)
+		buildHeat();
+}
+
+
+/** THE LAYERS UNDER THE CONTACT. Each stack, string and bow, is HEAT_LAYERS layers growing
+geometrically from a quarter of a micron at the surface, deep enough in all that a steady heating
+comes to the steady temperature of a disk heated on a half-space: 8 a / (3 pi k) per unit of heat a
+square metre, which is the stack's thermal resistance at 0.85 a of depth. Below the deepest layer is
+the room. The rosin that shears is the contact itself, its own heat capacity, and half its thickness
+of resistance on the way into either solid. Everything per unit area. */
+void BowedString::buildHeat() {
+	// What cooling is owed under the old coefficients, before they change.
+	catchUpHeat();
+	heatDirty = false;
+	const Thermal& t = thermalSet;
+	const double dt = 1.0 / (double) rate;
+	const double a = t.contactRadius;
+	const double depth = 8.0 * a / (3.0 * 3.14159265358979);
+	const double first = 0.25e-6;
+	// The growth that makes HEAT_LAYERS layers from `first` add up to `depth`.
+	double lo = 1.0001, hi = 4.0;
+	for (int i = 0; i < 60; i++) {
+		const double r = 0.5 * (lo + hi);
+		const double sum = first * (std::pow(r, HEAT_LAYERS) - 1.0) / (r - 1.0);
+		(sum > depth ? hi : lo) = r;
+	}
+	const double growth = 0.5 * (lo + hi);
+	const double rosinCap = (double) t.rosinDensity * t.rosinHeat * t.layer;
+	const double rosinHalf = 0.5 * t.layer / t.rosinConductivity;
+	heatCap[0] = rosinCap / dt;
+	auto stack = [&](int from, double density, double specific, double conductivity, double* toRoom) {
+		double d = first, above = rosinHalf;
+		for (int i = 0; i < HEAT_LAYERS; i++) {
+			heatCap[from + i] = density * specific * d / dt;
+			heatUp[from + i] = 1.0 / (above + 0.5 * d / conductivity);
+			above = 0.5 * d / conductivity;
+			if (i == HEAT_LAYERS - 1)
+				*toRoom = 1.0 / above;
+			d *= growth;
+		}
+		// THE ELIMINATION FROM THE DEEPEST LAYER UP: T_i = alpha_i + beta_i T_(i-1), beta and the
+		// diagonal fixed by the capacities and conductances; alpha follows the temperatures, per step.
+		for (int i = HEAT_LAYERS - 1; i >= 0; i--) {
+			const int k = from + i;
+			double diag = heatCap[k] + heatUp[k];
+			if (i == HEAT_LAYERS - 1)
+				diag += *toRoom;
+			else
+				diag += heatUp[k + 1] * (1.0 - heatBeta[k + 1]);
+			heatDiag[k] = diag;
+			heatBeta[k] = heatUp[k] / diag;
+		}
+	};
+	stack(1, t.stringDensity, t.stringHeat, t.stringConductivity, &toRoomString);
+	stack(1 + HEAT_LAYERS, t.bowDensity, t.bowHeat, t.bowConductivity, &toRoomBow);
+	convectPerSpeed = (2.0 / 3.14159265358979) * rosinCap / a;
+	heatPerWork = 1.0 / (3.14159265358979 * a * a);
+
+	// ONE STEP OF COOLING AS A MATRIX, column by column: each node warmed by a kelvin alone, stepped.
+	// Then its powers of two by squaring.
+	const int N = HEAT_NODES;
+	std::vector<double>* powers = new std::vector<double>((size_t) (HEAT_POWERS * N * N), 0.0);
+	double kept[HEAT_NODES];
+	for (int i = 0; i < N; i++)
+		kept[i] = heat[i];
+	for (int j = 0; j < N; j++) {
+		for (int i = 0; i < N; i++)
+			heat[i] = (i == j) ? 1.0 : 0.0;
+		stepHeat(0.0, 0.0, 0.0);
+		for (int i = 0; i < N; i++)
+			(*powers)[(size_t) (i * N + j)] = heat[i];
+	}
+	for (int i = 0; i < N; i++)
+		heat[i] = kept[i];
+	for (int p = 1; p < HEAT_POWERS; p++) {
+		const double* a2 = &(*powers)[(size_t) ((p - 1) * N * N)];
+		double* to = &(*powers)[(size_t) (p * N * N)];
+		for (int i = 0; i < N; i++)
+			for (int j = 0; j < N; j++) {
+				double sum = 0.0;
+				for (int k = 0; k < N; k++)
+					sum += a2[i * N + k] * a2[k * N + j];
+				to[i * N + j] = sum;
+			}
+	}
+	heatPowers.reset(powers);
+}
+
+
+void BowedString::catchUpHeat() const {
+	if (heatIdle <= 0 || !heatPowers)
+		return;
+	const int N = HEAT_NODES;
+	double v[HEAT_NODES], w[HEAT_NODES];
+	for (int i = 0; i < N; i++)
+		v[i] = heat[i];
+	for (int p = 0; p < HEAT_POWERS && (heatIdle >> p) != 0; p++) {
+		if (!((heatIdle >> p) & 1))
+			continue;
+		const double* m = &(*heatPowers)[(size_t) (p * N * N)];
+		for (int i = 0; i < N; i++) {
+			double sum = 0.0;
+			for (int k = 0; k < N; k++)
+				sum += m[i * N + k] * v[k];
+			w[i] = sum;
+		}
+		for (int i = 0; i < N; i++)
+			v[i] = w[i];
+	}
+	for (int i = 0; i < N; i++)
+		heat[i] = v[i];
+	heatIdle = 0;
+}
+
+
+/** ONE STEP OF BACKWARD EULER through the contact and both stacks: `input` watts a square metre into
+the contact, and `convection` watts a square metre a kelvin carried out with the rosin. Unconditionally
+stable, so the thinnest layers, which settle in less than a sample, cost nothing to keep.
+
+THE BOW MOVES PAST THE CONTACT. While the string slides, the hair under it slides along, so the bow's
+side of the contact is fresh material arriving at the sliding speed: the share `renew` of each of the
+bow's layers is replaced by hair at the room's temperature before the step. The string's side stays
+the same string, and keeps its heat. Woodhouse's model has this in its Green's function for the moving
+surface; without it a stationary bow soaks up the heat until, at a player's bow speeds, the rosin is
+hot throughout and the bow only slides. */
+void BowedString::stepHeat(double input, double convection, double renew) {
+	if (renew > 0.0) {
+		const double keep = 1.0 - std::fmin(1.0, renew);
+		for (int i = 0; i < HEAT_LAYERS; i++)
+			heat[1 + HEAT_LAYERS + i] *= keep;
+	}
+	double alpha[1 + 2 * HEAT_LAYERS];
+	for (int from : {1, 1 + HEAT_LAYERS}) {
+		for (int i = HEAT_LAYERS - 1; i >= 0; i--) {
+			const int k = from + i;
+			double rhs = heatCap[k] * heat[k];
+			if (i < HEAT_LAYERS - 1)
+				rhs += heatUp[k + 1] * alpha[k + 1];
+			alpha[k] = rhs / heatDiag[k];
+		}
+	}
+	const int s1 = 1, b1 = 1 + HEAT_LAYERS;
+	const double diag = heatCap[0] + convection + heatUp[s1] * (1.0 - heatBeta[s1])
+		+ heatUp[b1] * (1.0 - heatBeta[b1]);
+	const double rhs = heatCap[0] * heat[0] + input + heatUp[s1] * alpha[s1] + heatUp[b1] * alpha[b1];
+	heat[0] = rhs / diag;
+	for (int from : {1, 1 + HEAT_LAYERS}) {
+		double above = heat[0];
+		for (int i = 0; i < HEAT_LAYERS; i++) {
+			const int k = from + i;
+			heat[k] = alpha[k] + heatBeta[k] * above;
+			above = heat[k];
+		}
+	}
+}
+
+
+/** THE BOW ON ROSIN THAT HEATS, solved for one sample.
+
+The friction's limit this sample is the coefficient the contact's temperature gives, times the bow
+force: it is known before the string is, so the bow either holds the string or it does not, and there
+is one answer — Woodhouse's figure 5, the Friedlander construction with a step for a curve, with no
+third answer and no hysteresis rule: the memory is the temperature. STUCK, the string moves with the
+bow and the friction is whatever that takes, within the limit; SLIPPING, the friction is the limit,
+against the slide. Then the heat: the friction's work into the contact while it slides, and the
+temperatures moved on a sample. */
+float BowedString::thermalJunction(float unbowed) {
+	if (heatDirty)
+		buildHeat();
+	const Thermal& t = thermalSet;
+	// NO BOW: the contact only cools, and that is owed rather than stepped (see heatIdle).
+	if (bowForce <= 0.f) {
+		stuck = false;
+		slide = 0.f;
+		atBowVelocity = unbowed;
+		atBowForce = 0.f;
+		heatIdle++;
+		return 0.f;
+	}
+	catchUpHeat();
+	const double mu = (double) t.cold - ((double) t.cold - (double) t.hot)
+		* std::fmin(1.0, std::fmax(0.0, heat[0] / (double) t.hotAt));
+	const double zt = (double) z * (double) twistRatio;
+	const double zBow = (twistRatio > 0.f) ? (double) z * zt / ((double) z + zt) : (double) z;
+	const double T = 1.0 / (double) rate;
+	const double k = (double) bowForce / (2.0 * zBow);
+	const double u = (double) bowSpeed - (double) unbowed;
+	double x = 0.0;
+	if (std::fabs(u) <= k * mu) {
+		stuck = true;
+	}
+	else {
+		stuck = false;
+		x = u - (u > 0.0 ? 1.0 : -1.0) * k * mu;
+	}
+	slide = (float) x;
+	const double f = (u - x) * 2.0 * zBow;
+	// The contact grows with the force, its radius as the square root of it, so the friction's work
+	// a square metre does not depend on the force, and the convection, through a narrower contact at
+	// a lighter bow, does.
+	const double ax = std::fabs(x);
+	const double scale = std::sqrt(std::fmax(0.05, (double) bowForce));
+	const double width = 2.0 * (double) t.contactRadius * scale;
+	stepHeat(mu * ax * heatPerWork, convectPerSpeed * ax / scale, ax * T / width);
+	const float added = (float) (f / (2.0 * zBow));
+	atBowVelocity = unbowed + added;
+	atBowForce = (float) f;
+	return added;
+}
+
+
+// ---- the rosin as it is: thermal elasto-plastic friction ---------------------------------------
+
+/** THE SOFTENING AT A TEMPERATURE, y(tau): one at the room's, falling towards `softest` around the
+glass transition (their equation 30). */
+double BowedString::softening(double tau) const {
+	const Rosin& p = rosinSet;
+	const double x = std::pow(std::fmax(0.0, tau) / (double) p.glass, (double) p.steepness);
+	return (1.0 + (double) p.softest * x) / (1.0 + x);
+}
+
+
+void BowedString::setRosin(const Rosin& r) {
+	Rosin p = r;
+	p.muStatic = std::fmax(0.01f, r.muStatic);
+	p.muSliding = std::fmax(0.f, std::fmin(p.muStatic, r.muSliding));
+	p.sigma0 = std::fmax(1.f, r.sigma0);
+	p.glass = std::fmax(1e-3f, r.glass);
+	p.softest = std::fmax(0.01f, std::fmin(1.f, r.softest));
+	p.steepness = std::fmax(0.1f, r.steepness);
+	p.breakaway = std::fmax(0.f, std::fmin(0.99f, r.breakaway));
+	p.heatCapacity = std::fmax(1e-12f, r.heatCapacity);
+	p.hairWidth = std::fmax(1e-4f, r.hairWidth);
+	rosinSet = p;
+	// THE STRIBECK CURVE FROM THE STEADY HEAT BALANCE. Sliding steadily at speed v under a force F a
+	// metre, the contact settles where the heat in, mu_ss(tau) v, equals the heat out,
+	// (b sqrt(v / F) + c) tau (their equation 28 with y mu_str = mu_ss); the difference rises with tau,
+	// so there is one such tau, found by halving. The sliding coefficient is then mu_ss / y there
+	// (equation 32): what the rosin would give at the speed if it were still at the temperature the
+	// speed brings it to. Above the steady curve, by the softening.
+	auto table = std::make_shared<StribeckTable>();
+	const double ms = p.muStatic, md = p.muSliding, ya = p.softest, xi = p.steepness, tg = p.glass;
+	auto steady = [&](double tau) {
+		const double x = std::pow(tau / tg, xi);
+		return (ms + md * ya * x) / (1.0 + x);
+	};
+	for (int f = 0; f < StribeckTable::FORCES; f++) {
+		const double perMetre = std::pow(10.0, table->lowForce
+			+ (table->highForce - table->lowForce) * f / (StribeckTable::FORCES - 1));
+		for (int v = 0; v < StribeckTable::SPEEDS; v++) {
+			const double speed = std::pow(10.0, table->lowSpeed
+				+ (table->highSpeed - table->lowSpeed) * v / (StribeckTable::SPEEDS - 1));
+			const double out = (double) p.heatToMovingHair * std::sqrt(speed / perMetre) + (double) p.heatAway;
+			double lo = 0.0, hi = 1.0;
+			while (out * hi < steady(hi) * speed && hi < 1e6)
+				hi *= 2.0;
+			for (int i = 0; i < 60; i++) {
+				const double mid = 0.5 * (lo + hi);
+				(out * mid < steady(mid) * speed ? lo : hi) = mid;
+			}
+			const double tau = 0.5 * (lo + hi);
+			const double x = std::pow(tau / tg, xi);
+			table->mu[f * StribeckTable::SPEEDS + v] = (float) ((ms + md * ya * x) / (1.0 + ya * x));
+		}
+	}
+	stribeck = table;
+	rosined = true;
+	thermal = false;
+	bristled = false;
+	bend = bendRate = hairLag = hairSpeed = 0.0;
+	rosinHeat = 0.0;
+}
+
+
+/** The sliding coefficient at a speed and a force a metre of hair, from the table: bilinear in the
+logarithms, the ends held. */
+double BowedString::stribeckAt(double speed, double perMetre) const {
+	const StribeckTable& t = *stribeck;
+	const double ls = std::log10(std::fmax(1e-12, speed)), lf = std::log10(std::fmax(1e-12, perMetre));
+	const double sv = std::fmin((double) (StribeckTable::SPEEDS - 1), std::fmax(0.0,
+		(ls - t.lowSpeed) / (t.highSpeed - t.lowSpeed) * (StribeckTable::SPEEDS - 1)));
+	const double sf = std::fmin((double) (StribeckTable::FORCES - 1), std::fmax(0.0,
+		(lf - t.lowForce) / (t.highForce - t.lowForce) * (StribeckTable::FORCES - 1)));
+	const int v0 = std::min(StribeckTable::SPEEDS - 2, (int) sv), f0 = std::min(StribeckTable::FORCES - 2, (int) sf);
+	const double a = sv - v0, b = sf - f0;
+	const float* row0 = t.mu + f0 * StribeckTable::SPEEDS;
+	const float* row1 = row0 + StribeckTable::SPEEDS;
+	return (1.0 - b) * ((1.0 - a) * row0[v0] + a * row0[v0 + 1]) + b * ((1.0 - a) * row1[v0] + a * row1[v0 + 1]);
+}
+
+
+/** THE BOW ON ROSIN THAT SHEARS AND SOFTENS, solved for one sample.
+
+The shear's rate r is the one unknown, as in bristleJunction: a step of backward Euler sets the shear,
+z = z' + T r; the friction is the bow force times sigma0 z; the string under the bow moves at the
+velocity that friction leaves it, and the hair, a mass on a spring and a damper behind the stick,
+gives under the same friction, so the sliding speed v between hair and string is a straight line in r.
+What is left is r = dz/dt(v, z) — their equation 9: the shear follows the slide while the rosin only
+shears, stops growing once it has reached the steady shear for the speed and the temperature, and in
+between some of the contact is slipping — solved by Newton's method kept inside a bracket. The
+temperature is the last sample's while the shear is found, and then moves on a sample by backward Euler
+with the heat of the sliding that was not shear: the friction times v less r. */
+float BowedString::rosinJunction(float unbowed) {
+	const Rosin& p = rosinSet;
+	const double T = 1.0 / (double) rate;
+	const double zt = (double) z * (double) twistRatio;
+	const double zBow = (twistRatio > 0.f) ? (double) z * zt / ((double) z + zt) : (double) z;
+	if (bowForce <= 0.f) {
+		stuck = false;
+		slide = 0.f;
+		bend = bendRate = hairLag = hairSpeed = 0.0;
+		// Off the string the contact only cools.
+		rosinHeat *= (double) p.heatCapacity / ((double) p.heatCapacity + T * (double) p.heatAway);
+		atBowVelocity = unbowed;
+		atBowForce = 0.f;
+		return 0.f;
+	}
+	const double fb = (double) bowForce;
+	const double perMetre = fb / (double) p.hairWidth;
+	const double s0 = fb * (double) p.sigma0;                  // friction a metre of shear, N/m
+	// THE HAIR over the ribbon's width: lag q behind the stick, moving at w, M dw/dt = f - K q - D w.
+	// By backward Euler the lag's speed this sample is (M w / T - K q + f) / (M / T + D + K T): the
+	// hair under the string slows by that, a second admittance in series with the string's.
+	const double M = (double) p.hairMass * p.hairWidth, K = (double) p.hairStiffness * p.hairWidth;
+	const double D = (double) p.hairDamping * p.hairWidth;
+	const double hairAdmit = 1.0 / (M / T + D + K * T);
+	const double hairFree = (M * hairSpeed / T - K * hairLag) * hairAdmit;
+	const double u = (double) bowSpeed - (double) unbowed - hairFree;
+	const double admit = 1.0 / (2.0 * zBow) + hairAdmit;
+	// v = vt + k1 r, z = bend + T r.
+	const double vt = u - admit * s0 * bend;
+	const double k1 = -admit * s0 * T;
+	const double y = softening(rosinHeat);
+	const double zBreak = (double) p.breakaway * y * (double) p.muSliding / (double) p.sigma0;
+	auto shearRate = [&](double v, double zz) {
+		if (v == 0.0)
+			return 0.0;
+		if ((v > 0.0) != (zz > 0.0))
+			return v;
+		const double steady = y * stribeckAt(std::fabs(v), perMetre) / (double) p.sigma0;
+		const double az = std::fabs(zz);
+		double alpha;
+		if (az <= zBreak)
+			alpha = 0.0;
+		else if (az >= steady)
+			alpha = 1.0;
+		else
+			alpha = 0.5 * (1.0 + std::sin(3.14159265358979 * (az - 0.5 * (steady + zBreak)) / (steady - zBreak)));
+		return v * (1.0 - alpha * az / steady);
+	};
+	auto h = [&](double r) { return shearRate(vt + k1 * r, bend + T * r) - r; };
+
+	// THE BRACKET, as bristleJunction's: far out either way shear and slide have opposite signs and h
+	// is the slide less r, so it runs from plus infinity to minus infinity as r rises.
+	double lo, hi;
+	const double h0 = h(0.0);
+	if (h0 == 0.0) {
+		lo = hi = 0.0;
+	}
+	else {
+		double step = std::fmax(1e-9, std::fabs(vt));
+		const double dir = (h0 > 0.0) ? 1.0 : -1.0;
+		double far = dir * step;
+		for (int i = 0; i < 80 && dir * h(far) > 0.0; i++)
+			far *= 2.0;
+		lo = std::fmin(0.0, far);
+		hi = std::fmax(0.0, far);
+	}
+	double r = std::fmin(hi, std::fmax(lo, bendRate));
+	for (int i = 0; i < 60 && hi - lo > 1e-12; i++) {
+		const double hr = h(r);
+		if (hr == 0.0)
+			break;
+		if (hr > 0.0)
+			lo = r;
+		else
+			hi = r;
+		const double d = 1e-7 * std::fmax(1e-6, std::fabs(r)) + 1e-12;
+		const double slope = (h(r + d) - hr) / d;
+		double next = (slope < 0.0) ? r - hr / slope : 0.5 * (lo + hi);
+		if (!(next > lo && next < hi))
+			next = 0.5 * (lo + hi);
+		if (std::fabs(next - r) < 1e-13)
+			break;
+		r = next;
+	}
+	const double v = vt + k1 * r;
+	bendRate = r;
+	bend += T * r;
+	const double f = s0 * bend;
+	hairSpeed = (M * hairSpeed / T - K * hairLag + f) * hairAdmit;
+	hairLag += T * hairSpeed;
+	// THE HEAT: the friction's work on the part of the sliding that is not shear, per newton of bow
+	// force, into the contact; out through the moving hair and steadily (their equation 22 over F).
+	const double sliding = v - r;
+	const double in = std::fmax(0.0, (double) p.sigma0 * bend * sliding);
+	const double out = (double) p.heatToMovingHair * std::sqrt(std::fabs(v) / perMetre) + (double) p.heatAway;
+	rosinHeat = ((double) p.heatCapacity * rosinHeat / T + in) / ((double) p.heatCapacity / T + out);
+	// STUCK, for a bench: sliding less than a hundredth of the bow's speed. Benches under this model
+	// count slips from the motion (heating), so this is only a hint.
+	stuck = std::fabs(sliding) <= 0.01 * std::fabs((double) bowSpeed) + 1e-5;
+	slide = (float) v;
+	const float added = (float) (f / (2.0 * zBow));
+	atBowVelocity = unbowed + added;
+	atBowForce = (float) f;
+	return added;
 }
 
 
@@ -715,7 +1142,11 @@ float BowedString::bristleJunction(float unbowed) {
 
 void BowedString::silence() {
 	stuck = false;
-	bend = bendRate = hairLag = 0.0;
+	bend = bendRate = hairLag = hairSpeed = 0.0;
+	rosinHeat = 0.0;
+	for (double& h : heat)
+		h = 0.0;
+	heatIdle = 0;
 	slide = 0.f;
 	atBowVelocity = atBowForce = 0.f;
 	for (int i = 0; i < MAX_DELAY; i++)
@@ -813,7 +1244,8 @@ float BowedString::finishWithBridge(float bridgeVelocity) {
 	if (excitePos < exciteLength)
 		push = excite[excitePos++];
 	const float unbowed = fromBridge + fromNut + tFromBridge + tFromNut;
-	const float added = bristled ? bristleJunction(unbowed) : bowJunction(unbowed);
+	const float added = bristled ? bristleJunction(unbowed)
+		: (rosined ? rosinJunction(unbowed) : (thermal ? thermalJunction(unbowed) : bowJunction(unbowed)));
 	const float sideways = twisting ? twistRatio / (1.f + twistRatio) : 1.f;
 	push += added * sideways;
 	bowToBridge[write] = fromNut + push;
