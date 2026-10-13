@@ -128,6 +128,9 @@ a real rest between them is a break the composer asked for. Fifty milliseconds i
 overlap any renderer adds and far shorter than the shortest rest anybody writes. */
 static const float LEGATO_GAP = 0.05f;
 
+/** How many announced notes a row remembers the handles of, until they are played. */
+static const int ANNOUNCED_MOST = 64;
+
 
 /** A song as it is played, with the rows' choice of track. Whole, so that swapping to a new one
 is one store. */
@@ -227,6 +230,21 @@ struct SongModule : Module, NoteSource {
 	double quarters = 0.0;
 	/** How far each row has got through its track's notes. */
 	size_t cursor[ROWS] = {};
+	/** THE NOTES ANNOUNCED AND NOT YET PLAYED, a row's: the next to announce, and the handle each
+	was announced with, which its ON then carries, so the far end knows the note when it comes. */
+	size_t aheadCursor[ROWS] = {};
+	struct Announced {
+		size_t index = 0;
+		int64_t handle = 0;
+	};
+	Announced announced[ROWS][ANNOUNCED_MOST];
+	int announcedFirst[ROWS] = {}, announcedCount[ROWS] = {};
+	/** Rows whose place was found again this sample, whose announcements are void. */
+	bool rowMoved[ROWS] = {};
+	/** Everything announced is void: the music went back to the top. */
+	std::atomic<bool> withdrawAll{false};
+	/** The tempo the announcements were made at, as the control's share of the song's own. */
+	double announcedScale = 0.0;
 	int barIndex = 0;
 	/** WHICH PEDAL MARK THE MUSIC HAS PASSED, or -1 before the first one. */
 	int pedalIndex = -1;
@@ -264,6 +282,11 @@ struct SongModule : Module, NoteSource {
 	dsp::SchmittTrigger clockTrigger, resetTrigger, rewindTrigger;
 	float sinceLastPulse = 0.f;
 	float quarterSeconds = 0.5f;
+	/** The tempo control as a share of the song's own tempo. */
+	double tempoScale = 1.0;
+	/** Where a passage being looped ends, in quarters, after which nothing is announced: the music
+	goes back to the passage's start instead. */
+	double loopEnds = 1e300;
 	bool awaitPulse = false;
 	bool wasRunning = false;
 	float beatLamp = 0.f;
@@ -496,6 +519,7 @@ struct SongModule : Module, NoteSource {
 		pedalIndex = -1;
 		for (int r = 0; r < ROWS; r++)
 			cursor[r] = 0;
+		withdrawAll.store(true);
 	}
 
 	// ---- loading a song ------------------------------------------------------------------------
@@ -660,6 +684,7 @@ struct SongModule : Module, NoteSource {
 		// THE STYLE ITS ORNAMENTS ARE PLAYED IN, guessed from everything the file says about who
 		// wrote it and from its own name, unless the menu has said otherwise. Before the timeline,
 		// which is where the ornaments are written out. See OrnamentStyle.hpp.
+		std::string composerShown;
 		if (wasMusicXML) {
 			std::vector<StyleClue> clues = next.song.clues;
 			std::string name = path;
@@ -672,6 +697,22 @@ struct SongModule : Module, NoteSource {
 			if (!name.empty())
 				clues.push_back(StyleClue{name, CLUE_FILE});
 			next.styleGuess = guessStyle(clues, next.song.chordSymbols);
+			// THE COMPOSER ITS OWN NAME GIVES, where that disagrees with its composer field. Files are
+			// shared with that field filled in carelessly: a Mozart sonata downloaded from MuseScore
+			// says it is "Sonata IX" by "Bethoveen", and its name, piano-sonata-no11-in-a-major-k331
+			// ...-mozart, says who wrote it. A composer the table knows in the name, and not the same
+			// one in the field, is the one shown; the field is otherwise shown as it is spelt.
+			if (!name.empty()) {
+				std::vector<StyleClue> fromName, fromField;
+				fromName.push_back(StyleClue{name, CLUE_FILE});
+				for (const StyleClue& c : next.song.clues)
+					if (c.kind == CLUE_COMPOSER)
+						fromField.push_back(c);
+				const StyleGuess byName = guessStyle(fromName, 0);
+				const StyleGuess byField = guessStyle(fromField, 0);
+				if (!byName.composer.empty() && byName.composer != byField.composer)
+					composerShown = byName.composer;
+			}
 			next.hasStyle = true;
 			const int chosen = styleChoice.load();
 			next.song.ornamentStyle = (chosen >= 0 && chosen < STYLE_COUNT) ? chosen
@@ -698,8 +739,10 @@ struct SongModule : Module, NoteSource {
 		// what somebody typed to say what the song is, so it is a better answer than a word
 		// saying there is no answer.
 		next.title = next.song.title;
-		if (!next.title.empty() && !next.song.artist.empty())
-			next.title += " — " + next.song.artist;
+		if (composerShown.empty())
+			composerShown = next.song.artist;
+		if (!next.title.empty() && !composerShown.empty())
+			next.title += " — " + composerShown;
 		if (next.title.empty()) {
 			std::string name = path;
 			const size_t slash = name.find_last_of("/\\");
@@ -933,6 +976,128 @@ struct SongModule : Module, NoteSource {
 #endif
 	}
 
+	/** A NOTE AS ITS ON CARRIES IT, from the `i`th of track `t`, the bar it is written in being
+	`written`: everything but the moment, which is when it is pushed. Its handle is new. */
+	Event noteEvent(const Playing& L, int t, size_t i, const GpMasterBar& written, float cableGain) {
+		const std::vector<GpPlayedNote>& notes = L.line.tracks[(size_t) t];
+		const GpPlayedNote& n = notes[i];
+		Event e;
+		e.kind = Event::ON;
+		e.handle = mintHandle();
+		// Volts, an octave to the volt, with nought at middle C.
+		e.pitch = (float) (n.note.midi - 60) / 12.f;
+		e.level = math::clamp(n.dynamic * cableGain, 0.f, 1.f);
+		// The length at the tempo it is being played at, which is the clock's when one
+		// is patched and the file's when none is.
+		//
+		// AND A SWUNG NOTE KEEPS ITS WRITTEN END. Moving a start without its end is
+		// exactly what swing is: the first half of a divided beat grows and the second
+		// shrinks, which is the whole shape of it. Measured to where the note was
+		// written to stop rather than to where it now starts, so a late off-beat does
+		// not run over the next beat. See swung.
+		const double ends = swung(n.startQuarters + n.lengthQuarters, written);
+		const double lasts = ends - swung(n.startQuarters, written);
+		e.duration = math::clamp((float) std::fmax(0.02, lasts) * quarterSeconds,
+			MIN_SECONDS, MAX_SECONDS);
+		describe(e, n, L.song.tracks[(size_t) t].letRingThroughout);
+		// A SLUR ONLY MEANS LEGATO WHERE THERE IS SOMETHING TO BE LEGATO TO. The mark
+		// says a note runs into the one after it, and a renderer holds it on a little
+		// past its end for that reason — but where the next note in this part does not
+		// begin until well after this one has stopped, the sound was meant to break and
+		// holding it over would smear a rest. The engraver's slur is believed about
+		// phrasing; about silence, the notes themselves are.
+		if ((e.technique & Event::SLURRED) && i + 1 < notes.size()) {
+			const double end = n.startQuarters + n.lengthQuarters;
+			const double gap = notes[i + 1].startQuarters - end;
+			if (gap * (double) quarterSeconds > LEGATO_GAP)
+				e.technique &= ~(uint32_t) Event::SLURRED;
+		}
+		return e;
+	}
+
+	/** The bar of the score a played bar is, for its swing. */
+	const GpMasterBar& writtenOf(const Playing& L, int playedBar) const {
+		const int b = std::max(0, std::min(playedBar, (int) L.line.bars.size() - 1));
+		return L.song.masterBars[(size_t) std::min(L.line.bars[(size_t) b].written,
+			(int) L.song.masterBars.size() - 1)];
+	}
+
+	/** THE NOTES COMING, announced MPX_ANNOUNCE_AHEAD before they sound, each row's from a cursor of its
+	own ahead of the playing one; and withdrawn when they will not come as announced. See Coming in
+	NoteBus.hpp.
+
+	THE MOMENT IS THE TIMELINE'S: the note's swung place taken through the song's tempo map and the
+	tempo control to seconds from where the music is now, so at the song's own tempo the frame is the
+	one its ON will arrive on. */
+	void announce(const Playing& L, bool moving) {
+		const bool all = withdrawAll.exchange(false);
+		const bool tempoMoved = std::fabs(tempoScale - announcedScale) > 1e-4 * tempoScale;
+		announcedScale = tempoScale;
+		const double now = gpSecondsAt(L.line, quarters);
+		const int64_t frame = APP->engine->getFrame();
+		const double rate = APP->engine->getSampleRate();
+		for (int r = 0; r < ROWS; r++) {
+			const bool moved = rowMoved[r] || all;
+			rowMoved[r] = false;
+			const int t = L.track[r];
+			const bool muted = params[P_MUTE + r].getValue() > 0.5f;
+			if (slot[r] < 0 || t < 0 || t >= (int) L.line.tracks.size())
+				continue;
+			// VOID: everything announced and not played will not come as it was announced.
+			if (moved || tempoMoved || !moving || muted) {
+				if (announcedCount[r] > 0)
+					busWithdraw(slot[r]);
+				announcedCount[r] = 0;
+				announcedFirst[r] = 0;
+				aheadCursor[r] = cursor[r];
+			}
+			if (!moving || muted)
+				continue;
+			if (aheadCursor[r] < cursor[r])
+				aheadCursor[r] = cursor[r];
+			const std::vector<GpPlayedNote>& notes = L.line.tracks[(size_t) t];
+#if CHART_AUDIO
+			const float cableGain = outputs[O_TRACK + r].isConnected() ? params[P_GAIN + r].getValue() : 1.f;
+#else
+			const float cableGain = 1.f;
+#endif
+			while (aheadCursor[r] < notes.size() && announcedCount[r] < ANNOUNCED_MOST) {
+				const GpPlayedNote& n = notes[aheadCursor[r]];
+				const GpMasterBar& written = writtenOf(L, n.bar);
+				const double starts = swung(n.startQuarters, written);
+				if (starts >= loopEnds)
+					break;
+				const double until = (gpSecondsAt(L.line, starts) - now) / tempoScale;
+				if (until > MPX_ANNOUNCE_AHEAD)
+					break;
+				Coming c;
+				c.kind = Coming::NOTE;
+				c.note = noteEvent(L, t, aheadCursor[r], written, cableGain);
+				c.frame = frame + (int64_t) std::llround(std::fmax(0.0, until) * rate);
+				// THE STROKE'S LENGTH: on through every note slurred into the next that follows
+				// without a gap, to the end of the last of them.
+				if (c.note.technique & Event::SLURRED) {
+					size_t k = aheadCursor[r];
+					while (k + 1 < notes.size() && notes[k].note.slurred
+							&& (notes[k + 1].startQuarters - (notes[k].startQuarters + notes[k].lengthQuarters))
+								* (double) quarterSeconds < LEGATO_GAP)
+						k++;
+					const double ends = notes[k].startQuarters + notes[k].lengthQuarters;
+					c.slurSeconds = (float) ((gpSecondsAt(L.line, ends) - gpSecondsAt(L.line, n.startQuarters))
+						/ tempoScale);
+				}
+				if (n.bar >= 0 && n.bar < (int) L.line.bars.size())
+					c.downbeat = std::fabs(L.line.bars[(size_t) n.bar].startQuarters - n.startQuarters) < 1e-6;
+				busAnnounce(slot[r], c);
+				const int at = (announcedFirst[r] + announcedCount[r]) % ANNOUNCED_MOST;
+				announced[r][at].index = aheadCursor[r];
+				announced[r][at].handle = c.note.handle;
+				announcedCount[r]++;
+				aheadCursor[r]++;
+			}
+		}
+	}
+
 	void playSong(const ProcessArgs& args) {
 		// A note cable carries no voltage: it is a real cable so that Rack owns it, and the
 		// notes travel through the bus.
@@ -980,6 +1145,7 @@ struct SongModule : Module, NoteSource {
 		{
 			const float wanted = params[P_TEMPO].getValue();
 			const float scale = (L.openingBpm > 0.f && wanted > 0.f) ? wanted / L.openingBpm : 1.f;
+			tempoScale = scale;
 			quarterSeconds = (float) gpSecondsPerQuarter(L.line, quarters) / scale;
 			awaitPulse = false;
 		}
@@ -1060,7 +1226,9 @@ struct SongModule : Module, NoteSource {
 			int from = -1, to = -1;
 			bool seek = false;
 			double at = -1.0, end = -1.0;
+			loopEnds = 1e300;
 			if (scoreFollowLoop(id, from, to, &seek) && loopRange(L, from, to, at, end)) {
+				loopEnds = end;
 				if (seek || quarters < at || quarters >= end) {
 					quarters = at;
 					barIndex = 0;
@@ -1173,6 +1341,15 @@ struct SongModule : Module, NoteSource {
 					for (int k = 0; k < (int) p.stringCount; k++)
 						p.tuning[k] = (uint8_t) math::clamp(track.tuning[(size_t) k], 0, 127);
 					p.setName(track.name);
+					if (t < (int) L.line.tracks.size()) {
+						for (const GpPlayedNote& n : L.line.tracks[(size_t) t]) {
+							const int m = math::clamp(n.note.midi, 0, 127);
+							if (p.lowest < 0 || m < p.lowest)
+								p.lowest = (int16_t) m;
+							if (m > p.highest)
+								p.highest = (int16_t) m;
+						}
+					}
 				}
 				p.change = partChange;
 				busPublishInstrument(slot[r], p);
@@ -1185,6 +1362,7 @@ struct SongModule : Module, NoteSource {
 		for (int r = 0; r < ROWS; r++) {
 			if (!reseek[r].exchange(false))
 				continue;
+			rowMoved[r] = true;
 			const int t = L.track[r];
 			cursor[r] = 0;
 			if (t >= 0 && t < (int) L.line.tracks.size()) {
@@ -1204,6 +1382,8 @@ struct SongModule : Module, NoteSource {
 			if (bassMidi >= 0 && quarters - bassWhen > 2.0)
 				bassMidi = -1;      // Two beats with nothing lower: the bass has moved on.
 		}
+
+		announce(L, running && !awaitPulse);
 
 		bool struck = false;
 		for (int r = 0; r < ROWS; r++) {
@@ -1258,36 +1438,16 @@ struct SongModule : Module, NoteSource {
 
 				if (muted)
 					continue;
-				Event e;
-				e.kind = Event::ON;
-				e.handle = mintHandle();
-				// Volts, an octave to the volt, with nought at middle C.
-				e.pitch = (float) (n.note.midi - 60) / 12.f;
-				e.level = math::clamp(n.dynamic * cableGain, 0.f, 1.f);
-				// The length at the tempo it is being played at, which is the clock's when one
-				// is patched and the file's when none is.
-				//
-				// AND A SWUNG NOTE KEEPS ITS WRITTEN END. Moving a start without its end is
-				// exactly what swing is: the first half of a divided beat grows and the second
-				// shrinks, which is the whole shape of it. Measured to where the note was
-				// written to stop rather than to where it now starts, so a late off-beat does
-				// not run over the next beat. See swung.
-				const double ends = swung(n.startQuarters + n.lengthQuarters, written);
-				const double lasts = ends - swung(n.startQuarters, written);
-				e.duration = math::clamp((float) std::fmax(0.02, lasts) * quarterSeconds,
-					MIN_SECONDS, MAX_SECONDS);
-				describe(e, n, L.song.tracks[(size_t) t].letRingThroughout);
-				// A SLUR ONLY MEANS LEGATO WHERE THERE IS SOMETHING TO BE LEGATO TO. The mark
-				// says a note runs into the one after it, and a renderer holds it on a little
-				// past its end for that reason — but where the next note in this part does not
-				// begin until well after this one has stopped, the sound was meant to break and
-				// holding it over would smear a rest. The engraver's slur is believed about
-				// phrasing; about silence, the notes themselves are.
-				if ((e.technique & Event::SLURRED) && cursor[r] < notes.size()) {
-					const double ends = n.startQuarters + n.lengthQuarters;
-					const double gap = notes[cursor[r]].startQuarters - ends;
-					if (gap * (double) quarterSeconds > LEGATO_GAP)
-						e.technique &= ~(uint32_t) Event::SLURRED;
+				Event e = noteEvent(L, t, cursor[r] - 1, written, cableGain);
+				// UNDER THE NAME IT WAS ANNOUNCED WITH, where it was announced.
+				while (announcedCount[r] > 0) {
+					const Announced& a = announced[r][announcedFirst[r]];
+					if (a.index > cursor[r] - 1)
+						break;
+					if (a.index == cursor[r] - 1)
+						e.handle = a.handle;
+					announcedFirst[r] = (announcedFirst[r] + 1) % ANNOUNCED_MOST;
+					announcedCount[r]--;
 				}
 				busPush(slot[r], e);
 				struck = true;

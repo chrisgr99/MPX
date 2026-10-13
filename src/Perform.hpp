@@ -12,8 +12,10 @@ one string and leaves its neighbours alone, a string is monophonic because a rea
 ring ends when that string is played again rather than after some length. A note with no string —
 anything that is not a fretted instrument — gets a voice of its own.
 
-NOTHING IS KNOWN ABOUT THE FUTURE. In a patch the notes arrive as they happen, so a slide into a
-note cannot begin before the note does and a grace note cannot be squeezed in ahead of its beat.
+NOTHING IS KNOWN ABOUT THE FUTURE, here. The performer plays notes as they arrive — a score can
+announce its notes ahead on the cable (Coming in NoteBus.hpp), which the bowed strings need, but this
+does not read them — so a slide into a note cannot begin before the note does and a grace note
+cannot be squeezed in ahead of its beat.
 Both are handled where they arrive: a slide in reaches its pitch a few tens of milliseconds after
 the onset rather than before it, and a grace note is already a note of its own in the file with
 its own moment. The alternative is to delay everything by a fixed latency, which is worse than

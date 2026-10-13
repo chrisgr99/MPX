@@ -87,6 +87,23 @@ void busPush(int slot, const Event& e) {
 }
 
 
+void busAnnounce(int slot, const Coming& c) {
+	if (slot < 0 || slot >= MAX_BUSES)
+		return;
+	Bus& bus = gBuses[slot];
+	const uint32_t w = bus.comingWrite.load(std::memory_order_relaxed);
+	bus.coming[w % COMING_RING] = c;
+	bus.comingWrite.store(w + 1, std::memory_order_release);
+}
+
+
+void busWithdraw(int slot) {
+	Coming c;
+	c.kind = Coming::WITHDRAW;
+	busAnnounce(slot, c);
+}
+
+
 float busFlashVolts(int slot) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return 0.f;
@@ -247,6 +264,7 @@ void BusReader::add(int slot, uint32_t generation) {
 	link.slot = slot;
 	link.generation = generation;
 	link.read = gBuses[slot].write.load(std::memory_order_acquire);
+	link.comingRead = gBuses[slot].comingWrite.load(std::memory_order_acquire);
 }
 
 
@@ -359,6 +377,29 @@ bool BusReader::next(Event& e) {
 
 		e = bus.ring[link.read % BUS_RING];
 		link.read++;
+		return true;
+	}
+	return false;
+}
+
+
+bool BusReader::nextComing(Coming& c) {
+	for (int i = 0; i < count; i++) {
+		Link& link = links[i];
+		if (link.slot < 0 || link.slot >= MAX_BUSES)
+			continue;
+		Bus& bus = gBuses[link.slot];
+		if (!bus.claimed.load(std::memory_order_acquire))
+			continue;
+		if (bus.generation.load(std::memory_order_acquire) != link.generation)
+			continue;
+		const uint32_t w = bus.comingWrite.load(std::memory_order_acquire);
+		if (link.comingRead == w)
+			continue;
+		if (w - link.comingRead > (uint32_t) COMING_RING)
+			link.comingRead = w - COMING_RING;
+		c = bus.coming[link.comingRead % COMING_RING];
+		link.comingRead++;
 		return true;
 	}
 	return false;

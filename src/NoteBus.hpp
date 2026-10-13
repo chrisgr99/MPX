@@ -41,6 +41,13 @@ static const int MAX_BUSES = 64;
 same audio callback and the consumer drains completely every sample, so it cannot fall behind
 by more than one sample's worth of events. This is headroom, not a buffer. */
 static const int BUS_RING = 256;
+/** HOW FAR AHEAD A SOURCE THAT KNOWS ITS FUTURE ANNOUNCES EACH NOTE, seconds (see Coming). Long
+enough for a bowed string's player to rehearse the hardest starts on its own threads with time in
+hand: the violin's worst in the Fauré took two seconds of searching, and at half a second and at a
+second and a half its planner fell behind at the first two notes, a fifth of a second apart. */
+static constexpr double MPX_ANNOUNCE_AHEAD = 3.0;
+/** Announcements a bus holds: one a note, read every sample. */
+static const int COMING_RING = 128;
 
 /** WHAT A LEVEL OF ONE IS WORTH AT AN INSTRUMENT'S OUTPUT, as a peak in volts, with that module's
 volume control where it starts and one note sounding.
@@ -563,6 +570,10 @@ struct Instrument {
 	char name[24] = {};
 	/** Where the source places it, from -1 at the left to 1 at the right. */
 	float pan = 0.f;
+	/** THE PART'S COMPASS: its lowest and highest MIDI notes, or -1 where the source cannot say. A
+	bowed string runs as many times faster than the engine as its highest note needs, and that is
+	decided once, when the part is known, rather than discovered in the middle of a phrase. */
+	int16_t lowest = -1, highest = -1;
 	uint32_t change = 0;
 
 	void setName(const std::string& text) {
@@ -574,11 +585,46 @@ struct Instrument {
 };
 
 
+/** A NOTE ANNOUNCED BEFORE IT SOUNDS, by a source that knows its future.
+
+THE CABLE SAYS WHAT IS COMING, for an instrument that has to prepare. A bowed string's bow slows
+into a change before the note the change belongs to, and its player shares out the bow by how long
+the slur has to last and rehearses each start on a copy of the instrument, which takes longer than a
+sample. A source that knows its notes ahead — a score — announces each one some time before it
+sounds; the note itself still arrives at its moment as an ON event, exactly as it always has.
+
+ON A RING OF ITS OWN, beside the events and not among them, so a module that reads the cable today
+reads exactly what it read before and never sees an announcement unless it asks for one
+(BusReader::nextComing). And only from a source to what it is patched to: a module that changes
+notes on their way through does not pass announcements on, since what it announced would not be
+what it played.
+
+WITHDRAWN when what was announced will not happen — the transport stopped, the music sent to
+another bar, the tempo moved: everything announced and not yet played is void, and the source
+announces again from where the music now is. See docs/bowed-strings.md, phase 8. */
+struct Coming {
+	enum Kind : uint8_t { NOTE, WITHDRAW };
+	uint8_t kind = NOTE;
+	/** The note exactly as its ON will carry it: the same handle, pitch, level, length and
+	technique. */
+	Event note;
+	/** THE ENGINE FRAME IT WILL ARRIVE ON, as APP->engine->getFrame() counts. */
+	int64_t frame = 0;
+	/** HOW LONG THE BOW STROKE IT BEGINS OR CONTINUES HAS TO LAST: from this note's start to the end
+	of the last note under its slur, seconds; below nought where it is under no slur. */
+	float slurSeconds = -1.f;
+	/** Whether it falls on the first beat of a bar, where a stroke from the string begins down. */
+	bool downbeat = false;
+};
+
 struct Bus {
 	std::atomic<bool> claimed{false};
 	std::atomic<uint32_t> generation{0};
 	std::atomic<uint32_t> write{0};
 	Event ring[BUS_RING];
+	/** THE ANNOUNCEMENTS, one writer and a cursor in each reader, as the events. */
+	std::atomic<uint32_t> comingWrite{0};
+	Coming coming[COMING_RING];
 	/** The engine frame the last note started on, for busFlashVolts. */
 	std::atomic<int64_t> lastOn{-1000000000};
 
@@ -630,6 +676,10 @@ void busRelease(int slot);
 
 /** Appends an event. Audio thread, one writer per bus. */
 void busPush(int slot, const Event& e);
+/** ANNOUNCES A NOTE before it sounds, and withdraws everything announced and not yet played. Audio
+thread, the bus's one writer. See Coming. */
+void busAnnounce(int slot, const Coming& c);
+void busWithdraw(int slot);
 /** WHAT AN MPX OUTPUT CARRIES AS A VOLTAGE: ten volts for five milliseconds whenever a note
 starts on its bus, and nothing otherwise. The notes travel through the bus, not the cable, so
 the voltage is free to say something — and Rack lights every plug by its cable's voltage, so
@@ -671,6 +721,7 @@ struct BusReader {
 		int slot = -1;
 		uint32_t generation = 0;
 		uint32_t read = 0;
+		uint32_t comingRead = 0;
 	};
 	Link links[MAX_UPSTREAM];
 	int count = 0;
@@ -689,6 +740,9 @@ struct BusReader {
 
 	/** Takes the next event from any upstream. Audio thread. */
 	bool next(Event& e);
+	/** TAKES THE NEXT ANNOUNCEMENT from any upstream, for a module that prepares its notes. One that
+	does not never calls it, and its announcements go unread. Audio thread. */
+	bool nextComing(Coming& c);
 	/** The harmony from the first upstream that has one. */
 	bool harmony(Harmony& out) const;
 	/** The voicing from the first upstream that has one. */

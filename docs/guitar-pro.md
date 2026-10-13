@@ -92,6 +92,10 @@ A file that has been moved or deleted is shown greyed and marked *missing* rathe
 
 The list is kept per kind of file beside the folder memory, in the plugin's own folder, so it outlives the patch. See `LastFolder.hpp`.
 
+## The name on the panel
+
+The song's title and composer, as the file has them: "Sonata IX — Bethoveen" for a Mozart sonata downloaded from MuseScore, since whoever shared it filled in both fields wrongly. **For a MusicXML file the composer is checked against the file's own name**, with the composer table the ornament styles use (see `ornament-styles.md`): a composer the table finds in the name, and not the same one in the composer field, is the one shown. So that sonata shows Wolfgang Amadeus Mozart; a composer field holding an arranger shows the composer the name gives; and an empty one is filled from the name. The file's fields themselves are left as read. A file with no title shows its own name.
+
 ## Where the file chooser opens
 
 Rack opens a chooser in the folder the patch was last saved to, which is right for a patch and wrong for everything else — saving a patch moves the starting folder of every chooser in the rack, so a score fetched from the same place a dozen times is still a walk from wherever the patches happen to live.
