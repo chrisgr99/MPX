@@ -35,14 +35,7 @@ static std::string rulesPath() {
 }
 
 /** From the strings' own units to Rack's: a string plucked as hard as it goes peaks at one. */
-/** FROM THE MODEL'S OUTPUT TO RACK'S VOLTS. Set so that one string struck at level 1 peaks at
-MPX_FULL_VOLTS, which `make leveltest` measures and holds it to. It was four, which put the same
-note four decibels under every other instrument on the cable — not a difference anybody hears as
-a fault, just one that makes the guitar sound like the wrong instrument for the music. */
-static const float OUTPUT_VOLTS = 10.35f;
-/** How many notes of one instant are taken as a chord. More than this at one moment is not a
-chord any hand could play, and the rest are started unshared rather than dropped. */
-static const int MAX_TOGETHER = 16;
+static const float OUTPUT_VOLTS = 4.f;
 /** The level lamp's thresholds and how long each colour is held. */
 static const float CLIP_VOLTS = 10.f, NEAR_VOLTS = 7.07f;
 static const float CLIP_HOLD = 1.f, NEAR_HOLD = 0.3f, NOTE_HOLD = 0.06f;
@@ -123,8 +116,6 @@ struct GuitarModule : Module, NoteSink {
 	that is red; 3 dB under it is orange, the warning; a note struck is a green flash. Each is
 	held long enough to see: red a second, orange 0.3 s, green 60 ms. The worst wins. */
 	float clipHold = 0.f, nearHold = 0.f, noteHold = 0.f;
-	/** How much the output limiter is holding back now, one when it is doing nothing. */
-	float limitGain = 1.f;
 
 	Performer performer;
 	GuitarModel guitar;
@@ -404,12 +395,6 @@ struct GuitarModule : Module, NoteSink {
 		guitar.settings.amp.middle = params[P_MIDDLE].getValue();
 		guitar.settings.amp.treble = params[P_TREBLE].getValue();
 
-		// EVERYTHING STRUCK AT ONCE IS TAKEN AT ONCE, so a chord can be shared out as a chord.
-		// Counted here and nowhere later: the performer spreads a strum across milliseconds, so
-		// by the time the strings speak there is no chord left to count. See mpxShare.
-		PerformNote together[MAX_TOGETHER];
-		int chord = 0;
-
 		Event e;
 		while (reader.next(e)) {
 			if (e.kind == Event::ON) {
@@ -432,10 +417,7 @@ struct GuitarModule : Module, NoteSink {
 					n.bendAt[k] = (float) e.bendPoints[k].at / 100.f;
 					n.bendCents[k] = (float) e.bendPoints[k].cents;
 				}
-				if (chord < MAX_TOGETHER)
-					together[chord++] = n;
-				else
-					performer.note(n);      // More at one instant than a hand could play.
+				performer.note(n);
 			}
 			else if (e.kind == Event::OFF) {
 				for (int i = 0; i < performer.voiceCount(); i++) {
@@ -449,12 +431,6 @@ struct GuitarModule : Module, NoteSink {
 						performer.set(i, e.lane == LANE_TIMBRE, e.value);
 				}
 			}
-		}
-
-		// AND NOW THAT THE WHOLE INSTANT HAS BEEN READ, how many were struck together is known.
-		for (int a = 0; a < chord; a++) {
-			together[a].share = mpxShare(chord);
-			performer.note(together[a]);
 		}
 
 		performer.advance(args.sampleTime);
@@ -475,10 +451,7 @@ struct GuitarModule : Module, NoteSink {
 		while (performer.next(m)) {
 			switch (m.kind) {
 				case PerformMessage::ATTACK:
-					// A LEVEL IS A LOUDNESS, NOT A PLUCK STRENGTH. See MPX_RANGE_DB: level is a
-					// decibel scale and ppp is nought on it, which handed to the string as a
-					// strength is no pluck at all — the quiet end of every score went silent.
-					guitar.strike(m.voice, mpxLoudness(m.value) * m.share, m.technique, m.fret);
+					guitar.strike(m.voice, m.value, m.technique, m.fret);
 					noteHold = NOTE_HOLD;
 					break;
 				case PerformMessage::LEVEL:
@@ -497,29 +470,8 @@ struct GuitarModule : Module, NoteSink {
 
 		float left = 0.f, right = 0.f;
 		guitar.process(&left, &right);
-		float outL = left * OUTPUT_VOLTS, outR = right * OUTPUT_VOLTS;
-
-		// THE LAST FEW DECIBELS, CAUGHT RATHER THAN LEFT TO WHATEVER IS DOWNSTREAM. One string
-		// at level 1 is five volts by the standard, and six open strings together reach seven
-		// above that even with the chord's dynamic shared out — a strum is simply a loud thing.
-		// Both channels by the same amount, fast to take hold and slow to let go. The same
-		// shape and the same ceiling as mpxPiano's.
-		// A BACKSTOP, as on mpxPiano: the soft clip below does the work on peaks without
-		// ducking anything, and what is left for a limiter is a plateau rather than a peak.
-		static const float HOLD_VOLTS = 14.f;
-		const float loud = std::fmax(std::fabs(outL), std::fabs(outR));
-		const float want = (loud > HOLD_VOLTS) ? HOLD_VOLTS / loud : 1.f;
-		const float towards = (want < limitGain)
-			? (1.f - std::exp(-1.f / (0.001f * args.sampleRate)))
-			: (1.f - std::exp(-1.f / (0.15f * args.sampleRate)));
-		limitGain += (want - limitGain) * towards;
-		outL *= limitGain;
-		outR *= limitGain;
-		// AND NOTHING LEAVES ABOVE TEN. See mpxSoftClip.
-		outL = mpxSoftClip(outL);
-		outR = mpxSoftClip(outR);
-		outputs[O_L].setVoltage(outL);
-		outputs[O_R].setVoltage(outR);
+		outputs[O_L].setVoltage(left * OUTPUT_VOLTS);
+		outputs[O_R].setVoltage(right * OUTPUT_VOLTS);
 
 		const float peak = std::fmax(std::fabs(left), std::fabs(right)) * OUTPUT_VOLTS;
 		if (peak >= CLIP_VOLTS)
