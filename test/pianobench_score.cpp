@@ -40,6 +40,24 @@ void benchScoreProcess(void* m, float sampleRate, int64_t frame) {
 	((SongModule*) m)->process(args);
 }
 
+/** Stopped, as its play button stops it. */
+void benchScoreStop(void* m) {
+	((SongModule*) m)->params[SongModule::P_PLAY].setValue(0.f);
+}
+
+
+/** The score's swing, as its knob sets it: nought to one, or below nought the other way. */
+void benchScoreSetSwing(void* m, float amount) {
+	((SongModule*) m)->params[SongModule::P_SWING].setValue(amount);
+}
+
+
+/** What a row's output carries as voltage, for Rack's plug light (busFlashVolts). */
+float benchScoreOutputVolts(void* m, int row) {
+	return ((SongModule*) m)->outputs[SongModule::O_TRACK + row].getVoltage();
+}
+
+
 /** The bar now playing, as the page numbers it, or -1. */
 int benchScoreBar(void* m) {
 	int bar = -1;

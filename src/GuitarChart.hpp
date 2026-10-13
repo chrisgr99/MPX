@@ -129,7 +129,7 @@ overlap any renderer adds and far shorter than the shortest rest anybody writes.
 static const float LEGATO_GAP = 0.05f;
 
 /** How many announced notes a row remembers the handles of, until they are played. */
-static const int ANNOUNCED_MOST = 64;
+static const int ANNOUNCED_MOST = 128;
 
 
 /** A song as it is played, with the rows' choice of track. Whole, so that swapping to a new one
@@ -284,6 +284,8 @@ struct SongModule : Module, NoteSource {
 	float quarterSeconds = 0.5f;
 	/** The tempo control as a share of the song's own tempo. */
 	double tempoScale = 1.0;
+	/** HOW FAR INTO THE PIECE THE MUSIC IS, seconds at the tempo it is played at, for the panel. */
+	std::atomic<float> elapsedSeconds{0.f};
 	/** Where a passage being looped ends, in quarters, after which nothing is announced: the music
 	goes back to the passage's start instead. */
 	double loopEnds = 1e300;
@@ -297,8 +299,11 @@ struct SongModule : Module, NoteSource {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configButton(P_LOAD, "Load a score, or pick a recent one");
 		// SWING, WHICH THE SCORE DOES NOT SAY. Two-sided: see swingRatios and docs/notation.md.
-		// Nought by default, so nothing already patched starts swinging.
+		// Nought by default, so nothing already patched starts swinging, and back to nought when a
+		// new score is loaded (see loadPath).
 		configParam(P_SWING, -1.f, 1.f, 0.f, "Swing", "%", 0.f, 100.f);
+		//? Moves the notes written on the off-beats later, or earlier the other way, as swing does.
+		//? Set back to nought whenever a new score is loaded.
 
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
 		//? Starts the song again from its first bar. It does not stop it.
@@ -317,6 +322,8 @@ struct SongModule : Module, NoteSource {
 			// MPX jack. Named for the track alone, these came out orange — the colour of a
 			// control voltage. When the name becomes the instrument's, it keeps the word.
 			configOutput(O_TRACK + r, string::f("MPX track %d", r + 1));
+			//? This row's part, on an MPX cable. The plug light flashes as each note starts, and
+			//? blinks steadily while an instrument reading the cable cannot play the part's range.
 		}
 
 		for (int r = 0; r < ROWS; r++) {
@@ -1034,6 +1041,7 @@ struct SongModule : Module, NoteSource {
 		const bool tempoMoved = std::fabs(tempoScale - announcedScale) > 1e-4 * tempoScale;
 		announcedScale = tempoScale;
 		const double now = gpSecondsAt(L.line, quarters);
+		elapsedSeconds.store((float) (now / tempoScale), std::memory_order_relaxed);
 		const int64_t frame = APP->engine->getFrame();
 		const double rate = APP->engine->getSampleRate();
 		for (int r = 0; r < ROWS; r++) {
@@ -1082,8 +1090,12 @@ struct SongModule : Module, NoteSource {
 							&& (notes[k + 1].startQuarters - (notes[k].startQuarters + notes[k].lengthQuarters))
 								* (double) quarterSeconds < LEGATO_GAP)
 						k++;
-					const double ends = notes[k].startQuarters + notes[k].lengthQuarters;
-					c.slurSeconds = (float) ((gpSecondsAt(L.line, ends) - gpSecondsAt(L.line, n.startQuarters))
+					// SWUNG AS ITS NOTES ARE, the end as the start (see swung): a stroke lasts as long as
+					// its notes are played, not as they are written. Measured as written, a swung score
+					// gave the player a stroke ending after the next one had begun.
+					const double ends = swung(notes[k].startQuarters + notes[k].lengthQuarters,
+						writtenOf(L, notes[k].bar));
+					c.slurSeconds = (float) ((gpSecondsAt(L.line, ends) - gpSecondsAt(L.line, starts))
 						/ tempoScale);
 				}
 				if (n.bar >= 0 && n.bar < (int) L.line.bars.size())
@@ -1255,6 +1267,7 @@ struct SongModule : Module, NoteSource {
 		h.valid = false;
 		h.timingValid = true;
 		h.beat = quarters;
+		h.seconds = elapsedSeconds.load(std::memory_order_relaxed);
 		// AND HOW HARD IT SWINGS, so anything playing alongside divides the beat the same way.
 		// The amount is the knob; the two ratios are what it means at this tempo, worked out
 		// once here from the measured curve so two modules cannot convert it differently.
@@ -1685,6 +1698,10 @@ struct SongTitle : widget::OpaqueWidget {
 		std::string why;
 		if (module->setSongFile(path, &why)) {
 			px::rememberFolder("score", path);
+			// SWING BACK TO NOUGHT FOR A NEW PIECE. It is the rare piece that wants it, and a
+			// swing left over from the last one put lilting off-beats into a cello sonata. A
+			// patch opened again keeps its own, and so does a file re-read after an edit.
+			module->params[SongModule::P_SWING].setValue(0.f);
 			return;
 		}
 		// A FILE THAT HAS GONE COMES OFF THE LIST. Offering it a second time would be offering
@@ -1832,35 +1849,48 @@ struct SongTitle : widget::OpaqueWidget {
 					SongModule::writtenNumber(L, bar.written), last);
 				if (bar.pass > 1)
 					said += string::f("  (%d)", bar.pass);
-				// AND WHAT IT IS GOING ROUND, since the loop goes on after the score window is
-				// closed and nothing else on the rack would say so. Left off where it would run
-				// into the LOAD caption; the module's menu says it in full either way. WHETHER IT
-				// FITS IS DECIDED BY THE WIDEST COUNT THE PIECE CAN SHOW, not the one showing now,
-				// or it would come and go as the count changed width going round the loop.
+				// THE TIME, in the middle of the line: seconds into the piece at the tempo it is
+				// played at, so that a moment can be named by the second rather than counted out in
+				// bars. Right of the count where the count reaches the middle, and never into LOAD.
+				// PLACED BY THE WIDEST IT CAN BE, not by what it says now, so it does not move as the
+				// numbers change width.
+				nvgFontFaceId(vg, font->handle);
+				nvgFontSize(vg, 8.f);
+				const std::string time = string::f("%.1f S", module->elapsedSeconds.load());
+				const float timeW = nvgTextBounds(vg, 0.f, 0.f, "888.8 S", NULL, NULL);
+				int most = 1;
+				for (const GpPlayedBar& b : L.line.bars)
+					most = std::max(most, b.pass);
+				std::string widest = string::f("BAR %d OF %d", last, last);
+				if (most > 1)
+					widest += string::f("  (%d)", most);
+				float right = box.size.x - mm2px(2.f);
+				if (loadCx > 0.f) {
+					nvgFontSize(vg, 7.f);
+					right = loadCx - mm2px(3.6f) - nvgTextBounds(vg, 0.f, 0.f, "LOAD", NULL, NULL) - mm2px(2.f);
+					nvgFontSize(vg, 8.f);
+				}
+				// AND WHAT IT IS GOING ROUND, since the loop goes on after the score window is closed
+				// and nothing else on the rack would say so — where it leaves the time its room. The
+				// module's menu and the score window say it in full either way.
 				int from = -1, to = -1;
 				if (module->looping(from, to)) {
-					int most = 1;
-					for (const GpPlayedBar& b : L.line.bars)
-						most = std::max(most, b.pass);
-					std::string widest = string::f("BAR %d OF %d", last, last);
-					if (most > 1)
-						widest += string::f("  (%d)", most);
 					const std::string loop = (to > from)
 						? string::f("   LOOP %d–%d", from, to) : string::f("   LOOP %d", from);
-					nvgFontFaceId(vg, font->handle);
-					nvgFontSize(vg, 8.f);
-					float room = box.size.x - mm2px(2.f);
-					if (loadCx > 0.f) {
-						nvgFontSize(vg, 7.f);
-						room = loadCx - mm2px(3.6f) - nvgTextBounds(vg, 0.f, 0.f, "LOAD", NULL, NULL)
-							- mm2px(2.f) - mm2px(1.f);
-						nvgFontSize(vg, 8.f);
-					}
-					if (nvgTextBounds(vg, 0.f, 0.f, (widest + loop).c_str(), NULL, NULL) <= room)
+					if (mm2px(2.f) + nvgTextBounds(vg, 0.f, 0.f, (widest + loop).c_str(), NULL, NULL)
+							+ mm2px(2.f) + timeW <= right) {
 						said += loop;
+						widest += loop;
+					}
 				}
-				nvgFontSize(vg, 8.f);
+				const float countEnd = mm2px(2.f) + nvgTextBounds(vg, 0.f, 0.f, widest.c_str(), NULL, NULL);
+				const float timeX = std::fmax(box.size.x / 2.f - timeW / 2.f, countEnd + mm2px(2.f));
 				nvgFillColor(vg, nvgRGB(0xff, 0xff, 0xff));
+				if (timeX + timeW <= right) {
+					nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+					for (int pass = 0; pass < 2; pass++)
+						nvgText(vg, timeX, footY, time.c_str(), NULL);
+				}
 				nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 				for (int pass = 0; pass < 2; pass++)
 					nvgText(vg, mm2px(2.f), footY, said.c_str(), NULL);

@@ -75,6 +75,9 @@ struct BowedPlayer {
 		/** JOINED UNDER ONE BOW TO THE NOTE BEFORE, said by this note rather than by that one: a held
 		note's pitch moving while its gate stays up. */
 		bool fromSlur = false;
+		/** PLAYED THE MOMENT IT CAME, announced to nobody: from a keyboard or the ports. Nothing could
+		have been rehearsed for it, so it is not counted among the notes that went unrehearsed. */
+		bool unannounced = false;
 	};
 
 	/** WHEN THE MUSIC WAS WRITTEN, for the habits that changed with it — vibrato most of all. */
@@ -144,6 +147,24 @@ struct BowedPlayer {
 		evens it fully, within `evenMostDb` either way; nought plays each note as the instrument gives
 		it. See evenFor. */
 		float evenness = 0.f, evenMostDb = 4.f;
+		/** HOW MUCH FASTER THAN ITS HABIT A STROKE MAY BE DRAWN to save bow for the one after it, as a
+		multiple of the habit (see plan, LOOKING ONE STROKE AHEAD). Faster is louder, though the bow
+		moves away from the bridge for it: on the viola a quiet E flat drawn half as fast again came out
+		4.5 dB over its neighbours. */
+		float lookAheadMost = 1.5f;
+		/** BOW CHANGES WITH SOME WEIGHT KEPT, and the click counted. Besides turning with the force let
+		down to nothing at the turn, a change is also tried with this share of it left on the string,
+		where it is above nought; and in choosing among the changes that catch, a change's click counts
+		this much beside its squeak, both in decibels (see plan, A BOW CHANGE, REHEARSED). Nought for both
+		is the change as the cello was heard and approved. On the viola the quietest changes chose the
+		quickest turn, let down to nothing, and clicked, heard as a start slightly missed. */
+		float changeFloor = 0.f, changeClickWeight = 0.f;
+		/** QUIET BEFORE QUICK, where no start tried begins within three periods: the starts squeaking no
+		more than this, dB, and settling within twice SETTLES, are looked at first, the one at full level
+		soonest of them played (see plan, FAILING ALL). Nought looks at all of them as before. On the
+		viola a quiet C4 crossing from the A string was given the bite at full level soonest of three that
+		all squeaked, 5 dB under the note, when a glide squeaking 14 dB under settled five periods later. */
+		float startSqueakMost = 0.f;
 		/** THE SLOWEST A STRONG NOTE IS DRAWN to quieten it, as a share of the dynamic's speed; what is
 		left of the quietening moves the bow further from the bridge instead. A slow bow on a heavy
 		string falls out of one slip a period: the cello's F2, drawn at 0.13 m/s to quieten it by 4
@@ -257,6 +278,13 @@ struct BowedPlayer {
 	void add(const Note& n, double at);
 	/** The same, at a sample of the strings' clock. */
 	void addAt(const Note& n, int64_t start);
+	/** THE BOW TO BE TAKEN AFRESH at the next note from the string, as for playing the piece again
+	from its start (see plan). The planner, if there is one, starts again from this. */
+	void retakeBow() {
+		retake = true;
+		if (mode == PLAYING)
+			lost = true;
+	}
 	/** THE BOW LIFTED NOW from the note sounding: a note held from a keyboard, let go. */
 	void endNow();
 	/** EVERYTHING ANNOUNCED AND NOT YET BEGUN, FORGOTTEN: the notes waiting, and what was decided for
@@ -264,6 +292,9 @@ struct BowedPlayer {
 	void withdraw();
 	/** The strings' clock, samples. */
 	int64_t clock() const { return live.clock; }
+	/** `hz` moved by octaves into what the instrument can sound (BowedInstrument::Design::lowestHz,
+	highestHz): every note given to the player is. */
+	float playable(float hz) const;
 	/** Whether the instrument is at rest, not being stepped (see step). */
 	bool resting() const { return live.asleep; }
 
@@ -322,6 +353,10 @@ struct BowedPlayer {
 	/** How far ahead of a note it is planned, seconds: longer than the longest bow change takes to
 	slow down. */
 	static constexpr double PREPARE = 0.08;
+	/** HOW FAR PAST A NOTE'S START THE PLAYER LOOKS for the stroke after the one it begins, seconds
+	(see plan, LOOKING ONE STROKE AHEAD). A planner running ahead of the music keeps this much inside
+	what has been announced, so that it sees the notes the player alone would (BowedEngine::setup). */
+	static constexpr double LOOK_AHEAD = 1.5;
 
 private:
 	// ---- what happens, sample by sample -------------------------------------------------------
@@ -422,6 +457,7 @@ public:
 		bool lastReleased = true;
 		int64_t releaseAt = -1;
 		uint32_t random = 1u;
+		bool retake = false;
 	};
 
 	/** WHAT REHEARSAL FOUND FOR A NOTE, kept for a note like it that has to be played without: a start
@@ -472,6 +508,11 @@ public:
 	uint32_t generation = 0;
 	/** Decisions made so far, and so the number of the next. */
 	int64_t decisions = 0;
+	/** THE NOTES THE PLAYING COPY HAD NO PLAN FOR, and so played without anything rehearsed: how many,
+	and the strings' clock at the first MISSED_KEPT of them. For a bench's report; nothing is allocated. */
+	static const int MISSED_KEPT = 256;
+	int missed = 0;
+	int64_t missedAt[MISSED_KEPT] = {};
 
 private:
 
@@ -557,6 +598,8 @@ private:
 	/** HOW MUCH FASTER THAN ITS HABIT THE STROKE WAS DRAWN, to share out its bow, which every note under
 	its slur keeps against its own habit. */
 	double strokeShare = 1.0;
+	/** Whether the bow is to be taken afresh at the next note from the string: see retakeBow. */
+	bool retake = false;
 	/** THE LAST NOTE PLANNED, which the next one follows from. */
 	bool anyLast = false;
 	/** The note whose body is being watched, and whether its string was stuck last sample. */
@@ -608,7 +651,8 @@ private:
 	`restart` until the slips on `string` are a period apart from there to the end of the run, at
 	least four of them, or 999. */
 	double settles(State s, int string, float hz, int64_t restart, int64_t samples,
-	               double* roughness = nullptr, double* squeak = nullptr, float cents = 0.f) const;
+	               double* roughness = nullptr, double* squeak = nullptr, float cents = 0.f,
+	               double* click = nullptr) const;
 	/** HOW SOON AN ATTACK SETTLES, as phase 6 confirmed one: periods from the first slip after
 	`from` until the slips are a period apart from there to the end, the run ending twenty periods
 	after the first slip or 1.5 s on; -1 if never. `late`, the seconds from `from` to the first slip.

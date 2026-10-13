@@ -42,6 +42,10 @@ The buses are static, so a voice reads a slot that always exists and finds it un
 
 One mpxIn feeds as many mpxOut modules as are patched to it. Each keeps its own cursor into the source's ring.
 
+### The one thing a consumer says back
+
+A consumer that cannot play the part on its cable says so on the bus it reads (`BusReader::cannotPlay`, `Bus::cannotPlayAt`): the engine frame it last said it, again every tenth of a second while it stays so, forgotten half a second after. Nothing else goes from a consumer to its source. The source shows it on its own output's plug light: the cable's voltage, which nothing reads as data, is a 5 ms pulse of 10 V as each note starts, and while a consumer says it cannot play, 10 V on and off twice a second instead (`busFlashVolts`). A consumer unplugged, or given another part, stops saying it and the blinking stops within half a second, with nothing to take back. Which source a part comes from, and which of its outputs, is therefore never the consumer's business: the light blinks on whichever output the part left by. mpxViolin, mpxViola and mpxCello say it of a part whose compass goes below their lowest open string or past the end of their fingerboard (see bowed-strings.md).
+
 ### Timing
 
 Rack runs every module every sample, so a gate edge is seen on the sample it happens on. No timestamps are needed.

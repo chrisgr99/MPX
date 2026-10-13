@@ -107,9 +107,15 @@ void busWithdraw(int slot) {
 float busFlashVolts(int slot) {
 	if (slot < 0 || slot >= MAX_BUSES)
 		return 0.f;
-	const int64_t since = APP->engine->getFrame()
-		- gBuses[slot].lastOn.load(std::memory_order_relaxed);
-	const int64_t length = (int64_t) (APP->engine->getSampleRate() * 0.005f);
+	const int64_t now = APP->engine->getFrame();
+	const float rate = APP->engine->getSampleRate();
+	// A READER THAT CANNOT PLAY THE PART, said within the last half second: blinking, a quarter of a
+	// second on and a quarter off, over any note's pulse.
+	const int64_t said = now - gBuses[slot].cannotPlayAt.load(std::memory_order_relaxed);
+	if (said >= 0 && said < (int64_t) (0.5f * rate))
+		return ((now / (int64_t) (0.25f * rate)) % 2 == 0) ? 10.f : 0.f;
+	const int64_t since = now - gBuses[slot].lastOn.load(std::memory_order_relaxed);
+	const int64_t length = (int64_t) (rate * 0.005f);
 	return (since >= 0 && since < length) ? 10.f : 0.f;
 }
 
@@ -339,6 +345,22 @@ bool BusReader::motion(PartMotion& out) const {
 			return true;
 	}
 	return false;
+}
+
+
+void BusReader::cannotPlay() const {
+	const int64_t now = APP->engine->getFrame();
+	for (int i = 0; i < count; i++) {
+		const int slot = links[i].slot;
+		if (slot < 0 || slot >= MAX_BUSES)
+			continue;
+		Bus& bus = gBuses[slot];
+		// Only to the source this reader attached to, as everything it reads.
+		if (!bus.claimed.load(std::memory_order_acquire)
+				|| bus.generation.load(std::memory_order_acquire) != links[i].generation)
+			continue;
+		bus.cannotPlayAt.store(now, std::memory_order_relaxed);
+	}
 }
 
 

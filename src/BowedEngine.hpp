@@ -109,6 +109,15 @@ struct BowedEngine : BowedPlayer::Planning {
 	void setWatching(bool on) { playing.setWatching(on); }
 	/** How many times the planner had to start again. */
 	int restarts() const { return restartCount; }
+	/** The notes played with nothing rehearsed for them, though a planner was rehearsing: see
+	BowedPlayer::missed. */
+	int missed() const { return playing.missed; }
+	/** The count back to nought. Audio thread. */
+	void clearMissed() { playing.missed = 0; }
+	/** THE BOW TAKEN AFRESH for the music played again from its start: see BowedPlayer::retakeBow.
+	Audio thread; the planner starts again from it. */
+	void retakeBow() { playing.retakeBow(); }
+	double missedAt(int i) const { return (double) playing.missedAt[i] / playing.stringRate(); }
 	const BowedPlayer& player() const { return playing; }
 
 	BowedPlayer::Plan* planFor(uint32_t generation, int64_t serial) override;

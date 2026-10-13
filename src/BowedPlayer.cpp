@@ -53,6 +53,29 @@ static const double RETURN_AFTER = 0.08, RETURN_OVER = 0.12;
 
 BowedPlayer::Habits BowedPlayer::violinHabits() {
 	Habits h;
+	// CHOSEN BY EAR in the Fauré's third movement, bars 6 to 9, as the viola's were and the same three
+	// (see violaHabits), against the violin as it was, each of them alone, the bow further from the
+	// bridge and a darker body: the cello's lighter bow, its notes evened out — notes marked alike had
+	// been up to 9 dB apart, and came to within 3 — and quiet before quick.
+	h.evenness = 1.f;
+	h.startSqueakMost = -10.f;
+	// LESS BRIGHT, AS A PLAYER MAKES IT: the bow an eighth further from the bridge at every dynamic,
+	// where the string vibrates with fewer of its upper harmonics, the force lightened in step since the
+	// string takes less of it there before it turns raucous, and the soft dynamics drawn faster so they
+	// stay full and start surely — chosen by ear in the same bars, of the bow an eighth and a quarter
+	// further, with and without the force lightened, only the soft dynamics moved, and the soft drawn
+	// faster by two amounts. The top above 8 kHz 3 dB down, the worst start's squeak from 10 dB under
+	// the note to 14, the pianissimo from 18.6 dB under the loudest notes to 16.8, and a quiet A flat
+	// from speaking in 110 ms to 42.
+	h.forcePiano = 1.244f;
+	h.forceForte = 1.956f;
+	h.speedPiano = 0.18f;
+	h.speedPianissimo = 0.16f;
+	h.betaPiano *= 1.125f;
+	h.betaForte *= 1.125f;
+	h.betaLeast *= 1.125f;
+	h.betaMost *= 1.125f;
+	h.betaPianissimo *= 1.125f;
 	return h;
 }
 
@@ -67,6 +90,18 @@ BowedPlayer::Habits BowedPlayer::violaHabits() {
 	h.bowLength = 0.63f;
 	h.vibratoHz = 5.7f;
 	h.vibratoCents = 18.f;
+	// CHOSEN BY EAR in the Fauré's third movement, bars 6 to 9, against versions with a darker body, a
+	// fuller one, and the bow further from the bridge: the cello's lighter bow, 1.4 impedances at piano
+	// and 2.2 at forte against the violinist's 1.8 and 2.5; its notes evened out as the cello's are,
+	// which took the spread between notes marked alike from 4.5 and 5.4 dB to 3 and 3.6, and a quiet E
+	// flat on the C string, whose second and third harmonics sit on the body's modes at 310 and 448 Hz,
+	// from 4.5 dB over its neighbours to within 1 to 3; and, of starts from the string that do not begin
+	// within three periods, a quiet one before a quick one (startSqueakMost), which took a crossing to C4
+	// from speaking in 101 ms to 36 and the passage's first note from squeaking 4 dB under itself to 20.
+	h.forcePiano = 1.4f;
+	h.forceForte = 2.2f;
+	h.evenness = 1.f;
+	h.startSqueakMost = -10.f;
 	return h;
 }
 
@@ -156,9 +191,27 @@ void BowedPlayer::add(const Note& n, double at) {
 }
 
 
+/** A NOTE THE INSTRUMENT CANNOT SOUND, moved by octaves until it can: up from below the lowest open
+string, as a violinist reading a cello's line plays it an octave higher, and down from past the end of
+the fingerboard on the highest. A hair under the open string is the open string, as stringFor takes
+it. */
+float BowedPlayer::playable(float hz) const {
+	const BowedInstrument::Design& d = live.inst.design();
+	const float low = d.lowestHz(), high = d.highestHz();
+	if (!(hz > 0.f) || !(low > 0.f))
+		return hz;
+	while (hz < low * 0.9995f)
+		hz *= 2.f;
+	while (hz > high * 1.0005f && 0.5f * hz >= low * 0.9995f)
+		hz *= 0.5f;
+	return hz;
+}
+
+
 void BowedPlayer::addAt(const Note& n, int64_t start) {
 	Pending p;
 	p.note = n;
+	p.note.hz = playable(n.hz);
 	p.start = start;
 	// IN THE ORDER THEY START, whatever order they come in: a note played from a keyboard now goes
 	// before the notes a score has announced for later.
@@ -217,6 +270,7 @@ BowedPlayer::Line BowedPlayer::takeLine() const {
 	l.lastReleased = lastReleased;
 	l.releaseAt = releaseAt;
 	l.random = random;
+	l.retake = retake;
 	return l;
 }
 
@@ -235,6 +289,7 @@ void BowedPlayer::giveLine(const Line& l) {
 	lastReleased = l.lastReleased;
 	releaseAt = l.releaseAt;
 	random = l.random;
+	retake = l.retake;
 }
 
 
@@ -598,6 +653,12 @@ void BowedPlayer::decide(const Pending* p, int64_t releaseWhen) {
 			planning->spent(q);
 		lost = true;
 		quick = true;
+		// COUNTED ONLY FOR A NOTE THAT WAS ANNOUNCED: see Note::unannounced.
+		if (p && planning && !p->note.unannounced) {
+			if (missed < MISSED_KEPT)
+				missedAt[missed] = start;
+			missed++;
+		}
 	}
 	// FROM THE TABLE, ALL OF IT, where the player is told not to rehearse.
 	if ((tableUse == EVERYTHING && table) || nothingRehearsed)
@@ -833,6 +894,17 @@ void BowedPlayer::plan(const Pending& p) {
 			hidden = true;
 		}
 	}
+	// THE BOW TAKEN AFRESH, as a player beginning the piece again sets it: in the middle, the last
+	// stroke counted as up, so that a stroke from the string goes as it would on a first playing.
+	// Asked for when the music goes back to its start (retakeBow), and done at the first note from the
+	// string after it, since a note still sounding keeps its bow. Without it a second playing carried
+	// on from where the first had left the bow, every stroke the other way from the first time.
+	if (retake && !joined) {
+		bowAt = 0.5 * habits.bowLength;
+		direction = -1;
+		strokeShare = 1.0;
+		retake = false;
+	}
 	const int s = stringFor(n.hz, vibratoWanted(n) && n.seconds >= 0.6f, joined ? lastString : -1);
 	const float open = design.strings[(size_t) s].openHz;
 	const float vibrating = design.length * open / n.hz;
@@ -903,13 +975,63 @@ void BowedPlayer::plan(const Pending& p) {
 		// middle rather than off one end.
 		const double want = habitual * strokeSeconds;
 		const double towards = (0.5 * L - bowAt) * dir / (0.5 * L);
-		const double travel = std::fmax(0.5 * want, std::fmin(std::fmin(1.5 * want, 0.95 * left),
+		double travel = std::fmax(0.5 * want, std::fmin(std::fmin(1.5 * want, 0.95 * left),
 			want * (1.0 + 0.2 * towards)));
+		// LOOKING ONE STROKE AHEAD, as a player saves bow for what is coming: where the stroke after
+		// this one, the other way, will want more bow than this one would leave it, this one draws
+		// more — up to half as fast again as its habit, further from the bridge for it (see
+		// `sounding`), and so as loud. In the Fauré's third movement the cello's down-bow at 20 s,
+		// begun at the frog, drew 19 cm, and the up-bow after it ran out on its first note: the A flat
+		// 4 slurred after that got a third of its speed and force and came out 7 dB under the note
+		// before it, in a crescendo. Only notes starting within LOOK_AHEAD of this one: a planner
+		// running ahead of the music sees no further for certain.
+		//
+		// THE STROKE FOLLOWED NOTE BY NOTE, as the player joins notes into one: on while each runs
+		// into the next without a gap and one of the two says slurred. Not by the length the score
+		// gives the slur, which a swung score once gave as written while it played the notes swung,
+		// and the next stroke's first note was taken for one of this one's.
+		{
+			const int64_t joinedGap = (int64_t) (JOINED * rate);
+			const int64_t sees = t0 + (int64_t) (LOOK_AHEAD * rate);
+			bool slurring = n.slurred;
+			int64_t endsAt = end;
+			for (const Pending& q : upcoming) {
+				if (q.start > sees)
+					break;
+				const Note& m = q.note;
+				const double mLen = m.staccato ? std::fmin(0.5 * m.seconds, 0.25) : (double) m.seconds;
+				// A rest before it: the bow is lifted and placed again.
+				if (q.start - endsAt >= joinedGap)
+					break;
+				// Still in this stroke.
+				if (slurring || m.fromSlur) {
+					slurring = m.slurred;
+					endsAt = q.start + (int64_t) std::llround(mLen * rate);
+					continue;
+				}
+				// Marked to go the same way: the bow is lifted and taken back.
+				if (m.bow == dir)
+					break;
+				const double mStroke = (m.slurred && m.slurSeconds > 0.f) ? (double) m.slurSeconds
+					: (m.slurred ? 2.0 * mLen : mLen);
+				const double mHabit = speedFor(m.level)
+					* std::fmax((double) habits.evenSlowest, evenFor(m.hz, stringFor(m.hz, false, -1)));
+				const double need = std::fmin(0.95 * L, mHabit * mStroke);
+				const double behind = (dir > 0) ? bowAt : L - bowAt;
+				if (need > behind + travel)
+					travel = std::fmax(travel, std::fmin(need - behind,
+						std::fmin(0.95 * left, (double) habits.lookAheadMost * habitual * strokeSeconds)));
+				break;
+			}
+		}
 		// NOT SO SLOW THAT THE NOTE FADES: a long slur shared out over the whole bow would crawl, and
 		// a player keeps the bow moving and changes it inside the slur instead (see above).
 		speed = std::fmax(0.85 * habitual, std::fmax(0.05, std::fmin(0.7, travel / strokeSeconds)));
 		strokeShare = speed / habitual;
 	}
+	if (std::getenv("BOWTRACE") && mode != PLAYING)
+		std::fprintf(stderr, "BOW %.3f s %.1f Hz kind %d dir %d gap %.3f slurred %d len %.3f stroke %.3f speed %.3f habitual %.3f bowAt %.3f\n",
+			(double) t0 / rate, n.hz, (int) kind, dir, anyLast ? (double) (t0 - lastEnd) / rate : -1.0, (int) n.slurred, len, strokeSeconds, speed, habitual, bowAt);
 	bowAt = std::fmax(0.0, std::fmin(L, bowAt + dir * speed * len));
 	const float signedSpeed = (float) (dir * speed);
 
@@ -1033,27 +1155,37 @@ void BowedPlayer::plan(const Pending& p) {
 				break;
 			force = asked * press;
 			// A CHANGE HIDDEN IN A SLUR IS QUICK: a slow turn there is a gap in the line.
-			std::vector<float> downs;
-			for (float down : habits.changeSeconds)
-				if (!(hidden && down > 0.021f))
+			// Each turn let down to nothing, and with the habit's share of the force kept where it has one.
+			std::vector<float> downs, floors;
+			for (float down : habits.changeSeconds) {
+				if (hidden && down > 0.021f)
+					continue;
+				downs.push_back(down);
+				floors.push_back(0.f);
+				if (habits.changeFloor > 0.f) {
 					downs.push_back(down);
-			std::vector<double> gots(downs.size()), squeaks(downs.size());
+					floors.push_back(habits.changeFloor);
+				}
+			}
+			const bool clicks = habits.changeClickWeight > 0.f;
+			std::vector<double> gots(downs.size()), squeaks(downs.size()), clickOfWay(downs.size(), 0.0);
 			std::vector<int64_t> lengths(downs.size());
 			const auto changesFrom = std::chrono::steady_clock::now();
 			share((int) downs.size(), [&](int i) {
 				State copy = live;
-				const int64_t restart = change(copy, downs[(size_t) i], 0.f);
+				const int64_t restart = change(copy, downs[(size_t) i], floors[(size_t) i]);
 				vibrato(copy, restart);
 				const int64_t until = restart + (int64_t) (std::fmax(60.0 / n.hz, 0.08) * rate);
 				lengths[(size_t) i] = until - copy.clock;
 				gots[(size_t) i] = settles(copy, s, n.hz, restart, lengths[(size_t) i], nullptr, &squeaks[(size_t) i],
-					cents);
+					cents, clicks ? &clickOfWay[(size_t) i] : nullptr);
 			});
 			spentOn.changes += std::chrono::duration<double>(std::chrono::steady_clock::now() - changesFrom).count();
 			for (size_t i = 0; i < downs.size(); i++) {
 				const float down = downs[i];
 				record.rehearsed += lengths[i];
-				const double squeak = squeaks[i];
+				// ITS CLICK COUNTED BESIDE ITS SQUEAK, where the habit says.
+				const double squeak = squeaks[i] + (double) habits.changeClickWeight * clickOfWay[i];
 				const double got = gots[i];
 				if (logFile)
 					changesTried.push_back({press, down, got, squeak});
@@ -1067,6 +1199,7 @@ void BowedPlayer::plan(const Pending& p) {
 					bestClean = clean;
 					bestDown = down;
 					bestPress = press;
+					bestTurn = floors[i];
 				}
 			}
 		}
@@ -1255,6 +1388,7 @@ void BowedPlayer::plan(const Pending& p) {
 			int got;
 			double rough;
 			std::vector<double> envelope;
+			double squeak;
 		};
 		std::vector<Fallback> fallbacks;
 		// EACH TRIED ON A COPY, shared out over the crew where there is one; then compared in order.
@@ -1280,7 +1414,7 @@ void BowedPlayer::plan(const Pending& p) {
 				chose = list[i];
 			}
 			else if (!anyQuick && t.got >= 0)
-				fallbacks.push_back({false, i, 0.f, 0.f, t.got, t.rough, t.envelope});
+				fallbacks.push_back({false, i, 0.f, 0.f, t.got, t.rough, t.envelope, t.squeak});
 		}
 		// OR NO BITE AT ALL: the bow drawn up to speed over 20, 50 or 100 ms with the force rising with
 		// it, from nothing or a fifth, as the bow comes out of the turn of a bow change. On the cello's
@@ -1338,7 +1472,7 @@ void BowedPlayer::plan(const Pending& p) {
 					glideFloor = floor;
 				}
 				else if (!anyQuick && t.got >= 0)
-					fallbacks.push_back({true, 0, ramp, floor, t.got, t.rough, t.envelope});
+					fallbacks.push_back({true, 0, ramp, floor, t.got, t.rough, t.envelope, t.squeak});
 			}
 			if (logFile)
 				glidesTried = slid;
@@ -1353,13 +1487,26 @@ void BowedPlayer::plan(const Pending& p) {
 		// a glide that slid without catching for 180 ms and then swelled in over 0.3 s; after F3, a bite
 		// so gentle that the note stayed 10 dB under its neighbours.
 		if (!anyQuick && !fallbacks.empty()) {
+			int settleLimit = SETTLES;
+			// QUIET BEFORE QUICK, where the habit asks: only the starts that squeak no more than it and
+			// settle within twice SETTLES, where there are any (see Habits::startSqueakMost).
+			if (habits.startSqueakMost < 0.f) {
+				std::vector<Fallback> quiet;
+				for (const Fallback& f : fallbacks)
+					if (f.squeak <= (double) habits.startSqueakMost && f.got >= 0 && f.got <= 2 * SETTLES)
+						quiet.push_back(f);
+				if (!quiet.empty()) {
+					fallbacks = quiet;
+					settleLimit = 2 * SETTLES;
+				}
+			}
 			bool anySettle = false;
 			for (const Fallback& f : fallbacks)
-				anySettle = anySettle || f.got <= SETTLES;
+				anySettle = anySettle || f.got <= settleLimit;
 			const size_t settled = (size_t) (0.2 / ENVELOPE_HOP);
 			double most = 0.0;
 			for (const Fallback& f : fallbacks) {
-				if (anySettle && f.got > SETTLES)
+				if (anySettle && f.got > settleLimit)
 					continue;
 				double sum = 0.0;
 				for (size_t k = settled; k < f.envelope.size(); k++)
@@ -1370,7 +1517,7 @@ void BowedPlayer::plan(const Pending& p) {
 			const Fallback* pick = nullptr;
 			double soonest = 1e9, pickRough = 1e9;
 			for (const Fallback& f : fallbacks) {
-				if (anySettle && f.got > SETTLES)
+				if (anySettle && f.got > settleLimit)
 					continue;
 				double full = 9.0;
 				for (size_t k = 0; k < f.envelope.size(); k++)
@@ -1549,11 +1696,16 @@ void BowedPlayer::plan(const Pending& p) {
 }
 
 
+static double clickOf(const std::vector<float>& push, double rate);
+
+
 double BowedPlayer::settles(State s, int string, float hz, int64_t restart, int64_t samples,
-                            double* roughness, double* squeak, float cents) const {
+                            double* roughness, double* squeak, float cents, double* click) const {
 	const double period = rate / (double) hz;
 	std::vector<int64_t> slips;
 	std::vector<float> force;
+	// From the restart on, for the click.
+	std::vector<float> after;
 	bool was = s.inst.string(string).sticking();
 	SlipWatch watch;
 	float sound;
@@ -1566,7 +1718,11 @@ double BowedPlayer::settles(State s, int string, float hz, int64_t restart, int6
 		was = stuck;
 		if (roughness || squeak)
 			force.push_back(s.inst.string(string).bridgeForce());
+		if (click && s.clock > restart)
+			after.push_back(s.inst.string(string).bridgeForce());
 	}
+	if (click)
+		*click = clickOf(after, rate);
 	if (roughness) {
 		const double from = (double) (restart - (s.clock - samples)) / rate;
 		*roughness = startRoughness(force, std::fmax(0.0, from), rate);

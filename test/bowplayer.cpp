@@ -78,8 +78,89 @@ static float guessBiteWanted = -1.f, guessAccelWanted = 1.f;
 side show how far two performances differ by chance alone. */
 static int seedWanted = 0;
 
+/** VARIANTS FOR LISTENING, before a habit or a voice goes into an instrument: force=1.4,2.2 the bow's
+force at piano and at forte, in impedances; betascale=1.25 every place from the bridge, as a share of
+the string, scaled; body=dark the body's radiativity above 2 kHz lowered, 4 dB to 3.5 kHz and 8 dB
+above; body=darkfull that, and its modes under 500 Hz radiating 3 dB more. */
+static float forcePianoWanted = 0.f, forceForteWanted = 0.f, betaScaleWanted = 1.f;
+/** evenness=1 Habits::evenness; lookahead=1.25 Habits::lookAheadMost. */
+static float evennessWanted = -1.f, lookAheadWanted = 0.f;
+/** changefloor=0.3 Habits::changeFloor; clickweight=1 Habits::changeClickWeight. */
+static float changeFloorWanted = -1.f, clickWeightWanted = -1.f;
+/** startsqueak=-10 Habits::startSqueakMost. */
+static float startSqueakWanted = 1.f;
+/** betaquiet=1.25 the bow's place at piano and pianissimo, and the furthest it goes, scaled: the soft
+dynamics further from the bridge, the loud left where they are. */
+static float betaQuietWanted = 1.f;
+/** speed=0.18,0.4,0.16 the bow's speed at piano, at forte and at pianissimo, metres a second. */
+static float speedPianoWanted = 0.f, speedForteWanted = 0.f, speedPianissimoWanted = 0.f;
+static std::string bodyWanted;
+
+/** mode=228:+4 the body's mode nearest 228 Hz radiating 4 dB more; mode=228:+4:215 and moved to 215 Hz.
+As many as are given. */
+struct ModeChange {
+	float hz = 0.f, db = 0.f, to = 0.f;
+};
+static std::vector<ModeChange> modeChanges;
+
+static BowedInstrument::Design voiced(BowedInstrument::Design d) {
+	for (const ModeChange& c : modeChanges) {
+		BowedBody::Mode* nearest = nullptr;
+		for (BowedBody::Mode& m : d.voice.modes)
+			if (!nearest || std::fabs(m.hz - c.hz) < std::fabs(nearest->hz - c.hz))
+				nearest = &m;
+		if (!nearest)
+			continue;
+		nearest->radiativity *= std::pow(10.f, c.db / 20.f);
+		if (c.to > 0.f)
+			nearest->hz = c.to;
+	}
+	if (bodyWanted != "dark" && bodyWanted != "darkfull")
+		return d;
+	for (BowedBody::Point& p : d.voice.dense.radiativity)
+		if (p.hz >= 2000.f)
+			p.db -= (p.hz > 3500.f) ? 8.f : 4.f;
+	if (bodyWanted == "darkfull")
+		for (BowedBody::Mode& m : d.voice.modes)
+			if (m.hz < 500.f)
+				m.radiativity *= 1.4125f;
+	return d;
+}
+
 static BowedPlayer::Habits habitsFor(const Fiddle& f) {
 	BowedPlayer::Habits h = f.habits();
+	if (evennessWanted >= 0.f)
+		h.evenness = evennessWanted;
+	if (lookAheadWanted > 0.f)
+		h.lookAheadMost = lookAheadWanted;
+	if (changeFloorWanted >= 0.f)
+		h.changeFloor = changeFloorWanted;
+	if (startSqueakWanted <= 0.f)
+		h.startSqueakMost = startSqueakWanted;
+	if (clickWeightWanted >= 0.f)
+		h.changeClickWeight = clickWeightWanted;
+	if (forcePianoWanted > 0.f)
+		h.forcePiano = forcePianoWanted;
+	if (forceForteWanted > 0.f)
+		h.forceForte = forceForteWanted;
+	if (speedPianoWanted > 0.f)
+		h.speedPiano = speedPianoWanted;
+	if (speedForteWanted > 0.f)
+		h.speedForte = speedForteWanted;
+	if (speedPianissimoWanted > 0.f)
+		h.speedPianissimo = speedPianissimoWanted;
+	if (betaQuietWanted != 1.f) {
+		h.betaPiano *= betaQuietWanted;
+		h.betaPianissimo *= betaQuietWanted;
+		h.betaMost *= betaQuietWanted;
+	}
+	if (betaScaleWanted != 1.f) {
+		h.betaPiano *= betaScaleWanted;
+		h.betaForte *= betaScaleWanted;
+		h.betaLeast *= betaScaleWanted;
+		h.betaMost *= betaScaleWanted;
+		h.betaPianissimo *= betaScaleWanted;
+	}
 	if (easeWanted > 0.f)
 		h.biteEase = easeWanted;
 	if (guessBiteWanted > 0.f)
@@ -658,7 +739,7 @@ static void scoreSection(const std::string& path, int track, double seconds, con
 	BowedPlayer player;
 	player.setHabits(habitsFor(f));
 	player.setLog(logFile, economyWanted ? std::string(f.name) + "-economy" : std::string(f.name));
-	player.setInstrument(withRosin(f.design()), 48000.f, economyWanted ? 0.5f * highest : highest);
+	player.setInstrument(withRosin(voiced(f.design())), 48000.f, economyWanted ? 0.5f * highest : highest);
 	player.setQuietStringsRest(economyWanted);
 	useTable(player, f);
 	double cpu = 0.0;
@@ -971,6 +1052,31 @@ int main(int rawArgc, char** rawArgv) {
 			guessBiteWanted = (float) std::atof(rawArgv[i] + 10);
 		else if (std::strncmp(rawArgv[i], "guessaccel=", 11) == 0)
 			guessAccelWanted = (float) std::atof(rawArgv[i] + 11);
+		else if (std::strncmp(rawArgv[i], "force=", 6) == 0)
+			std::sscanf(rawArgv[i] + 6, "%f,%f", &forcePianoWanted, &forceForteWanted);
+		else if (std::strncmp(rawArgv[i], "mode=", 5) == 0) {
+			ModeChange c;
+			std::sscanf(rawArgv[i] + 5, "%f:%f:%f", &c.hz, &c.db, &c.to);
+			modeChanges.push_back(c);
+		}
+		else if (std::strncmp(rawArgv[i], "speed=", 6) == 0)
+			std::sscanf(rawArgv[i] + 6, "%f,%f,%f", &speedPianoWanted, &speedForteWanted, &speedPianissimoWanted);
+		else if (std::strncmp(rawArgv[i], "betaquiet=", 10) == 0)
+			betaQuietWanted = (float) std::atof(rawArgv[i] + 10);
+		else if (std::strncmp(rawArgv[i], "startsqueak=", 12) == 0)
+			startSqueakWanted = (float) std::atof(rawArgv[i] + 12);
+		else if (std::strncmp(rawArgv[i], "changefloor=", 12) == 0)
+			changeFloorWanted = (float) std::atof(rawArgv[i] + 12);
+		else if (std::strncmp(rawArgv[i], "clickweight=", 12) == 0)
+			clickWeightWanted = (float) std::atof(rawArgv[i] + 12);
+		else if (std::strncmp(rawArgv[i], "evenness=", 9) == 0)
+			evennessWanted = (float) std::atof(rawArgv[i] + 9);
+		else if (std::strncmp(rawArgv[i], "lookahead=", 10) == 0)
+			lookAheadWanted = (float) std::atof(rawArgv[i] + 10);
+		else if (std::strncmp(rawArgv[i], "betascale=", 10) == 0)
+			betaScaleWanted = (float) std::atof(rawArgv[i] + 10);
+		else if (std::strncmp(rawArgv[i], "body=", 5) == 0)
+			bodyWanted = rawArgv[i] + 5;
 		else if (std::strncmp(rawArgv[i], "ease=", 5) == 0)
 			easeWanted = (float) std::atof(rawArgv[i] + 5);
 		else

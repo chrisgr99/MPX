@@ -48,6 +48,13 @@ struct BowedInstrument {
 	struct Design {
 		/** Lowest first. */
 		std::vector<StringSpec> strings;
+		/** HOW FAR ABOVE ITS HIGHEST OPEN STRING THE INSTRUMENT REACHES: to about the end of the
+		fingerboard, two octaves and a sixth, as a ratio of frequencies (two to the 33/12). */
+		static constexpr float FINGERBOARD = 6.727171f;
+		/** WHAT IT CAN SOUND, hertz: from its lowest open string to the end of the fingerboard on its
+		highest. Nought for a design with no strings. */
+		float lowestHz() const { return strings.empty() ? 0.f : strings.front().openHz; }
+		float highestHz() const { return strings.empty() ? 0.f : strings.back().openHz * FINGERBOARD; }
 		/** The vibrating length of an open string, bridge to nut, metres. */
 		float length = 0.328f;
 		/** THE BODY'S VOICE, from the force on the bridge to the sound, at the engine's rate. */
@@ -88,7 +95,8 @@ struct BowedInstrument {
 	/** A STRING NOBODY IS PLAYING STOPS once its ringing has stayed under QUIET_STRING for a tenth of a
 	second: not stepped, and so neither ringing on nor taking up the bridge's motion, until it is
 	bowed, stopped or plucked again. Less computing for less sympathy — a string at rest no longer
-	rings with the others. Off by default. */
+	rings with the others. Off by default. A NEW INSTRUMENT'S STRINGS START AT REST: nothing has rung
+	on them, so they are where a tenth of a second of quiet would have put them. */
 	void setQuietStringsRest(bool on);
 	/** WHETHER A STRING BEING BOWED FEELS THE BRIDGE MOVE. On a real instrument it does. Off, which
 	is how it plays: the bowed string plays against a still bridge while it pushes the bridge as
@@ -147,6 +155,8 @@ private:
 	/** The strings resting (see setQuietStringsRest): whether each is, how loud it has been lately,
 	how long it has been quiet, and how many samples it has rested, owed to its rosin's cooling. */
 	bool quietRest = false;
+	/** Not yet stepped since its design was set. */
+	bool fresh = true;
 	std::vector<char> resting;
 	std::vector<float> lately;
 	std::vector<int64_t> quietFor, restedFor;

@@ -64,6 +64,10 @@ The tools on the right are things done to the *view* — its size, its page, whi
 
 **Choosing the instrument.** The menu is opened by the instrument tool or by a right-click on the music. It lists the instruments in the file's order, the first nine each followed by its number in brackets, and typing that number with the pointer over the window shows that instrument — the digits along the top of the keyboard or the keypad's. Neither the menu nor a digit acts while the score is being laid out, since the list of instruments is being rebuilt then. One instrument is shown at a time.
 
+## The module's plate
+
+The plate at the top of mpxScore's panel names the piece, and its bottom line says where the music is: the bar as the page numbers it over the last bar, at the left; the time in the middle, seconds into the piece at the tempo it is played at, to a tenth, so that a moment can be named by the second rather than counted out in bars; and the loop, where there is one and room for it beside the time. The time is placed by the widest it can be, so it does not move as the numbers change width, right of the count where the count reaches the middle, and never into the LOAD caption at the right. Swing, which the score does not say, is set back to nought whenever a new score is loaded; a patch opened again keeps its own, and so does a file re-read after an edit.
+
 ## Where the cursor comes from
 
 From our own timeline, not from Verovio's timemap. The timemap exists and gives every event a time in milliseconds — but we already know, exactly, which written bar is playing and which pass through it we are on, and that is what drives the notes. Asking Verovio when things happen would put a second clock beside the one that is already right. It is asked only where things are on the page.

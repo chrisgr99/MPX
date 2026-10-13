@@ -65,9 +65,11 @@ void BowedEngine::setup(const Setup& s) {
 	playing.setMode(planned ? BowedPlayer::PLAYING : BowedPlayer::SOLO, planned ? this : nullptr);
 	factor = (int) std::lround(playing.stringRate() / (double) s.engineRate);
 	// EVERY NOTE THE PLANNER DECIDES ABOUT HAS BEEN ANNOUNCED TO IT: it decides PREPARE before a note,
-	// and whether a note's end joins the next looks a little past that (BowedPlayer, JOINED), so it
-	// keeps a tenth of a second and more inside what has been announced.
-	horizon = (int64_t) (std::fmax(0.0, s.announcedAhead - BowedPlayer::PREPARE - 0.06) * playing.stringRate());
+	// looks LOOK_AHEAD past the note for the stroke after (BowedPlayer::plan), and whether a note's end
+	// joins the next looks a little past that (BowedPlayer, JOINED), so it keeps all of that and a
+	// little more inside what has been announced.
+	horizon = (int64_t) (std::fmax(0.0, s.announcedAhead - BowedPlayer::PREPARE - BowedPlayer::LOOK_AHEAD - 0.06)
+		* playing.stringRate());
 	playingClock.store(0);
 	restartCount = 0;
 	if (!planned)
@@ -98,7 +100,9 @@ void BowedEngine::announce(const BowedPlayer::Note& n, int64_t ahead) {
 
 
 void BowedEngine::playNow(const BowedPlayer::Note& n) {
-	playing.addAt(n, playing.clock());
+	BowedPlayer::Note now = n;
+	now.unannounced = true;
+	playing.addAt(now, playing.clock());
 }
 
 

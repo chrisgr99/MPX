@@ -43,11 +43,15 @@ by more than one sample's worth of events. This is headroom, not a buffer. */
 static const int BUS_RING = 256;
 /** HOW FAR AHEAD A SOURCE THAT KNOWS ITS FUTURE ANNOUNCES EACH NOTE, seconds (see Coming). Long
 enough for a bowed string's player to rehearse the hardest starts on its own threads with time in
-hand: the violin's worst in the Fauré took two seconds of searching, and at half a second and at a
-second and a half its planner fell behind at the first two notes, a fifth of a second apart. */
-static constexpr double MPX_ANNOUNCE_AHEAD = 3.0;
+hand, after looking a stroke past each note (BowedPlayer::LOOK_AHEAD, a second and a half, which its
+planner keeps inside what has been announced): the violin's worst in the Fauré took two seconds of
+searching, and with a second and a half to work in its planner fell behind at the first two notes, a
+fifth of a second apart — and three strings rehearsing at level 1, sharing their helpers, played
+eight and nine notes each unrehearsed in the Fauré's first minute when the look-ahead had left them
+that. Four and a half gives them the three seconds they had before it. */
+static constexpr double MPX_ANNOUNCE_AHEAD = 4.5;
 /** Announcements a bus holds: one a note, read every sample. */
-static const int COMING_RING = 128;
+static const int COMING_RING = 256;
 
 /** WHAT A LEVEL OF ONE IS WORTH AT AN INSTRUMENT'S OUTPUT, as a peak in volts, with that module's
 volume control where it starts and one note sounding.
@@ -418,6 +422,9 @@ struct Harmony {
 	float beatsToNext = 0.f;
 	/** Where we are, in beats from the start of the cycle, and how long the cycle is. */
 	double beat = 0.0;
+	/** WHERE WE ARE IN SECONDS from the start of the piece, at the tempo it is played at, as the source
+	shows it; below nought where it does not say. */
+	float seconds = -1.f;
 	float cycleBeats = 0.f;
 	/** The time signature, so a module can work in bars without being told what one is. */
 	uint8_t barBeats = 4;
@@ -627,6 +634,12 @@ struct Bus {
 	Coming coming[COMING_RING];
 	/** The engine frame the last note started on, for busFlashVolts. */
 	std::atomic<int64_t> lastOn{-1000000000};
+	/** THE LAST ENGINE FRAME A READER SAID IT CANNOT PLAY THIS PART: its instrument cannot sound the
+	part's lowest note or its highest (see BusReader::cannotPlay). The one thing that goes from a reader
+	back to the writer. Said again every tenth of a second while it is so, and forgotten half a second
+	after it was last said, so a reader unplugged or given another part stops saying it without having
+	to take it back. Shown by busFlashVolts. */
+	std::atomic<int64_t> cannotPlayAt{-1000000000};
 
 	/** A seqlock, because the harmony is larger than a word and Rack may run several engine
 	threads: the writer raises the count before and after, and a reader that sees it change
@@ -684,6 +697,9 @@ void busWithdraw(int slot);
 starts on its bus, and nothing otherwise. The notes travel through the bus, not the cable, so
 the voltage is free to say something — and Rack lights every plug by its cable's voltage, so
 both ends of an MPX cable flash with its notes as any other cable shows its signal. */
+/** WHAT AN MPX OUTPUT CARRIES AS VOLTAGE, for Rack's plug light alone: a 5 ms pulse of 10 V as each
+note starts, and while a reader says it cannot play the part (Bus::cannotPlayAt), 10 V on and off twice
+a second instead, so the plug blinks. */
 float busFlashVolts(int slot);
 
 /** Publishes the pedals on this bus. Audio thread, one writer per bus. A module that reads an
@@ -751,6 +767,9 @@ struct BusReader {
 	/** How the parts are moving, from the first upstream that says. */
 	bool motion(PartMotion& out) const;
 	/** The instrument from the first upstream that has one. */
+	/** THIS READER CANNOT PLAY THE PART: said to every source it reads, for its plug light (see
+	Bus::cannotPlayAt). To be said again at least every half second while it stays so. */
+	void cannotPlay() const;
 	bool instrument(Instrument& out) const;
 	/** The pedals, the most pressed of all the upstreams: two sources merged into one input are
 	one player's hands, and either one holding the pedal holds it. Nought and nought with

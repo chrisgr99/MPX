@@ -155,6 +155,13 @@ static const double QUIET_STRING_FOR = 0.1;
 
 void BowedInstrument::setQuietStringsRest(bool on) {
 	quietRest = on;
+	// NOTHING HAS RUNG YET: every string at rest from the start, as a tenth of a second of the quiet
+	// it is in would have left it. An instrument that starts at rest itself (BowedPlayer::setInstrument)
+	// is never stepped through that tenth, and its strings would otherwise all be stepped from its first
+	// note, ringing with it where they would have been at rest.
+	if (on && fresh)
+		for (size_t i = 0; i < resting.size(); i++)
+			resting[i] = 1;
 	if (!on)
 		for (size_t i = 0; i < resting.size(); i++)
 			if (resting[i])
@@ -182,6 +189,7 @@ void BowedInstrument::setDesign(const Design& d) {
 	lately.assign(d.strings.size(), 0.f);
 	quietFor.assign(d.strings.size(), 0);
 	restedFor.assign(d.strings.size(), 0);
+	fresh = true;
 	setRate(engine, factor);
 }
 
@@ -308,6 +316,7 @@ float BowedInstrument::process() {
 
 
 bool BowedInstrument::step(float* sound) {
+	fresh = false;
 	{
 		// A string that does not feel the bridge pushes on it all the same, and gives nothing back.
 		double push = 0.0, give = 0.0, pushOfLingering = 0.0;
