@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled brass instrument, star
 
 Names: not fixed. One module, provisionally mpxTrombone, while the engine is unproven; the trumpet, flugelhorn and horn follow as their own slugs on the same engine.
 
-Status: designed, nothing built. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
+Status: phase 1 built, the benchmark (`research/brass/trombone-benchmark.md`, `make brassref`); nothing of the instrument yet. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
 
 ## Purpose
 
@@ -85,9 +85,9 @@ Built first, before any of the instrument, so that every later phase is measured
 
 ## Phases
 
-### 1. The benchmark
+### 1. The benchmark — built
 
-Download the Iowa tenor trombone set; a bench (`make brassref`) that reads each note and writes the table of B6; the published numbers of B1 to B5 and B7 gathered into `research/brass/trombone-benchmark.md`, each with its source. Done when the table exists and every target above has a number or is marked as your ear's.
+`research/brass/trombone-benchmark.md` holds every target with its source, its numbers and what passes. `make brassref` (test/brassref.cpp) reads the twelve Iowa scales from build/iowa-trombone, finds all 99 notes — the threshold between note and silence is the middle of those that find exactly the scale's number of notes, since some scales are digitally silent between notes and some have the room's noise 20 to 30 dB under them — checks each against the note it should be, and writes `research/brass/iowa-tenor-trombone.tsv`. The levels step 13 dB from pp to mf and 8 from mf to ff; the spectral centroid rises 1.55 and 1.85 times; above 1 kHz the spectrum falls about 25 dB an octave at pp and mf and 11 at ff.
 
 ### 2. The air column, two ways
 

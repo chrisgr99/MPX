@@ -606,7 +606,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pedaltest styletest pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pedaltest styletest brassref pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -643,6 +643,13 @@ stringbench:
 		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
 		-L$(RACK_DIR) -lRack -o build/stringbench
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/stringbench $(ARGS)
+
+# The trombone's reference from the University of Iowa recordings: docs/brass.md, phase 1. See
+# test/brassref.cpp for where to fetch them. ARGS="DIR OUT.tsv" for another folder or table.
+brassref:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall test/brassref.cpp -o build/brassref
+	@./build/brassref $(ARGS)
 
 # What style each score's ornaments would be played in, and why. See test/styletest.cpp.
 styletest:
