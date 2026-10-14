@@ -606,7 +606,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pedaltest styletest brassref pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pedaltest styletest brassref brassbore pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -650,6 +650,12 @@ brassref:
 	@mkdir -p build
 	@c++ -std=c++17 -O2 -Wall test/brassref.cpp -o build/brassref
 	@./build/brassref $(ARGS)
+
+# The trombone's air column, in frequency and in time: docs/brass.md, phase 2. See test/brassbore.cpp.
+brassbore:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brassbore.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp -o build/brassbore
+	@./build/brassbore $(ARGS)
 
 # What style each score's ornaments would be played in, and why. See test/styletest.cpp.
 styletest:

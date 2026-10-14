@@ -18,7 +18,9 @@ The model's input impedance, computed by driving its mouthpiece with a flow impu
 
 Peaks 2 to 7 divided by their numbers give 56.6, 58.0, 58.3, 59.2, 58.5 and 58.6 Hz: a harmonic series on about 58.5 Hz (B flat 1 is 58.27 Hz), from which the first peak, at 38 Hz, stands apart.
 
-Pass: the first peak between 33 and 43 Hz and outside the series; peaks 2 to 7 within 2 per cent of the measured frequencies and within 20 cents of a harmonic series. The model's geometry is Smyth and Scott's trombone, not the Conn 8H, so this is a test of plausibility; the exact test is the same geometry computed offline with OpenWInD, which should agree with the model within 1 per cent. The UNSW raw impedance file (ZTbn_dry_26_3degC.xls) is a second, independent curve.
+Pass: the first peak between 33 and 43 Hz and outside the series; peaks 2 to 7 within 2 per cent of the measured frequencies, the instrument tuned as a player tunes it, by its tuning slide, to the Conn's fourth peak. The second peak lies 51 cents under the series of the fourth on the Conn itself, so being near a harmonic series is not a test. The model's geometry is Smyth and Scott's trombone, not the Conn 8H, so this is a test of plausibility; the exact test is the timed columns against the calculation in frequency for the same geometry (BrassBore), within 1 per cent. The UNSW raw impedance file (ZTbn_dry_26_3degC.xls) is a second, independent curve.
+
+Met (docs/brass.md, phase 2): with a tenor mouthpiece and leadpipe as tubes and the tuning slide pulled 33 mm, the model is 2.746 m long against the Conn's 2.74 m and its first seven peaks are -11, 0, +6, 0, +8, +23 and +25 cents from the Conn's; both timed columns are within 3 cents of the calculation.
 
 ## B2. Where a note sounds, and how far it bends
 
