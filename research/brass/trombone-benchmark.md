@@ -33,7 +33,7 @@ Ten trombonists, beginner to professional, B flat 2 to F4, Yamaha YBL 321 (Bouti
 
 Pass: the model's notes at the pressures of B4 sound between 0 and 2.5 per cent above the peak; its bending limits within 3 per cent of those above, by sweeping the lip frequency at a fixed pressure; the two endings as described.
 
-Measured (docs/brass.md, phase 3, Adachi and Sato's hinged lips): with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.4 and 2.6 per cent over it; F3 bends from 17.7 per cent under to 10.5 over, B flat 3 from 14.5 under to 4.6 over. Wider down and narrower up than players; the offset is the player's to set.
+Measured (docs/brass.md, phase 3, Adachi and Sato's hinged lips, shutting from the corners): with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.6 and 1.8 per cent over it at 1.3 kPa; F3 bends from 18.1 per cent under to 11.4 over, B flat 3 from 14.7 under to 9.5 over. Wider down than players; the offset is the player's to set.
 
 ## B3. The pedal note
 
@@ -41,7 +41,7 @@ B flat 1 (58.3 Hz) has no impedance peak under it and is played because its seco
 
 Pass: B flat 1 sustains at a steady pitch within 20 cents of 58.3 Hz; nothing steady at 38 Hz at any lip frequency.
 
-Measured: steady notes either side of B flat 1, 56.8 Hz with the lips at 55 Hz and 59.7 with them at 60, starting at 520 to 600 Pa.
+Measured: a steady note 49 cents under B flat 1, 56.6 Hz, with the lips at 55 Hz, starting at 600 Pa; with the lips at 60 Hz the note goes to 70.5 Hz instead.
 
 ## B4. Pressures
 
@@ -51,7 +51,7 @@ Measured: steady notes either side of B flat 1, 56.8 Hz with the lips at 55 Hz a
 
 Pass: F3 and B flat 3 at mf from mouth pressures within 30 per cent of 1.3 kPa; a threshold rising with frequency; the level against pressure in the three regions of the trumpet law.
 
-Measured: thresholds 500 Pa on B flat 2, 800 on F3, 1060 on B flat 3, rising to 2240 on the eighth resonance; the level against pressure is not yet measured.
+Measured: thresholds 660 Pa on B flat 2, 940 on F3, 1140 on B flat 3, rising to 2120 on the eighth resonance. The level, with the lips tuned to keep the note 1.1 per cent over its resonance, rises 13 to 15 dB for each doubling of the pressure just over the threshold, then 7 to 9 dB, or 8 to 12 with the steepening, to 6.4 kPa: two of the trumpet's three regions, without the levelling off to about 3 dB.
 
 ## B5. Brassiness
 
@@ -60,6 +60,8 @@ Measured: thresholds 500 Pa on B flat 2, 800 on F3, 1060 on B flat 3, rising to 
 - In the recordings of B6, from mf to ff the slope of the spectrum above 1 kHz flattens from about minus 25 to minus 11 dB an octave, the share of the sound above 1 kHz rises by about 4 dB, and the spectral centroid nearly doubles.
 
 Pass: the model's transfer within 3 dB of independent of dynamic below 800 Hz, and 15 to 25 dB higher above 1.5 kHz at ff than at mf; and B6.
+
+Measured (`make brasslips ARGS=brass`, the lips tuned to keep each note 1.1 per cent over its resonance; mf at 1.3 kPa, pp and ff where the level is 13 dB under it and 8 over, the recordings' steps): from mf to ff the transfer under 800 Hz moves at most 0.2 dB; over 1.5 kHz it gains 20.4 dB on F3 and 19.1 on B flat 3, and loses 5.8 on D4, whose ff by these steps is 1.9 kPa, below where its brassiness begins. Without the steepening it does not move. Against the recordings, from mf to ff the centroid rises 1.88 times on F3 and 1.76 on B flat 3 (1.85), and the slope over 1 kHz at ff is -6.2 and -9.3 dB an octave (-11); without the steepening 1.37 and 1.25 times, -14.6 and -17.2.
 
 ## B6. The sound, against recordings
 

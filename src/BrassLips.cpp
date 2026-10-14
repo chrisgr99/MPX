@@ -77,7 +77,9 @@ double BrassHingedLips::step(double cupNow, double cupWithout, double cupPerFlow
 	// THE LIP from this step's forces: the pressure across it on its length, at right angles; the pressure in
 	// the opening on its inner face; its spring towards rest; and, shut, the lips pressing back.
 	const bool shut = y < 0.0;
-	const double q = shut ? shape.qualityShut : shape.quality;
+	// The damping rises as the corners meet, from the open lip's to the shut lip's.
+	const double open1 = shape.cornerHeight > 0.0 && blendDamping ? openShare(y) : (shut ? 0.0 : 1.0);
+	const double q = 1.0 / (open1 / shape.quality + (1.0 - open1) / shape.qualityShut);
 	const double lx = x - shape.jointX, ly = y - shape.jointY;
 	const double across = shape.breadth * (mouth - cupNow);
 	double fx = across * -ly - 0.5 * stiffness * (x - shape.restX);
@@ -91,7 +93,8 @@ double BrassHingedLips::step(double cupNow, double cupWithout, double cupPerFlow
 	// The flow the lip sweeps into the cup as it moves, over the step.
 	const double mx = 0.5 * (x + nx) - shape.jointX, my = 0.5 * (y + ny) - shape.jointY;
 	const double swept = shape.breadth * (mx * (ny - y) - my * (nx - x)) / k;
-	const double open = std::fmax(0.0, shape.breadth * (y + ny));   // 2 b times the mean of y
+	const double mean = 0.5 * (y + ny);
+	const double open = areaAt(mean), share = openShare(mean);
 	xPrev = x;
 	yPrev = y;
 	x = nx;
@@ -110,7 +113,8 @@ double BrassHingedLips::step(double cupNow, double cupWithout, double cupPerFlow
 		const double r = mouth - cupMeanWithout - halfSlope * swept + l / k * flow;
 		through = 2.0 * r / (g + std::sqrt(g * g + 4.0 * a * std::fabs(r)));
 		const double cupMean = cupMeanWithout + halfSlope * (through + swept);
-		inOpening = cupMean - air.rho * through * through * (1.0 / (sc * open) - 1.0 / (sc * sc));
+		const double channel = cupMean - air.rho * through * through * (1.0 / (sc * open) - 1.0 / (sc * sc));
+		inOpening = share * channel + (1.0 - share) * mouth;
 	}
 	else
 		inOpening = mouth;

@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled brass instrument, star
 
 Names: not fixed. One module, provisionally mpxTrombone, while the engine is unproven; the trumpet, flugelhorn and horn follow as their own slugs on the same engine.
 
-Status: phases 1 to 3 built — the benchmark (`research/brass/trombone-benchmark.md`, `make brassref`); the air column, as a grid and as delay lines with grids at the ends, both within 3 cents of the calculation in frequency (`make brassbore`); and the lips, Adachi and Sato's hinged block, playing on the delay lines (`make brasslips`). No brassiness, radiation model or player yet. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
+Status: phases 1 to 4 built — the benchmark (`research/brass/trombone-benchmark.md`, `make brassref`); the air column, as a grid and as delay lines with grids at the ends, both within 3 cents of the calculation in frequency (`make brassbore`); the lips, Adachi and Sato's hinged block shutting from the corners, playing on the delay lines (`make brasslips`); and brassiness, the wave to the bell steepening along the slide, outside the loop that sets up the oscillation (`make brasslips ARGS=brass`). No radiation model or player yet. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
 
 ## Purpose
 
@@ -111,15 +111,51 @@ Not yet measured: the slide moving while the instrument sounds, which needs the 
 
 **One mass blown open** (`BrassLips`): a mass on a spring driven by the pressure across the lips, Bernoulli's flow through the opening and the flow the lip sweeps, Adachi and Sato's closure, Harrison-Harsley's values as Willemsen et al. used them. It plays, but as the one-mass model is known to (Fréour et al. 2023): its notes started at 3.9 to 7.8 kPa, sounded 4 to 9 per cent over their resonances, and F3 could not be bent below its resonance at all; of 48 combinations of quality, mass, breadth and opening, two started a note below 5 kPa, 7.6 and 8.6 per cent sharp. It is kept for comparison.
 
-**A hinged block that swings and stretches** (`BrassHingedLips`): Adachi and Sato's (1996) two-dimensional lip, read from their ATR preprint — a parallelogram jointed at the rim, its tip moving along the flow and across it, driven by the pressure across its length and by the pressure in the opening on its inner face, which falls as the air rushes through and draws the lips together. The swing blows the lips open as one mass does; the stretch lets a note sound below the resonance, as players' lips do (Boutin et al. 2015). Their flow: the jet's energy lost in the cup, a little pressure recovered where it widens, and the air's inertia in the opening. Their Table I's trumpet values, the thickness and joint scaled by the rims' ratio of about one and a half; the mass 1.0 and the breadth 14 mm chosen from a sweep against B2 and B4 (Adachi and Sato's 1.5 and 10.5 mm started F3 at 1440 Pa and B flat 3 at 2020).
+**A hinged block that swings and stretches** (`BrassHingedLips`): Adachi and Sato's (1996) two-dimensional lip, read from their ATR preprint — a parallelogram jointed at the rim, its tip moving along the flow and across it, driven by the pressure across its length and by the pressure in the opening on its inner face, which falls as the air rushes through and draws the lips together. The swing blows the lips open as one mass does; the stretch lets a note sound below the resonance, as players' lips do (Boutin et al. 2015). Their flow: the jet's energy lost in the cup, a little pressure recovered where it widens, and the air's inertia in the opening. Their Table I's trumpet values, the thickness and joint scaled by the rims' ratio of about one and a half.
 
-Against the benchmark: thresholds rise with the note — 500 Pa on B flat 2, 800 on F3, 1060 on B flat 3, 2240 on the eighth resonance — so mf on F3 and B flat 3 falls near the trombonists' 1.3 kPa (B4); with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.4 and 2.6 per cent over it, and the player sets the lips for the 1.1 per cent players play at (B2); F3 bends from 17.7 per cent under to 10.5 over, B flat 3 from 14.5 under to 4.6 over, against 12.1 and 8.1, 10.0 and 8.9 (B2, wider down and narrower up than players); the pedal sounds steadily either side of B flat 1, 56.8 Hz with the lips at 55 and 59.7 with them at 60, with no resonance under it (B3); held notes reach 79 to 108 dB a metre away. At the lowest threshold several resonances start below themselves, in the stretching mode; the player chooses the lips for the note it wants. The slide moved out to fourth position and back under a held B flat 3 glides without a click.
+**The lips shut from the corners.** The opening's area is 2 b y times w, w = tanh(y / y_c) the open share of the breadth: it grows as the square of the height while the lips are nearly shut and in proportion to it once they are apart, as measured lips do (Fletcher and Tarnopolsky 1999, Bromage et al. 2010) and as Vergez and Rodet (2000) modelled theirs. The damping rises with the shut share from the open lip's to the shut lip's, and the pressure on the inner face is the opening's on the open share and the mouth's on the shut share, so nothing jumps as the lips meet. With the whole breadth shut and the damping changed at a stroke, as Adachi and Sato have it, the flow had a corner and the force a jump at every closure: between the harmonics of a held note at 48 kHz there was power 24 to 33 dB under the harmonics below 2 kHz and 11 to 25 dB under them from 2 to 5 kHz, falling only 4 to 10 dB with each doubling of the rate; now it is 44 to 66 and 34 to 56 dB under (`make brasslips ARGS=aliasing`), most of the gain from the damping. The corners' height is 0.1 mm, the mass 0.9 and the breadth 14 mm, chosen from sweeps against B2 and B4 (`ARGS=sweep`, `ARGS=corners`): higher corners raised the thresholds more than they lowered the aliasing, and lighter lips, which started lower, opened to 400 square millimetres and more at 5.4 kPa, where F3 left its resonance.
+
+Against the benchmark: thresholds rise with the note — 660 Pa on B flat 2, 940 on F3, 1140 on B flat 3, 2120 on the eighth resonance — so mf on F3 and B flat 3 falls near the trombonists' 1.3 kPa (B4); with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.6 and 1.8 per cent over it, and the player sets the lips for the 1.1 per cent players play at (B2); F3 bends from 18.1 per cent under to 11.4 over, B flat 3 from 14.7 under to 9.5 over, against 12.1 and 8.1, 10.0 and 8.9 (B2, wider down than players); the pedal sounds at 56.6 Hz with the lips at 55, 49 cents under B flat 1, with no resonance under it (B3), though with the lips at 60 it goes to a higher note; held notes reach 85 to 111 dB a metre away. At the lowest threshold several resonances start below themselves, in the stretching mode; the player chooses the lips for the note it wants. The slide moved out to fourth position and back under a held B flat 3 glides without a click.
+
+**The lips tuned as a player tunes them.** With the lips held at one setting the note rises in pitch with the pressure, 3 to 5 per cent from 800 Pa to 4.5 kPa. Lowered as the pressure rises, so that the note stays 1.1 per cent over its resonance as players play it — from about 0.98 of the resonance near the threshold to 0.84 at 6.4 kPa on F3 — the notes stay regular to 6.4 kPa (`ARGS=regular` maps where they do). The brassiness measurements below use the lips so tuned, as the player will (phase 6).
 
 Not yet: the tongue, and the tables of lips for each note, which are the player's (phase 6).
 
-### 4. Brassiness
+### 4. Brassiness — built
 
-Nonlinear steepening of the outgoing wave along the cylindrical tubing, with the feedback loop left linear, as Hirschberg et al. found admissible: an amplitude-dependent delay in the waveguide's slide (Vergez and Rodet 2000; Msallam et al. 2000), or the nonlinear term in the grid. The steepened wave carries energy above 40 kHz at fortissimo, so this part runs oversampled or band-limited. Measured against B5 and the high end of B6.
+`make brasslips ARGS=brass` measures it against B5 and B6, with the steepening and without; `ARGS=aliasing` measures the power between the harmonics, at 48 kHz or a rate given after it; `ARGS=crescendo` renders a crescendo on B flat 3 with and without the steepening, and one loud note at 48 and at 192 kHz.
+
+**The steepening** (`BrassSteepeningDelay`): in the delay lines carrying the wave to the bell through the slide and the gooseneck, each sample arrives after the tube's delay divided by one plus beta p over rho c squared, beta being (gamma + 1) / 2, about 1.2, and p the wave's pressure less its slow mean (under 10 Hz, the steady flow's part). A sample that would overtake the ones ahead of it joins them, and they travel on at the mean of their speeds, arriving at the mean of the times each would have arrived alone: sticky particles, the entropy solution of Burgers' equation, a shock moving at the mean of the speeds either side of it. What comes out at each step is the mean of the curve through the arrivals over that step (Catmull and Rom's cubic on their uneven times), so a front arriving between two steps is shared between them by where it falls; it costs 1.5 dB at 15 kHz.
+
+**The loop stays linear.** Through the slide the wave to the bell is carried twice: as it would travel at no amplitude, which the bell reflects back to the lips, and steepened, which goes through a second copy of the bell and is what the listener hears; at each junction the steepened wave meets the same wave coming back as the linear one. So the lips play on a linear column, as Hirschberg et al. (1996) found admissible. With the steepened wave reflected back to the lips instead, loud notes went up to 9 cents flat and, from about 5 kPa on F3, locked into a cycle that repeated to the last digit at a whole number of samples, 273 at 48 kHz and 546 at 96. The column is unchanged at small amplitude: within 3 cents of the calculation. Lips and column cost 11.4 per cent of one core at 48 kHz with the steepening and 6.5 without; the second bell is most of the difference.
+
+**Against B5 and B6.** mf is the pressure nearest the trombonists' 1.3 kPa (B4); pp and ff are the pressures whose levels are nearest 13 dB under it and 8 dB over it, the recordings' steps. The centroid is over the pitch; the transfer is the bell's harmonics against the mouthpiece's, its change from mf to ff.
+
+| note | steepening | pp, mf, ff, Pa | centroid, pp to mf and mf to ff | slope over 1 kHz at ff, dB an octave | transfer under 800 Hz, dB | transfer over 1.5 kHz, dB |
+|---|---|---|---|---|---|---|
+| F3 | off | 800, 1345, 3200 | 1.46 and 1.37 times | -14.6 | 0.0 | 0.0 |
+| F3 | on | 800, 1345, 2691 | 1.57 and 1.88 times | -6.2 | +0.2 | +20.4 |
+| B flat 3 | off | 951, 1345, 2263 | 1.38 and 1.25 times | -17.2 | 0.0 | 0.0 |
+| B flat 3 | on | 951, 1345, 2263 | 1.47 and 1.76 times | -9.3 | 0.0 | +19.1 |
+| D4 | off | 1131, 1345, 1903 | 1.18 and 1.25 times | -23.9 | 0.0 | 0.0 |
+| D4 | on | 1131, 1345, 1903 | 1.25 and 1.42 times | -19.4 | -0.1 | -5.8 |
+| recordings, Beauchamp | | | 1.55 and 1.85 times | -11 | within 3 | 15 to 25 |
+
+Below 800 Hz the transfer does not depend on the dynamic; above 1.5 kHz it gains 20.4 dB on F3 and 19.1 on B flat 3, where Beauchamp found 15 to 25. From pp to mf and mf to ff the centroid rises 1.57 and 1.88 times on F3 and 1.47 and 1.76 on B flat 3, against the recordings' 1.55 and 1.85, and the slope over 1 kHz at ff is -6.2 and -9.3 dB an octave, against -11. Without the steepening the transfer does not move. On D4 the recordings' steps put ff at only 1.9 kPa, where its brassiness has not begun. The thresholds, now higher, limit pp to 10 dB under mf. Over 1 kHz at pp and mf the model falls 45 to 55 dB an octave, far steeper than the recordings' 25; the share of the sound over 1 kHz is near theirs, and the recordings' slope at pp may be the room's and the player's noise, which the model has none of.
+
+**The level against the pressure** (B4): 13 to 15 dB for each doubling of the pressure just over the threshold, then 7 to 9 dB without the steepening and 8 to 12 with it, to 6.4 kPa, without the levelling off to about 3 dB that Fletcher and Tarnopolsky measured on the trumpet. A step of 8 dB in level therefore takes less pressure here than a player would use, which is why D4's ff by the recordings' steps falls short of its brassiness; how much pressure each dynamic takes on each note is the player's to set (phase 6).
+
+**Aliasing.** The share of the power between the harmonics, in decibels of each band's power, at 48 kHz with the lips tuned:
+
+| note | mouth Pa | steepening | under 2 kHz | 2 to 5 kHz | 5 to 10 kHz | 10 to 20 kHz |
+|---|---|---|---|---|---|---|
+| F3 | 2691 | off | -51.2 | -44.6 | -28.8 | -20.0 |
+| F3 | 2691 | on | -53.7 | -51.9 | -45.4 | -39.4 |
+| F3 | 5382 | on | -40.0 | -32.3 | -28.0 | -22.3 |
+| B flat 3 | 2691 | on | -55.1 | -46.1 | -39.2 | -34.4 |
+| B flat 3 | 5382 | on | -42.7 | -34.8 | -28.5 | -20.9 |
+
+The steepening adds none that this measures at 2.7 kPa and a few decibels at 5.4.
 
 ### 5. The sound that leaves
 
@@ -156,6 +192,8 @@ As for the bowed strings, each phase leaves a bench that measures what it claims
 - Whether one lip mass is enough over the trombone's range, or the second degree of freedom the measurements describe is needed.
 - How far the two published lip parameter sets, a factor of 2.5 apart, can be reconciled by the benchmark.
 - Whether nonlinear propagation applied to the outgoing wave alone is enough, or the reflected wave's steepening matters for the lips at fortissimo.
+- Whether the second bell, which only the listener hears, can be a filter fitted to the bell's transmission when phase 5 models the sound that leaves.
+- The level does not level off at high pressure as the trumpet's does, and the lips open to 330 square millimetres at 5.4 kPa and stay open most of each cycle; whether they should shut for longer at ff.
 - The slide's position for each note: Boutin et al. give 22.7 cm for fourth position, a uniform-length estimate 27.7 cm.
 - The bell's length in Smyth and Scott, 50.2 cm in one table and 56.7 in the other.
 - Whether a moving slide's Doppler shift and volume change are audible; nothing has been measured.

@@ -19,6 +19,15 @@ THE STEPS IN RADIUS ARE KEPT. The slide's tubes differ slightly, 6.9 mm inner, 7
 made one radius, the resonances moved by up to 30 cents (measured against BrassBore's calculation), so
 each tube is its own pair of delay lines and they scatter where they meet, as Kelly and Lochbaum's do.
 
+THE STEEPENED WAVE TO THE BELL RUNS BESIDE THE LINEAR ONE (BrassSteepeningDelay, Setup::steepening).
+Through the slide the wave going to the bell is carried twice: as it would travel at no amplitude, which the
+bell reflects back to the lips, and steepened, which goes through a second copy of the bell and is what the
+listener hears; at each junction the steepened wave meets the same wave coming back as the linear one. So the
+loop that sets up the oscillation is linear, as Hirschberg et al. (1996) found admissible. With the steepened
+wave reflected back to the lips instead, loud notes went flat by up to 9 cents and, from about 5 kPa on F3,
+locked into a cycle repeating to the last digit at a whole number of samples (273 at 48 kHz, 546 at 96).
+Lips and column cost 11.4 per cent of one core at 48 kHz with the steepening and the second bell, 6.5 without.
+
 THE WALL'S LOSSES OVER THE WHOLE RUN OF TUBES are applied once each way, as the wave leaves the run: the
 half-order derivative of BrassGrid as the same sum of high-passes, each turned into the exponential of
 itself by a Padé approximant — a first-order shelf, unity at nought, as much below it above its corner as
@@ -28,6 +37,7 @@ NO RACK IN HERE. */
 #include "BrassBore.hpp"
 #include "BrassGrid.hpp"
 
+#include <cstdint>
 #include <vector>
 
 namespace px {
@@ -46,6 +56,65 @@ struct BrassDelay {
 private:
 	std::vector<double> line;
 	int at = 0, mask = 0;
+};
+
+
+/** A DELAY LINE IN WHICH A LOUD WAVE STEEPENS: phase 4 of docs/brass.md.
+
+THE SPEED OF A WAVE DEPENDS ON ITS OWN PRESSURE. In a plane wave the air moves with velocity p / (rho c),
+and the sound travels at c plus beta times that, beta = (gamma + 1) / 2, about 1.2: the crests a little
+faster, the troughs a little slower, so that over a long cylinder each crest gains on the trough ahead of
+it and the front between them steepens, at fortissimo nearly into a shock by the end of a trombone's slide
+(Hirschberg, Gilbert, Msallam and Wijnands 1996). This is where a brass instrument's brassiness comes from,
+not the lips (Stevenson et al. 2009).
+
+EACH SAMPLE ARRIVES WHEN ITS OWN SPEED SAYS: written at time n, it arrives at n + D / (1 + beta p /
+(rho c^2)) samples, D the tube's delay. The pressure that sets the speed is the wave's sound, its slow mean
+(the steady flow's part, under about 10 Hz) taken off. (Vergez and Rodet 2000; Msallam et al. 2000;
+trombone.md, 4.4.)
+
+A SAMPLE THAT WOULD OVERTAKE THE ONE AHEAD OF IT JOINS IT: the front has become a shock. The samples that
+meet travel on together at the mean of their speeds, arriving at the mean of the times each would have
+arrived alone — sticky particles, which give the entropy solution of Burgers' equation (E, Rykov and Sinai
+1996), the shock moving at the mean of the speeds either side of it as Rankine and Hugoniot's condition
+asks. Held to the time of the slower sample instead, the shock lost where it fell between two samples in
+each of the slide's seven tubes, and a loud note's period locked to a whole number of samples (F3 at
+5.4 kPa, exactly 273 at 48 kHz).
+
+WHAT COMES OUT AT EACH STEP IS THE MEAN OF THE WAVE OVER THAT STEP: the curve through the arrivals — a
+cubic through four of them, Catmull and Rom's on their uneven times, or a straight line between two that
+arrive within half a step of each other — integrated from one step to the next. A shock arriving between
+two steps is shared between them by where it falls. Read at the step instead, it landed whole on the next
+one, and the samples could not say when it came. The mean is centred half a step back, so each sample is sent half a
+step sooner; it costs a little of the top octave, 1.5 dB at 15 kHz at 48 kHz.
+
+ONLY THE WAVE GOING TO THE BELL, AND OUT OF THE LOOP, as Hirschberg et al. found admissible: the
+nonlinearity matters for what reaches the listener and can be left out of the loop that sets up the
+oscillation (BrassWaveguide keeps a linear wave to the bell beside the steepened one; see there). */
+struct BrassSteepeningDelay {
+	/** Room for `size` samples in flight; `beta` over rho c^2, per pascal. */
+	void setup(int size, double steepness, double rate);
+	/** THIS STEP'S SAMPLE, travelling `delay` samples at rest. */
+	void write(double x, double delay);
+	/** WHAT ARRIVED OVER THE STEP JUST ENDED, its mean, then the clock moves on a step. */
+	double read();
+
+private:
+	/** The integral of the curve between arrivals `i` and `i` + 1, from `from` to `to`. */
+	double span(int64_t i, double from, double to) const;
+	std::vector<double> arrival, value;
+	/** The groups of samples travelling together, oldest to newest, each with the sum of the times its
+	samples would have arrived alone. */
+	struct Cluster {
+		int64_t first = 0;
+		int count = 1;
+		double sumOwn = 0.0;
+	};
+	std::vector<Cluster> clusters;
+	int64_t oldest = 0, newest = 0;
+	int mask = 0;
+	int64_t head = 0, cursor = 0;
+	double now = 0.0, steep = 0.0, slow = 0.0, slowPole = 0.0;
 };
 
 
@@ -73,6 +142,9 @@ struct BrassWaveguide {
 		int lossTerms = 4;
 		/** The slide's extension from first position and the tuning slide's pull, metres. */
 		double extension = 0.0, tuningPull = 0.0;
+		/** THE WAVE GOING TO THE BELL STEEPENS (BrassSteepeningDelay); off, it travels as it would at no
+		amplitude. */
+		bool steepening = true;
 	};
 	void setup(const Setup& s);
 
@@ -86,26 +158,31 @@ struct BrassWaveguide {
 	double end(double flow);
 	/** The cup's pressure now, pascals. */
 	double cupPressure() const { return cupNow; }
-	double mouthPressure() const { return back.mouthPressure(); }
-	double radiatedFlow() const { return back.radiatedFlow(); }
-	int gridPoints() const { return front.points() + back.points(); }
+	/** At the bell's mouth: what the listener hears, from the steepened wave where it steepens. */
+	double mouthPressure() const { return steepens ? heardBell.mouthPressure() : back.mouthPressure(); }
+	double radiatedFlow() const { return steepens ? heardBell.radiatedFlow() : back.radiatedFlow(); }
+	int gridPoints() const { return front.points() + back.points() + (steepens ? heardBell.points() : 0); }
 
 private:
 	BrassAir air;
 	double rate = 44100.0;
 	BrassGrid front, back;
+	/** The bell the steepened wave goes through, for the listener only. */
+	BrassGrid heardBell;
 	struct Tube {
 		double length = 0.0, radius = 0.0;
 		bool outer = false;
 		BrassDelay forward, backward;
+		BrassSteepeningDelay steepening;
 		double delay = 2.0;
 	};
+	bool steepens = true;
 	std::vector<Tube> tubes;
 	/** Each junction's pressure reflection, for a wave going on from the tube before it. */
 	std::vector<double> reflection;
 	std::vector<double> xi, mu;
-	BrassLossShelves lossOn, lossBack;
-	std::vector<double> arrivingRight, arrivingLeft;
+	BrassLossShelves lossOn, lossBack, lossHeard;
+	std::vector<double> arrivingRight, arrivingLeft, heardRight;
 	double cupNow = 0.0;
 	void retune();
 };
