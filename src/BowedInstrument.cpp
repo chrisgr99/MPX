@@ -252,6 +252,13 @@ void BowedInstrument::stop(int string, float hz) {
 }
 
 
+void BowedInstrument::damp(int string, float seconds) {
+	if (string < 0 || string >= (int) strs.size() || resting[(size_t) string])
+		return;
+	strs[(size_t) string].damp(seconds);
+}
+
+
 void BowedInstrument::linger(int string, float seconds) {
 	if (string < 0 || string >= (int) strs.size() || seconds <= 0.f)
 		return;
@@ -285,15 +292,16 @@ void BowedInstrument::bow(int string, float force, float speed, float fromBridge
 }
 
 
-void BowedInstrument::pluck(int string, float level, float fromBridge) {
+void BowedInstrument::pluck(int string, float level, float fromBridge, float width) {
 	if (string < 0 || string >= (int) strs.size())
 		return;
 	const float open = wanted.strings[(size_t) string].openHz;
 	const float hz = stoppedAt[(size_t) string] > 0.f ? stoppedAt[(size_t) string] : open;
 	if (resting[(size_t) string])
 		wake((size_t) string);
-	strs[(size_t) string].setContact(fromBridge / (wanted.length * open / hz));
-	strs[(size_t) string].pluck(level, 0.4f);
+	const float vibrating = wanted.length * open / hz;
+	strs[(size_t) string].setContact(fromBridge / vibrating);
+	strs[(size_t) string].pluck(level, width / vibrating);
 	givenFrom[(size_t) string] = NAN;
 }
 

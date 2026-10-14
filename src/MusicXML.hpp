@@ -18,8 +18,9 @@ which is what Guitar Pro does with its own two and what the chart already plays.
 
 WHAT IS READ AND WHAT IS NOT. Notes, rests, chords, ties, voices, the divisions they are counted
 in, key and time and their changes, repeats, first and second time bars, the jump marks, tempo
-marks that carry a number, dynamic marks, and staccato and accent. Not yet: hairpins, written
-tempo changes that carry no number, ornaments, and anything to do with a fingerboard.
+marks that carry a number, dynamic marks, hairpins and their worded forms, slurs, staccato, tenuto
+and accent, fermatas, trills and the short ornaments, tremolos, the pedals, and pizz. and arco. Not
+yet: written tempo changes that carry no number, and anything to do with a fingerboard.
 */
 #include "GuitarPro.hpp"
 

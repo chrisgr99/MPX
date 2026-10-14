@@ -295,6 +295,12 @@ struct Event {
 		                           and not rolled lands with the roll's top note, not its first —
 		                           as Taylor has it for Haydn and the Chopin National Edition for
 		                           Chopin. See OrnamentStyle.hpp. */
+		PIZZICATO = 1u << 22,      /**< Plucked by the finger where a bow would otherwise draw it:
+		                           a bowed instrument's pizzicato. Whole passages are, from a pizz.
+		                           written in the part to the arco that ends it. */
+		STOPPED = 1u << 23,        /**< The + over a note, as written. On a bowed string the left
+		                           hand plucks it, between notes the bow plays; on a horn the hand
+		                           closes the bell. The instrument says which it means. */
 	};
 	uint32_t technique = 0;
 

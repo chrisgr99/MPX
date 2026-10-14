@@ -172,7 +172,7 @@ int main() {
 	for (const Note* set : {cello, violin})
 		for (int i = 0; i < 5; i++) {
 			BowedString s = string((float) set[i].hz);
-			s.pluck(1.f, 0.4f);
+			s.pluck(1.f, 0.03f);
 			const std::vector<float> x = play(s, 1.2f);
 			// THE FUNDAMENTAL ITSELF, and not autocorrelation, which answers how the whole
 			// waveform repeats and moves with whichever partials are loud: with the losses set
@@ -199,7 +199,7 @@ int main() {
 		double worst = 0.0;
 		for (float b : {0.02f, 0.05f, 0.08f, 0.12f, 0.18f, 0.25f, 0.5f}) {
 			BowedString s = string((float) hz, 3.f, 0.3f, b);
-			s.pluck(1.f, 0.4f);
+			s.pluck(1.f, 0.03f);
 			const std::vector<float> x = play(s, 1.2f);
 			const double c = cents(partialHz(x, 0.3, 0.5, hz), hz);
 			char what[96];
@@ -220,7 +220,7 @@ int main() {
 	{
 		const double hz = 146.83;
 		BowedString s = string((float) hz, 4.f, 0.3f, 0.12f);
-		s.pluck(1.f, 0.9f);
+		s.pluck(1.f, 0.005f);
 		const std::vector<float> x = play(s, 1.2f);
 		const double f1 = partialHz(x, 0.3, 0.5, hz);
 		std::printf("  fundamental %.3f Hz, %+.2f cents from %.2f\n", f1, cents(f1, hz), hz);
@@ -241,7 +241,7 @@ int main() {
 		for (int k : {4, 5, 6}) {
 			const float b = 1.f / (float) k;
 			BowedString s = string((float) hz, 3.f, 0.15f, b);
-			s.pluck(1.f, 0.9f);
+			s.pluck(1.f, 0.005f);
 			const std::vector<float> x = play(s, 1.2f);
 			const double gone = magnitudeAt(x, 0.1, 0.4, hz * k);
 			double others = 0.0;
@@ -280,7 +280,7 @@ int main() {
 	std::printf("\nDECAY, against the time asked for.\n");
 	for (double want : {0.5, 2.0, 6.0}) {
 		BowedString s = string(146.83f, (float) want);
-		s.pluck(1.f, 0.4f);
+		s.pluck(1.f, 0.03f);
 		const std::vector<float> x = play(s, (float) want);
 		const double got = decayOf(x, want);
 		char what[96];
@@ -294,7 +294,7 @@ int main() {
 	{
 		const double hz = 146.83;
 		BowedString s = string((float) hz, 6.f);
-		s.pluck(1.f, 0.4f);
+		s.pluck(1.f, 0.03f);
 		std::vector<float> x((size_t) (2.0 * RATE));
 		double biggestStep = 0.0, last = 0.0;
 		for (size_t i = 0; i < x.size(); i++) {
@@ -319,7 +319,7 @@ int main() {
 	std::printf("\nSTABILITY: nothing grows.\n");
 	for (double hz : {65.41, 146.83, 440.0, 1318.51}) {
 		BowedString s = string((float) hz, 8.f, 0.05f);
-		s.pluck(1.f, 0.4f);
+		s.pluck(1.f, 0.03f);
 		const std::vector<float> x = play(s, 4.f);
 		const double early = rmsOver(x, 0.2, 0.4), late = rmsOver(x, 3.6, 3.9);
 		char what[96];
@@ -355,7 +355,7 @@ int main() {
 		std::vector<float> out;
 		for (double hz : {65.41, 98.00, 146.83, 220.00}) {
 			BowedString s = string((float) hz, 3.f, 0.25f, 0.15f);
-			s.pluck(0.9f, 0.3f);
+			s.pluck(0.9f, 0.04f);
 			const std::vector<float> x = play(s, 0.9f);
 			out.insert(out.end(), x.begin(), x.end());
 		}
@@ -365,7 +365,7 @@ int main() {
 		std::vector<float> out;
 		for (float b : {0.04f, 0.12f, 0.3f}) {
 			BowedString s = string(146.83f, 3.f, 0.25f, b);
-			s.pluck(0.9f, 0.3f);
+			s.pluck(0.9f, 0.04f);
 			const std::vector<float> x = play(s, 1.2f);
 			out.insert(out.end(), x.begin(), x.end());
 		}

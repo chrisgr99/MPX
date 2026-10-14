@@ -11,7 +11,10 @@ meter times it, so the module's own path is measured and not the player's alone.
 
 A ROW is the score's row the part is on: mpxScore puts the parts with the most notes on the first
 rows. A row may be followed by that module's own level, economy and brightness knob, as a patch can set
-each module apart — cello=3,full,economy,bright=0.5 — over the rehearsal and economy given for all. realtime runs in blocks of 256 samples and waits for the clock between them, as an audio
+each module apart — cello=3,full,economy,bright=0.5 — over the rehearsal and economy given for all; and,
+for listening, its plucks: pluckwidth=5 the finger, millimetres, pluckshare=0.16 where, pluckdb=2 every
+pluck louder, leftdb=-10 the left hand's under the right's, leftstops=0.04 how soon the left hand stops
+its pluck, toponly every chord as its top note alone. realtime runs in blocks of 256 samples and waits for the clock between them, as an audio
 interface does, so that the planning threads compete for the cores as they do in Rack; without it
 everything runs as fast as it can. raw writes each module's output to build/stringbench-NAME.raw, as
 floats, so that two builds can be compared sample for sample.
@@ -175,6 +178,17 @@ int main(int argc, char** argv) {
 		int rehearsal = -1, economy = -1;
 		/** Its brightness knob, nought to one, or -1 for where it starts. */
 		float bright = -1.f;
+		/** ITS PLUCKS, for listening: how wide the finger is, millimetres, or -1 for the habit's; and how
+		much louder, dB, at every marking. See BowedPlayer::Habits::pluckWidth. */
+		float pluckWidth = -1.f, pluckDb = 0.f;
+		/** Where its strings are plucked, as a share of the open string from the bridge, or -1 for the
+		habit's (Habits::pluckShare). */
+		float pluckShare = -1.f;
+		/** Its left-hand plucks, or NAN and -1 for the habit's: decibels under the right hand's, and the
+		seconds the finger laid back on the string takes to stop it (Habits::leftHandDb, leftHandStops). */
+		float leftDb = NAN, leftStops = -1.f;
+		/** Its chords as their top notes alone, as before double stops. */
+		bool topOnly = false;
 		double busy = 0.0, worstBlock = 0.0;
 		std::vector<float> out;
 		/** How long the score's output for its row held 10 V at a stretch, the longest, seconds: a note's
@@ -206,6 +220,18 @@ int main(int argc, char** argv) {
 					p.economy = 1;
 				else if (word.rfind("bright=", 0) == 0)
 					p.bright = (float) std::atof(word.c_str() + 7);
+				else if (word.rfind("pluckwidth=", 0) == 0)
+					p.pluckWidth = (float) std::atof(word.c_str() + 11);
+				else if (word == "toponly")
+					p.topOnly = true;
+				else if (word.rfind("leftdb=", 0) == 0)
+					p.leftDb = (float) std::atof(word.c_str() + 7);
+				else if (word.rfind("leftstops=", 0) == 0)
+					p.leftStops = (float) std::atof(word.c_str() + 10);
+				else if (word.rfind("pluckshare=", 0) == 0)
+					p.pluckShare = (float) std::atof(word.c_str() + 11);
+				else if (word.rfind("pluckdb=", 0) == 0)
+					p.pluckDb = (float) std::atof(word.c_str() + 8);
 				else if (word == "full" || word == "two" || word == "guessed" || word == "live")
 					p.rehearsal = word == "full" ? 0 : (word == "two" ? 1 : (word == "live" ? 3 : 2));
 			}
@@ -237,6 +263,22 @@ int main(int argc, char** argv) {
 		p.module->setRehearsing(p.rehearsal >= 0 ? p.rehearsal : rehearsal);
 		if (p.bright >= 0.f)
 			p.module->params[px::BowedModule::P_BRIGHT].setValue(p.bright);
+		p.module->chordsPlayed = !p.topOnly;
+		if (p.pluckWidth >= 0.f || p.pluckDb != 0.f || p.pluckShare > 0.f || !std::isnan(p.leftDb) || p.leftStops >= 0.f) {
+			px::BowedPlayer::Habits h = p.module->habitsNow();
+			if (p.pluckWidth >= 0.f)
+				h.pluckWidth = 0.001f * p.pluckWidth;
+			if (p.pluckShare > 0.f)
+				h.pluckShare = p.pluckShare;
+			if (!std::isnan(p.leftDb))
+				h.leftHandDb = p.leftDb;
+			if (p.leftStops >= 0.f)
+				h.leftHandStops = p.leftStops;
+			const float louder = std::pow(10.f, p.pluckDb / 20.f);
+			h.pluckPiano *= louder;
+			h.pluckForte *= louder;
+			p.module->setHabits(h);
+		}
 		p.module->build();
 		// RECORDED AS THE PANEL'S BUTTON RECORDS, the WAV and the list of notes in the Rack user
 		// folder, so that a run here can be set beside one recorded in Rack.

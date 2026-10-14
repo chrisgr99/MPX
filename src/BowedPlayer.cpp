@@ -76,6 +76,12 @@ BowedPlayer::Habits BowedPlayer::violinHabits() {
 	h.betaLeast *= 1.125f;
 	h.betaMost *= 1.125f;
 	h.betaPianissimo *= 1.125f;
+	// THE PLUCK CHOSEN BY EAR in the Fauré scherzo's opening: 2 dB over one as loud in its first 50 ms
+	// as a bowed note's body at the same marking where the string was plucked at 0.22, and then plucked
+	// nearer the bridge, which brightens it and makes it louder again — 4 dB over the bowed note in
+	// all, the mean over each string open and a third up (make bowplayer ARGS="pluck violin").
+	h.pluckPiano = 2.66f;
+	h.pluckForte = 7.72f;
 	return h;
 }
 
@@ -102,6 +108,12 @@ BowedPlayer::Habits BowedPlayer::violaHabits() {
 	h.forceForte = 2.2f;
 	h.evenness = 1.f;
 	h.startSqueakMost = -10.f;
+	// THE PLUCK CHOSEN BY EAR in the Fauré scherzo's opening: 2 dB over one as loud in its first 50 ms
+	// as a bowed note's body at the same marking where the string was plucked at 0.22, and then plucked
+	// nearer the bridge, which brightens it and makes it louder again — 5 dB over the bowed note in
+	// all, the mean over each string open and a third up (make bowplayer ARGS="pluck viola").
+	h.pluckPiano = 3.51f;
+	h.pluckForte = 11.15f;
 	return h;
 }
 
@@ -144,6 +156,12 @@ BowedPlayer::Habits BowedPlayer::celloHabits() {
 	h.twoStarts.shares = {1.f};
 	h.twoStarts.glideRamps = {0.02f};
 	h.twoStarts.glideFloors = {0.2f};
+	// THE PLUCK CHOSEN BY EAR in the Fauré scherzo's opening: 2 dB over one as loud in its first 50 ms
+	// as a bowed note's body at the same marking where the string was plucked at 0.22, and then plucked
+	// nearer the bridge, which brightens it and makes it louder again — 3 dB over the bowed note in
+	// all, the mean over each string open and a third up (make bowplayer ARGS="pluck cello").
+	h.pluckPiano = 2.95f;
+	h.pluckForte = 6.13f;
 	return h;
 }
 
@@ -179,6 +197,7 @@ void BowedPlayer::setInstrument(const BowedInstrument::Design& design, float eng
 	anyLast = false;
 	lastReleased = true;
 	releaseAt = -1;
+	lastWith = -1;
 	bowAt = 0.5 * habits.bowLength;
 	direction = -1;
 	strokeShare = 1.0;
@@ -213,11 +232,109 @@ void BowedPlayer::addAt(const Note& n, int64_t start) {
 	p.note = n;
 	p.note.hz = playable(n.hz);
 	p.start = start;
+	p.note.lowerCount = 0;
+	p.note.onString = p.note.withString = -1;
+	// A CHORD, ON STRINGS SIDE BY SIDE (stopsFor), each note moved by octaves as a single note is, and
+	// none twice.
+	if (n.lowerCount > 0) {
+		float hz[4];
+		int count = 0;
+		for (int i = 0; i < n.lowerCount && i < 3; i++) {
+			const float h = playable(n.lower[i]);
+			bool again = std::fabs(h / p.note.hz - 1.f) < 0.003f;
+			for (int j = 0; j < count; j++)
+				again = again || std::fabs(h / hz[j] - 1.f) < 0.003f;
+			if (!again && h < p.note.hz)
+				hz[count++] = h;
+		}
+		std::sort(hz, hz + count);
+		hz[count++] = p.note.hz;
+		int strings[4];
+		const int kept = stopsFor(hz, count, strings);
+		if (kept >= 2 && n.pizzicato) {
+			// PLUCKED, ALL OF IT: strummed (see planPluck).
+			p.note.onString = (int8_t) strings[kept - 1];
+			for (int i = 0; i < kept - 1; i++) {
+				p.note.lower[i] = hz[i];
+				p.note.lowerString[i] = (int8_t) strings[i];
+			}
+			p.note.lowerCount = (uint8_t) (kept - 1);
+		}
+		else if (kept == 2) {
+			p.note.onString = (int8_t) strings[1];
+			p.note.withHz = hz[0];
+			p.note.withString = (int8_t) strings[0];
+		}
+		else if (kept >= 3) {
+			// BROKEN, AS A PLAYER BREAKS IT: no bow holds three strings on a curved bridge, so the lower two
+			// sound first, briefly, and the bow rolls on in the same stroke to the upper two, which are
+			// held — three notes as the lower two and then the upper two, four as the lower pair and then
+			// the upper pair.
+			const double breakSeconds = std::fmin((double) habits.chordBreak,
+				(double) habits.chordBreakMost * (double) n.seconds);
+			const int64_t breakAt = start + (int64_t) std::llround(breakSeconds * rate);
+			Pending first = p;
+			first.note.hz = hz[1];
+			first.note.onString = (int8_t) strings[1];
+			first.note.withHz = hz[0];
+			first.note.withString = (int8_t) strings[0];
+			first.note.seconds = (float) breakSeconds;
+			first.note.slurred = true;
+			first.note.slurSeconds = (n.slurred && n.slurSeconds > 0.f) ? n.slurSeconds : n.seconds;
+			p.start = breakAt;
+			p.note.onString = (int8_t) strings[kept - 1];
+			p.note.withHz = hz[kept - 2];
+			p.note.withString = (int8_t) strings[kept - 2];
+			p.note.seconds = (float) std::fmax(0.01, (double) n.seconds - breakSeconds);
+			p.note.fromSlur = true;
+			p.note.downbeat = false;
+			p.note.accent = false;
+			if (n.slurSeconds > 0.f)
+				p.note.slurSeconds = (float) std::fmax(0.01, (double) n.slurSeconds - breakSeconds);
+			auto at = std::upper_bound(upcoming.begin(), upcoming.end(), first,
+				[](const Pending& x, const Pending& y) { return x.start < y.start; });
+			upcoming.insert(at, first);
+		}
+	}
 	// IN THE ORDER THEY START, whatever order they come in: a note played from a keyboard now goes
 	// before the notes a score has announced for later.
 	auto at = std::upper_bound(upcoming.begin(), upcoming.end(), p,
 		[](const Pending& x, const Pending& y) { return x.start < y.start; });
 	upcoming.insert(at, p);
+}
+
+
+int BowedPlayer::stopsFor(float* hz, int count, int* strings) const {
+	const BowedInstrument::Design& d = live.inst.design();
+	const int n = (int) d.strings.size();
+	while (count >= 2) {
+		for (int k = n - count; k >= 0; k--) {
+			bool fits = true;
+			float nearest = 1e9f, furthest = -1e9f;
+			for (int i = 0; i < count && fits; i++) {
+				const float open = d.strings[(size_t) (k + i)].openHz;
+				if (hz[i] < open * 0.9995f || hz[i] > open * BowedInstrument::Design::FINGERBOARD * 1.0005f)
+					fits = false;
+				else if (hz[i] > open * 1.0005f) {
+					// The finger's place from the nut, metres.
+					const float at = d.length * (1.f - open / hz[i]);
+					nearest = std::fmin(nearest, at);
+					furthest = std::fmax(furthest, at);
+				}
+			}
+			if (fits && (furthest < nearest || furthest - nearest <= habits.stopReach)) {
+				for (int i = 0; i < count; i++)
+					strings[i] = k + i;
+				return count;
+			}
+		}
+		// THE LOWEST LEFT OUT, and the rest tried again.
+		for (int i = 0; i + 1 < count; i++)
+			hz[i] = hz[i + 1];
+		count--;
+	}
+	strings[0] = -1;
+	return count;
 }
 
 
@@ -271,6 +388,7 @@ BowedPlayer::Line BowedPlayer::takeLine() const {
 	l.releaseAt = releaseAt;
 	l.random = random;
 	l.retake = retake;
+	l.lastWith = lastWith;
 	return l;
 }
 
@@ -290,6 +408,7 @@ void BowedPlayer::giveLine(const Line& l) {
 	releaseAt = l.releaseAt;
 	random = l.random;
 	retake = l.retake;
+	lastWith = l.lastWith;
 }
 
 
@@ -374,6 +493,44 @@ void BowedPlayer::schedule(State& s, const Action& given) {
 	auto at = std::upper_bound(s.actions.begin(), s.actions.end(), a,
 		[](const Action& x, const Action& y) { return x.at < y.at; });
 	s.actions.insert(at, a);
+	// THE SAME ON THE OTHER STRING OF A DOUBLE STOP: one bow, one hand.
+	if (&s == &live && mirror.on && given.string == mirror.main) {
+		Action b = given;
+		b.string = mirror.with;
+		switch (b.kind) {
+			case Action::FORCE:
+				b.value *= mirror.forceScale;
+				break;
+			case Action::FOLLOW:
+				if (mirror.continues)
+					return;
+				b.value *= mirror.forceScale;
+				break;
+			case Action::ATTACK:
+				if (mirror.continues)
+					return;
+				b.b *= mirror.forceScale;
+				b.d *= mirror.forceScale;
+				break;
+			case Action::SPEED:
+				if (mirror.continues)
+					return;
+				break;
+			case Action::FINGER:
+				b.value = mirror.hz;
+				b.b = 0.f;   // One string lingers at a slurred leap, not two.
+				break;
+			case Action::VIBRATO:
+				if (mirror.open)
+					b.value = 0.f;
+				break;
+			case Action::DISTANCE:
+				break;
+			default:
+				return;
+		}
+		schedule(s, b);
+	}
 }
 
 
@@ -433,6 +590,14 @@ void BowedPlayer::apply(State& s, const Action& a, double rate) {
 			v.wasStuck = true;
 			v.force.to(a.d, std::max<int64_t>(1, (int64_t) (BOW_LANDS * rate)));
 			v.speed.to(0.f, 0);
+			break;
+		case Action::PLUCK:
+			s.inst.pluck(a.string, a.value, a.a, a.b);
+			v.pluckedAt = a.at;
+			break;
+		case Action::DAMP:
+			if (v.pluckedAt == a.c && v.force.value <= 0.f)
+				s.inst.damp(a.string, a.value);
 			break;
 	}
 }
@@ -753,6 +918,15 @@ void BowedPlayer::planRelease(int64_t at) {
 	schedule(live, a);
 	a.kind = Action::FORCE;
 	schedule(live, a);
+	// AND OFF THE OTHER STRING OF A DOUBLE STOP.
+	if (lastWith >= 0 && lastWith != lastString) {
+		a.string = lastWith;
+		a.kind = Action::SPEED;
+		schedule(live, a);
+		a.kind = Action::FORCE;
+		schedule(live, a);
+	}
+	lastWith = -1;
 }
 
 
@@ -868,6 +1042,10 @@ int BowedPlayer::stringFor(float hz, bool longWithVibrato, int followsFrom) cons
 
 void BowedPlayer::plan(const Pending& p) {
 	const Note& n = p.note;
+	if (n.pizzicato) {
+		planPluck(p);
+		return;
+	}
 	const BowedInstrument::Design& design = live.inst.design();
 	const int64_t t0 = std::max(p.start, live.clock);
 	const double len = n.staccato ? std::fmin(0.5 * n.seconds, 0.25) : (double) n.seconds;
@@ -905,7 +1083,11 @@ void BowedPlayer::plan(const Pending& p) {
 		strokeShare = 1.0;
 		retake = false;
 	}
-	const int s = stringFor(n.hz, vibratoWanted(n) && n.seconds >= 0.6f, joined ? lastString : -1);
+	// THE STRING, or the one addAt put it on with a note beside it.
+	const int s = (n.onString >= 0 && n.onString < live.inst.strings()) ? (int) n.onString
+		: stringFor(n.hz, vibratoWanted(n) && n.seconds >= 0.6f, joined ? lastString : -1);
+	const int with = (n.withString >= 0 && n.withString < live.inst.strings() && n.withString != s)
+		? (int) n.withString : -1;
 	const float open = design.strings[(size_t) s].openHz;
 	const float vibrating = design.length * open / n.hz;
 	// THE DYNAMIC'S SPEED, AND THIS NOTE'S: the latter evened out against the instrument (see evenFor).
@@ -999,6 +1181,9 @@ void BowedPlayer::plan(const Pending& p) {
 				if (q.start > sees)
 					break;
 				const Note& m = q.note;
+				// Plucked: the bow is put aside, and nothing after it is this stroke's business.
+				if (m.pizzicato)
+					break;
 				const double mLen = m.staccato ? std::fmin(0.5 * m.seconds, 0.25) : (double) m.seconds;
 				// A rest before it: the bow is lifted and placed again.
 				if (q.start - endsAt >= joinedGap)
@@ -1072,6 +1257,24 @@ void BowedPlayer::plan(const Pending& p) {
 		a.c = fade;
 		schedule(st, a);
 	};
+
+	// A DOUBLE STOP: the bow off a string the last one was on and this one is not, as it tilts; and
+	// everything the bow and the hand do on this note's string done on the other's as well (Mirror).
+	if (joined && lastWith >= 0 && lastWith != s && lastWith != with) {
+		const int64_t lift = (int64_t) (0.02 * rate);
+		act(live, std::max(live.clock, t0 - lift / 2), Action::FORCE, lastWith, 0.f, lift);
+		act(live, std::max(live.clock, t0 - lift / 2), Action::SPEED, lastWith, 0.f, lift);
+	}
+	if (with >= 0) {
+		mirror.on = true;
+		mirror.main = s;
+		mirror.with = with;
+		mirror.hz = n.withHz;
+		mirror.forceScale = forceFor(n.level, with) / std::fmax(1e-6f, forceFor(n.level, s));
+		mirror.open = n.withHz <= design.strings[(size_t) with].openHz * 1.0005f;
+		mirror.continues = (kind == Played::CROSS || kind == Played::LEGATO) && dir == direction
+			&& !lastReleased && (with == lastString || with == lastWith);
+	}
 
 	if (kind == Played::LEGATO) {
 		// THE FINGER MOVES AND THE BOW GOES ON: the new force and place over 30 ms.
@@ -1261,7 +1464,7 @@ void BowedPlayer::plan(const Pending& p) {
 		const bool quickBefore = quick;
 		if (guessStarts)
 			quick = true;
-		if (kind == Played::CROSS && anyLast) {
+		if (kind == Played::CROSS && anyLast && lastString != with) {
 			const int64_t lift = (int64_t) (0.02 * rate);
 			act(live, std::max(live.clock, t0 - lift / 2), Action::FORCE, lastString, 0.f, lift);
 			act(live, std::max(live.clock, t0 - lift / 2), Action::SPEED, lastString, 0.f, lift);
@@ -1680,11 +1883,15 @@ void BowedPlayer::plan(const Pending& p) {
 	record.speed = (float) speed;
 	record.distance = distance;
 	record.vibratoCents = cents;
+	record.withHz = with >= 0 ? n.withHz : 0.f;
+	record.withString = with;
 	played.push_back(record);
+	mirror.on = false;
 
 	anyLast = true;
 	last = n;
 	lastString = s;
+	lastWith = with;
 	lastStart = t0;
 	lastEnd = end;
 	lastForce = force;
@@ -1693,6 +1900,144 @@ void BowedPlayer::plan(const Pending& p) {
 	lastReleased = false;
 	// A NOTE HELD UNTIL LET GO is not let go at its end: endNow does it.
 	releaseAt = n.held ? std::numeric_limits<int64_t>::max() / 4 : end;
+}
+
+
+/** A NOTE PLUCKED. The bow comes off any string it is drawing, the finger goes down on the note's string
+in the sample the string is plucked, and the string is plucked between the end of the fingerboard and the
+bridge, as hard as the dynamic asks (Habits::pluckShare and the rest). The pluck catches the string
+(BowedString::pluck), so a string still ringing is not plucked on top of what it was doing; and the
+finger goes down as it is plucked rather than before, since a finger landing ahead of the bow slid the
+ringing string to the new pitch for a few milliseconds before the new note sounded. Nothing is
+rehearsed: a pluck starts the same way every time. The vibrato is the player's, as on a bowed note: on a
+long note a finger rocks on a plucked string as on a bowed one.
+
+NOT LET GO AT ITS END, by the right hand. A plucked string rings until it dies away or is played again,
+as a player leaves a pizzicato to ring, so a pizzicato note is written short and sounds as long as the
+string does. A LEFT-HAND PLUCK, the + between the bow's notes, is weaker (Habits::leftHandDb) and is
+stopped at its written end, the finger laid back on the string (Habits::leftHandStops): rung on, the
+left hand's plucks sounded under the bow's notes between them. The bow stays where it was on the hair:
+the next bowed note is drawn from there, from the string. */
+void BowedPlayer::planPluck(const Pending& p) {
+	const Note& n = p.note;
+	const BowedInstrument::Design& design = live.inst.design();
+	const int64_t t0 = std::max(p.start, live.clock);
+	const int64_t end = t0 + (int64_t) std::llround((double) n.seconds * rate);
+	if (anyLast && !lastReleased)
+		planRelease(t0);
+	const bool follows = anyLast && t0 - lastEnd < (int64_t) (JOINED * rate);
+	const int s = (n.onString >= 0 && n.onString < live.inst.strings()) ? (int) n.onString
+		: stringFor(n.hz, vibratoWanted(n) && n.seconds >= 0.6f, follows ? lastString : -1);
+	const float open = design.strings[(size_t) s].openHz;
+	const float vibrating = design.length * open / n.hz;
+	auto whereOn = [&](float stringOpen, float hz) {
+		return std::fmin(habits.pluckShare * design.length, habits.pluckMostShare * design.length * stringOpen / hz);
+	};
+	const float where = whereOn(open, n.hz);
+	(void) vibrating;
+	// A CHORD, STRUMMED UPWARDS: its lower notes from the note's moment, a string at a time, and this
+	// one, the highest, last.
+	const int64_t gap = (int64_t) std::llround((double) habits.strumGap * rate);
+	const int64_t topAt = t0 + (int64_t) n.lowerCount * gap;
+	const float how = (float) std::fmax(0.0,
+		byLevel(n.level, -1.0, habits.pluckPiano, habits.pluckForte) * (n.accent ? 1.3 : 1.0)
+		* (n.leftHand ? std::pow(10.0, habits.leftHandDb / 20.0) : 1.0));
+	const float cents = vibratoFor(n, s);
+
+	auto act = [&](int64_t at, Action::Kind k, float value, int64_t samples) {
+		Action a;
+		a.at = at;
+		a.kind = k;
+		a.string = s;
+		a.value = value;
+		a.samples = samples;
+		schedule(live, a);
+	};
+	// THE FINGER DOWN AS THE STRING IS PLUCKED, in the same sample.
+	for (int i = 0; i < n.lowerCount; i++) {
+		const int ls = n.lowerString[i];
+		if (ls < 0 || ls >= live.inst.strings() || ls == s)
+			continue;
+		Action a;
+		a.at = t0 + (int64_t) i * gap;
+		a.string = ls;
+		a.kind = Action::VIBRATO;
+		schedule(live, a);
+		a.kind = Action::FINGER;
+		a.value = n.lower[i];
+		schedule(live, a);
+		a.value = 0.f;
+		a.kind = Action::FORCE;
+		schedule(live, a);
+		a.kind = Action::SPEED;
+		schedule(live, a);
+		a.kind = Action::PLUCK;
+		a.value = how;
+		a.a = whereOn(design.strings[(size_t) ls].openHz, n.lower[i]);
+		a.b = habits.pluckWidth;
+		schedule(live, a);
+	}
+	act(topAt, Action::VIBRATO, 0.f, 0);
+	act(topAt, Action::FINGER, n.hz, 0);
+	act(topAt, Action::FORCE, 0.f, 0);
+	act(topAt, Action::SPEED, 0.f, 0);
+	{
+		Action a;
+		a.at = topAt;
+		a.kind = Action::PLUCK;
+		a.string = s;
+		a.value = how;
+		a.a = where;
+		a.b = habits.pluckWidth;
+		schedule(live, a);
+	}
+	if (n.leftHand) {
+		Action a;
+		a.at = std::max(end, topAt + 1);
+		a.kind = Action::DAMP;
+		a.string = s;
+		a.value = habits.leftHandStops;
+		a.c = topAt;
+		schedule(live, a);
+	}
+	if (cents > 0.f) {
+		Action a;
+		a.at = topAt + (int64_t) (habits.vibratoDelay * rate);
+		a.kind = Action::VIBRATO;
+		a.string = s;
+		a.value = cents;
+		a.a = habits.vibratoHz * (1.f + 0.03f * noise());
+		a.c = (int64_t) (habits.vibratoFade * rate);
+		schedule(live, a);
+	}
+
+	Played record;
+	record.at = (double) t0 / rate;
+	record.hz = n.hz;
+	record.level = n.level;
+	record.string = s;
+	record.kind = Played::PLUCK;
+	record.direction = 0;
+	record.force = how;
+	record.distance = where;
+	record.vibratoCents = cents;
+	if (n.lowerCount > 0) {
+		record.withHz = n.lower[0];
+		record.withString = n.lowerString[0];
+	}
+	// NO BODY TO WATCH: the string is not bowed, so there are no slips to count.
+	record.bodyFrom = record.bodyTo = record.movedAt = t0;
+	played.push_back(record);
+
+	anyLast = true;
+	last = n;
+	lastString = s;
+	lastStart = t0;
+	lastEnd = end;
+	lastForce = 0.f;
+	lastSpeed = 0.f;
+	lastReleased = true;
+	releaseAt = -1;
 }
 
 
@@ -1786,7 +2131,7 @@ void BowedPlayer::hearPlayed() {
 		// window would otherwise take in — a trial is heard on a copy that plays nothing after it.
 		for (Hearing& h : hearings)
 			h.until = std::min(h.until, p.movedAt);
-		if (p.kind == Played::LEGATO)
+		if (p.kind == Played::LEGATO || p.kind == Played::PLUCK)
 			continue;
 		Hearing h;
 		h.from = p.movedAt;

@@ -539,6 +539,39 @@ std::string markFor(const pugi::xml_node& direction) {
 }
 
 
+/** PLUCKED OR BOWED FROM HERE ON: 1 where a direction says pizzicato, nought where it says arco, -1
+where it says neither.
+
+MusicXML can say it as sound, a `sound` element with pizzicato yes or no, and that is read first. The
+scores in use mostly say it in words: "pizz." 120 times and "arco" 113 through the Fauré and Brahms
+quartets, and the Fauré in nothing else. By whole words, as the worded dynamics are: a word beginning
+"pizz" — pizz, pizz., pizzicato — or the word "arco". */
+int pluckSaid(const pugi::xml_node& direction) {
+	const pugi::xml_attribute sound = direction.child("sound").attribute("pizzicato");
+	if (sound)
+		return std::string(sound.as_string()) == "yes" ? 1 : 0;
+	int said = -1;
+	for (pugi::xml_node type = direction.child("direction-type"); type;
+			type = type.next_sibling("direction-type"))
+		for (pugi::xml_node words = type.child("words"); words; words = words.next_sibling("words")) {
+			const std::string w = words.child_value();
+			std::string one;
+			for (size_t i = 0; i <= w.size(); i++) {
+				if (i < w.size() && std::isalpha((unsigned char) w[i])) {
+					one += (char) std::tolower((unsigned char) w[i]);
+					continue;
+				}
+				if (one.compare(0, 4, "pizz") == 0)
+					said = 1;
+				else if (one == "arco")
+					said = 0;
+				one.clear();
+			}
+		}
+	return said;
+}
+
+
 /** Which passes a first or second time bar is played on: "1", or "1,2", or "1, 2". */
 std::vector<int> endingsOf(const std::string& numbers) {
 	std::vector<int> out;
@@ -708,6 +741,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 		std::vector<double> barStarts;
 		double barStart = 0.0;
 		std::vector<LevelEvent> levels;
+		// WHERE THE PART TURNS TO PLUCKING AND BACK TO THE BOW, in quarters from its start: pizz. and
+		// arco are points, as a dynamic mark is, each holding until the next.
+		std::vector<std::pair<double, bool> > plucks;
 		// WHETHER A SLUR IS OPEN, one per voice: a slur is a span and the notes inside it are
 		// joined, so each voice has to remember whether it is in one.
 		std::map<int, bool> inSlur;
@@ -818,6 +854,15 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					continue;
 				}
 
+				// A SOUND ELEMENT OF ITS OWN, outside any direction, saying pizzicato as sound alone.
+				if (tag == "sound") {
+					const pugi::xml_attribute pz = node.attribute("pizzicato");
+					if (pz)
+						plucks.push_back(std::make_pair(barStart + (double) cursor / (double) divisions,
+							std::string(pz.as_string()) == "yes"));
+					continue;
+				}
+
 				if (tag == "direction") {
 					if (master && first) {
 						const std::string mark = markFor(node);
@@ -843,6 +888,11 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					// HOW LOUD FROM HERE ON. A dynamic mark is a point, not a property of a
 					// note: it holds until the next one.
 					const double here = barStart + (double) cursor / (double) divisions;
+					{
+						const int pluck = pluckSaid(node);
+						if (pluck >= 0)
+							plucks.push_back(std::make_pair(here, pluck == 1));
+					}
 					const pugi::xml_node dyn = node.child("direction-type").child("dynamics");
 					if (dyn) {
 						for (pugi::xml_node d = dyn.first_child(); d; d = d.next_sibling()) {
@@ -1193,6 +1243,9 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 					// NO STRING AND NO FRET. This is music with no fingerboard: see the header.
 					note.string = 0;
 					note.fret = -1;
+					// PLUCKED, THIS NOTE ALONE, where the note says so itself; a passage is said by a
+					// direction (see pluckSaid).
+					note.pizzicato = std::string(node.attribute("pizzicato").as_string()) == "yes";
 
 					for (pugi::xml_node tie = node.child("tie"); tie; tie = tie.next_sibling("tie")) {
 						const std::string kind = tie.attribute("type").as_string();
@@ -1217,6 +1270,8 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 							if (arts.child("staccatissimo"))
 								note.staccato = true;
 						}
+						// THE + SIGN, written as technical rather than articulation.
+						note.stopped = (bool) marks.child("technical").child("stopped");
 						// A TREMOLO. Of one note, sounded repeatedly for its length; or BETWEEN TWO,
 						// the first marked where the alternation starts and the second where it
 						// stops, each written at the whole length and squeezed to half of it, the two
@@ -1435,6 +1490,24 @@ bool mxRead(const std::string& xml, GpSong& out, std::string* why) {
 						levelAt(curve, barStarts[b] + (double) beat.start)));
 				}
 			}
+		}
+
+		// PLUCKED OR BOWED, every note, now that every pizz. and arco in the part has been seen: as the
+		// last of them at or before the note says. In time order, since the voices of a bar are written
+		// one after another and a mark read later can stand earlier.
+		if (!plucks.empty()) {
+			std::stable_sort(plucks.begin(), plucks.end(),
+				[](const std::pair<double, bool>& a, const std::pair<double, bool>& b) { return a.first < b.first; });
+			for (size_t b = 0; b < track.bars.size() && b < barStarts.size(); b++)
+				for (GpBeat& beat : track.bars[b].beats) {
+					const double at = barStarts[b] + (double) beat.start + 1e-6;
+					bool plucked = false;
+					for (size_t k = 0; k < plucks.size() && plucks[k].first <= at; k++)
+						plucked = plucks[k].second;
+					if (plucked)
+						for (GpNote& n : beat.notes)
+							n.pizzicato = true;
+				}
 		}
 
 		// THE ORNAMENTS THEIR OWN BAR DID NOT SETTLE, from the music either side of them, now

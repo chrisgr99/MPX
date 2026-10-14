@@ -20,7 +20,7 @@ static const float CLIP_VOLTS = 10.f, NEAR_VOLTS = 7.07f;
 static const float CLIP_HOLD = 1.f, NEAR_HOLD = 0.3f, NOTE_HOLD = 0.06f;
 
 
-BowedModule::BowedModule(const BowedKind& k) : kind(k) {
+BowedModule::BowedModule(const BowedKind& k) : kind(k), habits(k.habits) {
 	config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 	for (int i = 0; i < MAX_UPSTREAM; i++) {
 		wantSlots[i].store(-1);
@@ -70,7 +70,7 @@ void BowedModule::build() {
 	BowedEngine* e = new BowedEngine;
 	BowedEngine::Setup setup;
 	setup.design = kind.design;
-	setup.habits = kind.habits;
+	setup.habits = habits;
 	setup.engineRate = rate;
 	setup.highestHz = highest;
 	setup.announcedAhead = MPX_ANNOUNCE_AHEAD;
@@ -150,6 +150,9 @@ BowedPlayer::Note BowedModule::noteOf(const Event& e) const {
 	n.staccato = (e.technique & Event::STACCATO) != 0;
 	n.tenuto = (e.technique & Event::TENUTO) != 0;
 	n.accent = (e.technique & (Event::ACCENT | Event::HEAVY_ACCENT)) != 0;
+	// THE + ON A BOWED STRING IS THE LEFT HAND PLUCKING, whether or not pizz. is written with it.
+	n.pizzicato = (e.technique & (Event::PIZZICATO | Event::STOPPED)) != 0;
+	n.leftHand = (e.technique & Event::STOPPED) != 0;
 	n.vibrato = e.vibrato == Event::VIBRATO_WIDE ? BowedPlayer::Note::MOLTO
 		: (e.vibrato == Event::VIBRATO_SLIGHT ? BowedPlayer::Note::ORDINARY : BowedPlayer::Note::UNSAID);
 	return n;
@@ -213,8 +216,10 @@ void BowedModule::playFromPorts() {
 }
 
 
-/** A PART ON THE CABLE IS ONE MUSICIAN'S: of notes starting together, the highest. A written chord is
-one cellist's double stop, which is played as its top note. Announced ahead, or played now. */
+/** A PART ON THE CABLE IS ONE MUSICIAN'S: notes starting together are one player's chord, given to
+the player as its highest note with up to three under it, the highest of the rest. The player puts
+them on strings side by side, as a double stop or a chord broken as players break them, or leaves out
+what no hand could reach (BowedPlayer::addAt). Announced ahead, or played now. */
 void BowedModule::playTop(const Coming* notes, int n, int64_t now, bool announced) {
 	if (n <= 0)
 		return;
@@ -224,6 +229,16 @@ void BowedModule::playTop(const Coming* notes, int n, int64_t now, bool announce
 			top = i;
 	const Coming& c = notes[top];
 	BowedPlayer::Note note = noteOf(c.note);
+	{
+		float under[CHORD_MOST];
+		int count = 0;
+		for (int i = 0; i < n; i++)
+			if (i != top)
+				under[count++] = notes[i].note.pitch;
+		std::sort(under, under + count, [](float a, float b) { return a > b; });
+		for (int i = 0; i < count && i < 3 && chordsPlayed; i++)
+			note.lower[note.lowerCount++] = hzOf(under[i] + (float) partOctaves);
+	}
 	if (announced) {
 		note.slurSeconds = c.slurSeconds;
 		note.downbeat = c.downbeat;
@@ -548,12 +563,20 @@ void BowedRecorder::drain() {
 	samplesRead.store(r, std::memory_order_release);
 	const uint32_t nw = notesWritten.load(std::memory_order_acquire);
 	uint32_t nr = notesRead.load(std::memory_order_relaxed);
-	static const char* const KIND[] = {"from the string", "bow change", "slurred", "crossing"};
+	static const char* const KIND[] = {"from the string", "bow change", "slurred", "crossing", "plucked"};
 	for (; nr != nw; nr++) {
 		const NoteLine& line = notes[nr % NOTES];
 		const BowedPlayer::Played& p = line.played;
 		if (!log)
 			continue;
+		// PLUCKED: no bow to report, but how hard and where.
+		if (p.kind == BowedPlayer::Played::PLUCK) {
+			std::fprintf(log, "%8.3f  %7.2f  %7.1f Hz  string %d  %-15s       strength %.2f  %3.0f mm  vibrato %2.0f c%s\n",
+				line.sinceStart, line.pieceSeconds, p.hz, p.string + 1, KIND[(int) p.kind], p.force,
+				1000.0 * p.distance, p.vibratoCents,
+				p.withString >= 0 ? string::f(", a chord down to %.1f Hz", p.withHz).c_str() : "");
+			continue;
+		}
 		std::string how;
 		if (p.kind != BowedPlayer::Played::LEGATO)
 			how = (p.rehearsed > 0 || p.fromTable) ? "  rehearsed" : "  NOT REHEARSED";
@@ -563,6 +586,8 @@ void BowedRecorder::drain() {
 			how += string::f(", settled in %.0f periods", p.settled);
 		if (p.hidden)
 			how += ", bow changed inside the slur";
+		if (p.withString >= 0)
+			how += string::f(", with %.1f Hz on string %d", p.withHz, p.withString + 1);
 		std::fprintf(log, "%8.3f  %7.2f  %7.1f Hz  string %d  %-15s %-4s  %.2f N  %.2f m/s  %3.0f mm  vibrato %2.0f c%s\n",
 			line.sinceStart, line.pieceSeconds, p.hz, p.string + 1, KIND[(int) p.kind],
 			p.direction > 0 ? "down" : "up", p.force, std::fabs(p.speed), 1000.0 * p.distance, p.vibratoCents,

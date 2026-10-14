@@ -64,6 +64,12 @@ struct GpNote {
 	articulation that asks for more rather than less. */
 	bool tenuto = false;
 	bool tremolo = false;    /**< Picked repeatedly for the note's length. */
+	/** PLUCKED, on an instrument that is otherwise bowed: pizzicato. Set from a score, which says it
+	for a passage — pizz. at its start and arco after it — and Guitar Pro has no mark for. */
+	bool pizzicato = false;
+	/** THE + OVER THE NOTE, MusicXML's stopped: on a bowed string a left-hand pizzicato, on a horn a
+	note stopped by the hand in the bell. Kept as written, for the instrument to read. */
+	bool stopped = false;
 	/** A TREMOLO BETWEEN TWO NOTES: one where this note begins one, minus one where it ends one, nought
 	where it is in none. The two notes, or chords, are written each at the whole length the
 	alternation lasts and squeezed to half of it, and joined by beams not joined to their stems; the

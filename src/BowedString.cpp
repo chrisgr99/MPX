@@ -24,6 +24,8 @@ static const float NUT_REFLECT = 0.9995f;
 /** And a finger's: Q 281 stopped against 410 open on a violin's D, an amplitude a period of
 1 - pi/281 against 1 - pi/410, the finger the difference. */
 static const float FINGER_REFLECT = 0.9965f;
+/** WHAT IS LEFT OF A STRING'S RINGING when a finger plucks it again: a quarter, as GuitarString keeps. */
+static const float PLUCK_KEEPS = 0.25f;
 
 
 BowedString::BowedString() {}
@@ -117,6 +119,9 @@ void BowedString::setImpedance(float kgPerSecond) {
 void BowedString::setBow(float forceNewtons, float speedMetresPerSecond) {
 	bowForce = std::fmax(0.f, forceNewtons);
 	bowSpeed = speedMetresPerSecond;
+	// The bow on the string lifts any finger laid on it.
+	if (bowForce > 0.f)
+		muteLeft = 0;
 }
 
 
@@ -850,33 +855,42 @@ float BowedString::read(const float* line, float d) const {
 
 
 /** PIZZICATO, which is the only way to set the string going until there is a bow — and wanted in
-its own right, so it is built here rather than added later. GuitarString's triangle, rounded by
-the finger and started where it crosses nought for the same reasons; half of it goes into each
-outgoing wave, because a string let go at a point sends the same shape both ways. */
-void BowedString::pluck(float level, float hardness) {
+its own right, so it is built here rather than added later. GuitarString's triangle, started where it
+crosses nought for the same reasons; half of it goes into each outgoing wave, because a string let go
+at a point sends the same shape both ways.
+
+ROUNDED OVER THE FINGER'S WIDTH, a share of the string. The triangle stands for the string along its
+length, so the finger is a share of it however fast the string runs: rounded by a filter counted in
+samples, as GuitarString's is, a finger was narrower at sixteen times the engine's rate than at eight,
+and narrower on a low note than on a high one. Two passes of a running mean the width of half the
+finger, which is a triangle the width of the finger and costs the same whatever the width. */
+void BowedString::pluck(float level, float width) {
 	if (dirty)
 		tune();
 	const float period = rate / freq;
 	const int n = std::max(2, std::min((int) std::lround(period), (int) MAX_DELAY));
-	hardness = std::fmax(0.f, std::fmin(1.5f, hardness));
 
 	float shape[MAX_DELAY];
 	for (int i = 0; i < n; i++) {
 		const float x = (float) i / (float) n;
 		shape[i] = (x < beta) ? x / beta : (1.f - x) / (1.f - beta);
 	}
-	const float a = std::fmin(1.f, 0.02f * std::pow(47.5f, hardness));
-	float lp = shape[n - 1];
-	for (int pass = 0; pass < 2; pass++)
+	const int w = std::max(1, std::min(n, (int) std::lround(0.5 * std::fmax(0.f, width) * n)));
+	auto meanOver = [&](const float* in, float* out) {
+		const int back = w / 2;
+		double sum = 0.0;
+		for (int k = 0; k < w; k++)
+			sum += in[((k - back) % n + n) % n];
 		for (int i = 0; i < n; i++) {
-			lp += a * (shape[i] - lp);
-			if (pass == 1)
-				excite[i] = lp;
+			out[i] = (float) (sum / w);
+			sum += in[((i - back + w) % n + n) % n] - in[((i - back) % n + n) % n];
 		}
-	const float click = 0.04f * hardness;
+	};
+	meanOver(shape, excite);
+	meanOver(excite, shape);
 	float mean = 0.f;
 	for (int i = 0; i < n; i++) {
-		excite[i] += click * random();
+		excite[i] = shape[i];
 		mean += excite[i];
 	}
 	mean /= (float) n;
@@ -901,11 +915,60 @@ void BowedString::pluck(float level, float hardness) {
 		for (int i = 0; i < n; i++)
 			excite[i] = turned[i];
 	}
-	const float scale = 0.5f * std::fmax(0.f, std::fmin(1.f, level)) / peak;
+	const float scale = 0.5f * std::fmax(0.f, level) / peak;
 	for (int i = 0; i < n; i++)
 		excite[i] *= scale;
 	exciteLength = n;
 	excitePos = 0;
+	// CAUGHT AS IT IS PLUCKED, as GuitarString's is: the finger takes hold of the string, whatever it
+	// was doing, so a string still ringing keeps a quarter of it, and the new pluck is not added to
+	// the old one. All at once, as the pluck begins: caught while the pluck went in, the pluck's own
+	// waves coming back past the finger were caught too, and the string plucked at a quarter of its
+	// length kept its fourth partial. A finger laid on the string lifts to pluck it.
+	scaleMotion(PLUCK_KEEPS);
+	muteLeft = 0;
+}
+
+
+void BowedString::scaleMotion(float k) {
+	for (int i = 0; i < MAX_DELAY; i++) {
+		bowToBridge[i] *= k;
+		bridgeToBow[i] *= k;
+		bowToNut[i] *= k;
+		nutToBow[i] *= k;
+	}
+	for (int i = 0; i < TORSION_DELAY; i++) {
+		tBowToBridge[i] *= k;
+		tBridgeToBow[i] *= k;
+		tBowToNut[i] *= k;
+		tNutToBow[i] *= k;
+	}
+	for (int i = 0; i < DISPERSION_STAGES; i++) {
+		dIn[i] *= k;
+		dOut[i] *= k;
+	}
+	lastOut *= k;
+	lastOutB *= k;
+	atBridge *= k;
+	dcIn *= k;
+	dcOut *= k;
+	bridgeLow *= k;
+	nutLow *= k;
+	tLowB *= k;
+	tLowN *= k;
+	tLastB *= k;
+	tLastN *= k;
+}
+
+
+void BowedString::damp(float seconds) {
+	if (!(seconds > 0.f)) {
+		muteLeft = 0;
+		return;
+	}
+	// Twice a period past the contact point.
+	muteGain = std::pow(10.f, -3.f / (2.f * freq * seconds));
+	muteLeft = (int64_t) std::ceil((double) seconds * (double) rate);
 }
 
 
@@ -1160,6 +1223,7 @@ void BowedString::silence() {
 		tBowToBridge[i] = tBridgeToBow[i] = tBowToNut[i] = tNutToBow[i] = 0.f;
 	tLowB = tLowN = tLastB = tLastN = 0.f;
 	exciteLength = excitePos = 0;
+	muteLeft = 0;
 }
 
 
@@ -1200,8 +1264,8 @@ float BowedString::pushOnStillBridge() {
 float BowedString::finishWithBridge(float bridgeVelocity) {
 	const float arrivingAtBridge = pArrivingBridge;
 	const float arrivingAtNut = pArrivingNut;
-	const float fromBridge = pFromBridge;
-	const float fromNut = pFromNut;
+	float fromBridge = pFromBridge;
+	float fromNut = pFromNut;
 	atBridge = arrivingAtBridge;
 	// The string's end moves with the bridge: what goes back down is the reflection plus the
 	// bridge's own velocity, and the string pushes on the bridge the less for it.
@@ -1243,6 +1307,14 @@ float BowedString::finishWithBridge(float bridgeVelocity) {
 	float push = 0.f;
 	if (excitePos < exciteLength)
 		push = excite[excitePos++];
+	// A FINGER LAID ON THE STRING, where it was plucked: what passes it is let through the less.
+	if (muteLeft > 0) {
+		fromBridge *= muteGain;
+		fromNut *= muteGain;
+		tFromBridge *= muteGain;
+		tFromNut *= muteGain;
+		muteLeft--;
+	}
 	const float unbowed = fromBridge + fromNut + tFromBridge + tFromNut;
 	const float added = bristled ? bristleJunction(unbowed)
 		: (rosined ? rosinJunction(unbowed) : (thermal ? thermalJunction(unbowed) : bowJunction(unbowed)));

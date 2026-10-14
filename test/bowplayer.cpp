@@ -13,6 +13,7 @@ and says what it did with each note and how long it took.
     make bowplayer ARGS="rough violin [alone]"       roughness on every string at every dynamic, the
                                                      other strings silent with "alone"
     ... ease=0.1                                     the bite eased over 0.1 s
+    make bowplayer ARGS="pluck violin [pluck=P,F]"   a pluck against a bowed note at five dynamics
 */
 #include "../src/BowedPlayer.hpp"
 #include "../src/BowedRehearsal.hpp"
@@ -95,6 +96,10 @@ static float betaQuietWanted = 1.f;
 /** speed=0.18,0.4,0.16 the bow's speed at piano, at forte and at pianissimo, metres a second. */
 static float speedPianoWanted = 0.f, speedForteWanted = 0.f, speedPianissimoWanted = 0.f;
 static std::string bodyWanted;
+/** pluck=PIANO,FORTE how hard the string is plucked at piano and forte; pluckshare=0.22 where, as a share
+of the open string from the bridge; pluckwidth=8 the finger's width, millimetres. See Habits::pluckPiano
+and the rest. */
+static float pluckPianoWanted = 0.f, pluckForteWanted = 0.f, pluckShareWanted = 0.f, pluckWidthWanted = -1.f;
 
 /** mode=228:+4 the body's mode nearest 228 Hz radiating 4 dB more; mode=228:+4:215 and moved to 215 Hz.
 As many as are given. */
@@ -169,6 +174,14 @@ static BowedPlayer::Habits habitsFor(const Fiddle& f) {
 		h.guessAccel = guessAccelWanted;
 	if (seedWanted > 0)
 		h.seed = (uint32_t) seedWanted;
+	if (pluckPianoWanted > 0.f)
+		h.pluckPiano = pluckPianoWanted;
+	if (pluckForteWanted > 0.f)
+		h.pluckForte = pluckForteWanted;
+	if (pluckShareWanted > 0.f)
+		h.pluckShare = pluckShareWanted;
+	if (pluckWidthWanted >= 0.f)
+		h.pluckWidth = 0.001f * pluckWidthWanted;
 	return h;
 }
 
@@ -298,7 +311,7 @@ static std::vector<float> perform(BowedPlayer& player, const std::vector<Timed>&
 
 static const char* kindName(int k) {
 	return k == BowedPlayer::Played::FRESH ? "from the string" : k == BowedPlayer::Played::CHANGE ? "bow change"
-		: k == BowedPlayer::Played::LEGATO ? "slurred" : "crossing";
+		: k == BowedPlayer::Played::LEGATO ? "slurred" : k == BowedPlayer::Played::PLUCK ? "plucked" : "crossing";
 }
 
 /** How a note's start was heard, for its line: squeak, click and roughness, dB (see Played::heardSqueak). */
@@ -428,6 +441,77 @@ static void report(const BowedPlayer& player, bool each, const char* name) {
 	check(fresh == 0 || started >= (fresh * 3) / 4, what, fresh ? (double) started / fresh : 1.0);
 	std::snprintf(what, sizeof what, "  %s: notes on an open string given vibrato", name);
 	check(vibratoOpen == 0, what, vibratoOpen);
+}
+
+
+// ---- PIZZICATO -----------------------------------------------------------------------------------
+
+/** THE MEAN SQUARE of `x` from `from` for `n` samples, in decibels. */
+static double dbOver(const std::vector<float>& x, size_t from, size_t n) {
+	double sum = 0.0;
+	size_t got = 0;
+	for (size_t i = from; i < from + n && i < x.size(); i++, got++)
+		sum += (double) x[i] * x[i];
+	return 10.0 * std::log10(sum / (double) std::max<size_t>(1, got) + 1e-30);
+}
+
+/** HOW LOUD A PLUCK IS AGAINST A BOWED NOTE AT THE SAME MARKING: on each string, open and a third up,
+at pp, p, mf, f and ff, a bowed note of a second and the same note plucked, each alone. The bowed note's
+level from 0.4 to 0.9 s, the pluck's over its first 50 ms, both in decibels of pascals; and how long the
+pluck takes to fall 20 dB below its first 50 ms. For choosing Habits::pluckPiano and pluckForte. */
+static void pluckSection(const Fiddle& f) {
+	const BowedInstrument::Design d = withRosin(f.design());
+	const int levels[5] = {1, 2, 4, 5, 6};
+	const char* marks[5] = {"pp", "p", "mf", "f", "ff"};
+	std::printf("\nPIZZICATO, %s: the pluck's first 50 ms over the bowed note's body, dB, and the pluck's fall of 20 dB, s.\n",
+		upper(f.name).c_str());
+	std::printf("  %-18s", "");
+	for (const char* m : marks)
+		std::printf("%14s", m);
+	std::printf("\n");
+	double sum[5] = {}, count = 0.0;
+	for (int s = 0; s < 4; s++)
+		for (int k : {0, 4}) {
+			const double hz = d.strings[(size_t) s].openHz * std::pow(2.0, k / 12.0);
+			std::printf("  string %d %7.2f Hz", s, hz);
+			for (int l = 0; l < 5; l++) {
+				double db[2] = {0.0, 0.0}, fall = -1.0;
+				for (int plucked = 0; plucked < 2; plucked++) {
+					BowedPlayer player;
+					player.setHabits(habitsFor(f));
+					player.setInstrument(d, 48000.f, (float) (hz * 1.5));
+					player.setRehearsing(BowedPlayer::LIVE);
+					Timed t;
+					t.note.hz = (float) hz;
+					t.note.level = (float) levels[l] / 7.f;
+					t.note.seconds = 1.f;
+					t.note.vibrato = BowedPlayer::Note::SENZA;
+					t.note.pizzicato = plucked == 1;
+					t.at = 0.2;
+					const std::vector<float> out = perform(player, {t}, nullptr);
+					const size_t at = (size_t) (0.2 * 48000.0);
+					if (!plucked)
+						db[0] = dbOver(out, at + (size_t) (0.4 * 48000.0), (size_t) (0.5 * 48000.0));
+					else {
+						db[1] = dbOver(out, at, (size_t) (0.05 * 48000.0));
+						for (size_t w = at; w + 480 < out.size(); w += 480)
+							if (dbOver(out, w, 480) < db[1] - 20.0) {
+								fall = (double) (w - at) / 48000.0;
+								break;
+							}
+					}
+				}
+				std::printf("  %+5.1f dB %4.2f s", db[1] - db[0], fall);
+				std::fflush(stdout);
+				sum[l] += db[1] - db[0];
+			}
+			count += 1.0;
+			std::printf("\n");
+		}
+	std::printf("  %-18s", "mean");
+	for (int l = 0; l < 5; l++)
+		std::printf("  %+5.1f dB       ", sum[l] / count);
+	std::printf("\n");
 }
 
 
@@ -686,17 +770,24 @@ static std::vector<Timed> partOf(const std::string& path, int track, double seco
 		span.written = b.written + 1;
 		barsRead.push_back(span);
 	}
+	// A CHORD, as the module gives it: its highest note, with the rest under it.
 	std::vector<GpPlayedNote> list;
+	std::vector<std::vector<int> > under;
 	for (const GpPlayedNote& p : line.tracks[(size_t) track]) {
 		if (p.startSeconds > seconds)
 			break;
 		if (!list.empty() && std::fabs(list.back().startSeconds - p.startSeconds) < 0.001) {
 			(*dropped)++;
-			if (p.note.midi > list.back().note.midi)
+			if (p.note.midi > list.back().note.midi) {
+				under.back().push_back(list.back().note.midi);
 				list.back() = p;
+			}
+			else
+				under.back().push_back(p.note.midi);
 			continue;
 		}
 		list.push_back(p);
+		under.push_back(std::vector<int>());
 	}
 	for (size_t i = 0; i < list.size(); i++) {
 		const GpPlayedNote& p = list[i];
@@ -709,6 +800,14 @@ static std::vector<Timed> partOf(const std::string& path, int track, double seco
 		t.note.staccato = p.note.staccato;
 		t.note.tenuto = p.note.tenuto;
 		t.note.accent = p.note.accent || p.note.heavyAccent;
+		t.note.pizzicato = p.note.pizzicato || p.note.stopped;
+		t.note.leftHand = p.note.stopped;
+		{
+			std::vector<int> u = under[i];
+			std::sort(u.begin(), u.end(), [](int a, int b) { return a > b; });
+			for (size_t k = 0; k < u.size() && k < 3; k++)
+				t.note.lower[t.note.lowerCount++] = (float) (440.0 * std::pow(2.0, (u[k] - 69) / 12.0));
+		}
 		if (p.bar >= 0 && p.bar < (int) line.bars.size())
 			t.note.downbeat = std::fabs(line.bars[(size_t) p.bar].startSeconds - p.startSeconds) < 0.002;
 		if (p.note.slurred) {
@@ -1052,6 +1151,12 @@ int main(int rawArgc, char** rawArgv) {
 			guessBiteWanted = (float) std::atof(rawArgv[i] + 10);
 		else if (std::strncmp(rawArgv[i], "guessaccel=", 11) == 0)
 			guessAccelWanted = (float) std::atof(rawArgv[i] + 11);
+		else if (std::strncmp(rawArgv[i], "pluck=", 6) == 0)
+			std::sscanf(rawArgv[i] + 6, "%f,%f", &pluckPianoWanted, &pluckForteWanted);
+		else if (std::strncmp(rawArgv[i], "pluckshare=", 11) == 0)
+			pluckShareWanted = (float) std::atof(rawArgv[i] + 11);
+		else if (std::strncmp(rawArgv[i], "pluckwidth=", 11) == 0)
+			pluckWidthWanted = (float) std::atof(rawArgv[i] + 11);
 		else if (std::strncmp(rawArgv[i], "force=", 6) == 0)
 			std::sscanf(rawArgv[i] + 6, "%f,%f", &forcePianoWanted, &forceForteWanted);
 		else if (std::strncmp(rawArgv[i], "mode=", 5) == 0) {
@@ -1115,6 +1220,8 @@ int main(int rawArgc, char** rawArgv) {
 		DETAIL = argc > 2 && std::strcmp(argv[2], "detail") == 0;
 		if (run("sweep")) sweepSection();
 		// Not in the default run: two instruments of 128 notes each.
+		if (std::strcmp(only, "pluck") == 0)
+			pluckSection(fiddleNamed(argc > 2 ? argv[2] : "violin"));
 		if (std::strcmp(only, "rough") == 0) {
 			roughSympathy = !(argc > 3 && std::strcmp(argv[3], "alone") == 0);
 			roughSection(fiddleNamed(argc > 2 ? argv[2] : "violin"));

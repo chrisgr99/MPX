@@ -78,6 +78,23 @@ struct BowedPlayer {
 		/** PLAYED THE MOMENT IT CAME, announced to nobody: from a keyboard or the ports. Nothing could
 		have been rehearsed for it, so it is not counted among the notes that went unrehearsed. */
 		bool unannounced = false;
+		/** PLUCKED, NOT BOWED: pizzicato. The bow comes off the string and the finger plucks it; see
+		planPluck. */
+		bool pizzicato = false;
+		/** PLUCKED BY THE LEFT HAND, the + over a note: between the bow's notes, weaker than the right
+		hand's and stopped again at its end. With pizzicato. */
+		bool leftHand = false;
+		/** A CHORD: the notes sounding with this one, which is its highest, Hz, in any order. The
+		player puts them on strings beside this one's (see addAt): two notes are a double stop, three
+		and four are broken as a player breaks them, and a plucked chord is strummed. */
+		float lower[3] = {};
+		uint8_t lowerCount = 0;
+		/** WHERE ADDAT PUT THEM: this note's string, or -1 for the player's own choice; for a double stop
+		the other note, on the string below; and for a plucked chord the strings of `lower`. */
+		int8_t onString = -1;
+		float withHz = 0.f;
+		int8_t withString = -1;
+		int8_t lowerString[3] = {-1, -1, -1};
 	};
 
 	/** WHEN THE MUSIC WAS WRITTEN, for the habits that changed with it — vibrato most of all. */
@@ -193,6 +210,29 @@ struct BowedPlayer {
 		note's force, at 1.4 of the planned distance from the bridge and fast. By ear very nearly as good as
 		full rehearsal, at a quarter to a half of its computing. */
 		FewStarts twoStarts = {{1.19f}, {-19.f}, {1.4f}, {0.02f}, {0.2f}};
+		/** PIZZICATO. Where the string is plucked, as a share of the open string's length from the bridge:
+		a little nearer the bridge than the end of the fingerboard, which on the violin is 58 mm of its 328
+		and on the cello about 110 of its 690 — 46 and 97 mm, chosen by ear in the Fauré scherzo over the
+		end of the fingerboard itself, as brighter; and high on the fingerboard, where the stopped length
+		is short, no further than `pluckMostShare` of what is left. How wide the finger is where it takes
+		the string, metres (BowedString::pluck): 8 mm, a fingertip; narrower measured no brighter, since
+		it takes away only partials far above what the body gives out. And how hard the string is plucked for a dynamic, as
+		BowedString::pluck takes it, `pluckPiano` at piano to `pluckForte` at forte, straight on a
+		logarithmic scale against the ladder and carried on beyond them. */
+		float pluckShare = 0.14f, pluckMostShare = 0.4f, pluckWidth = 0.008f;
+		float pluckPiano = 2.f, pluckForte = 6.f;
+		/** A PLUCKED CHORD, strummed upwards by the finger: seconds from one string to the next. */
+		float strumGap = 0.012f;
+		/** A LEFT-HAND PLUCK: so many decibels under the right hand's at the same marking, and at its
+		written end the finger laid back on the string, which dies away by 60 dB over `leftHandStops`
+		seconds. Chosen by ear in Paganini's 24th Caprice, bars 109 to 120: 10 and 14 dB under were
+		both still too loud against the bow's notes between, and 18 a little too light. */
+		float leftHandDb = -16.f, leftHandStops = 0.04f;
+		/** CHORDS. How far apart along the fingerboard the fingers of one chord can be, metres: a
+		judgement, a little more than the violin's first finger to its fourth in first position, which
+		takes a tenth there (`stopReach`). And how long a chord of three or four notes holds its lower
+		two before the bow rolls on to the upper two, seconds, and at most this share of the chord. */
+		float stopReach = 0.12f, chordBreak = 0.06f, chordBreakMost = 0.4f;
 		/** SEEDS THE SMALL VARIATIONS, so a part plays the same way twice. */
 		uint32_t seed = 1u;
 	};
@@ -312,7 +352,10 @@ struct BowedPlayer {
 		/** The note's dynamic, as given. */
 		float level = 0.f;
 		int string = 0;
-		enum Kind : uint8_t { FRESH, CHANGE, LEGATO, CROSS } kind = FRESH;
+		enum Kind : uint8_t { FRESH, CHANGE, LEGATO, CROSS, PLUCK } kind = FRESH;
+		/** The other note of a double stop, and its string; -1 for none. */
+		float withHz = 0.f;
+		int withString = -1;
 		int direction = 1;
 		float force = 0.f, speed = 0.f, distance = 0.f, vibratoCents = 0.f;
 		/** The bow change it chose, for a CHANGE: how long the bow takes to slow and to speed up again,
@@ -406,18 +449,25 @@ private:
 		std::vector<int64_t> slips;
 		bool wasStuck = true;
 		SlipWatch watch;
+		/** When the string was last plucked, for a DAMP meant for that pluck. */
+		int64_t pluckedAt = -1;
 	};
 
 	/** SOMETHING THE PLAYER DOES AT A SAMPLE. */
 	struct Action {
 		int64_t at = 0;
-		enum Kind : uint8_t { FORCE, SPEED, DISTANCE, FINGER, VIBRATO, ATTACK, FOLLOW } kind = FORCE;
+		enum Kind : uint8_t { FORCE, SPEED, DISTANCE, FINGER, VIBRATO, ATTACK, FOLLOW, PLUCK, DAMP } kind = FORCE;
 		int string = 0;
-		float value = 0.f;       /**< the target, the finger's pitch, or the vibrato's width */
+		float value = 0.f;       /**< the target, the finger's pitch, the vibrato's width, or how hard
+		                         the string is plucked */
 		int64_t samples = 0;     /**< how long a ramp takes */
 		float a = 0.f, b = 0.f;  /**< ATTACK: acceleration and the force it eases to; VIBRATO: rate;
 		                         FOLLOW: the share of the force left at a standstill, and the speed
-		                         at which the force is whole */
+		                         at which the force is whole; PLUCK: where, metres from the bridge,
+		                         and how wide the finger is, metres */
+		                         /* DAMP: `value` the seconds it dies away over, `c` the sample of
+		                         the pluck it ends, which it leaves alone if the string has been
+		                         plucked again or is bowed */
 		float d = 0.f;           /**< ATTACK: the force it starts at, the bite */
 		int64_t c = 0;           /**< VIBRATO: samples to come in; ATTACK: samples the bite eases over */
 		/** The decision it belongs to, for withdraw(). */
@@ -458,6 +508,7 @@ public:
 		int64_t releaseAt = -1;
 		uint32_t random = 1u;
 		bool retake = false;
+		int lastWith = -1;
 	};
 
 	/** WHAT REHEARSAL FOUND FOR A NOTE, kept for a note like it that has to be played without: a start
@@ -618,6 +669,24 @@ private:
 	float lastForce = 0.f, lastSpeed = 0.f;
 	bool lastReleased = true;
 	int64_t releaseAt = -1;
+	/** THE OTHER STRING OF THE LAST DOUBLE STOP, still under the bow until it is lifted; -1 for none. */
+	int lastWith = -1;
+
+	/** A DOUBLE STOP BEING PLANNED: whatever is scheduled on the live state for string `main` is
+	scheduled on `with` as well, the force scaled to its impedance, the finger at its note, and the
+	vibrato the hand's, none on an open string. `continues`: the other string was sounding already in
+	the same stroke, so the bow is not started on it again. */
+	struct Mirror {
+		bool on = false, continues = false;
+		int main = -1, with = -1;
+		float hz = 0.f, forceScale = 1.f;
+		bool open = false;
+	} mirror;
+	/** THE STRINGS FOR A CHORD: `hz`, `count` notes low to high, on strings side by side, the highest
+	that take them, each at or above its open string and on the fingerboard, the fingers within
+	Habits::stopReach of one another. The lowest notes are left out until the rest fit. The number
+	kept, its strings in `strings` from the lowest kept; `hz` is moved down to start at it. */
+	int stopsFor(float* hz, int count, int* strings) const;
 
 	void schedule(State& s, const Action& a);
 	/** One sample at the strings' rate on a state: true and the sound when an engine sample is
@@ -627,6 +696,8 @@ private:
 	static void applyDue(State& s, double rate);
 
 	void plan(const Pending& p);
+	/** A NOTE PLUCKED (Note::pizzicato), in place of plan's bowing. */
+	void planPluck(const Pending& p);
 	void planRelease(int64_t at);
 	int stringFor(float hz, bool longWithVibrato, int followsFrom) const;
 	float forceFor(float level, int string) const;

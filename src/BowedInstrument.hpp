@@ -121,8 +121,12 @@ struct BowedInstrument {
 	/** THE BOW ON `string`: how hard, newtons; how fast, metres a second; and where, metres from
 	the bridge. Force nought lifts it. */
 	void bow(int string, float force, float speed, float fromBridge);
-	/** A string plucked where the bow would be. */
-	void pluck(int string, float level, float fromBridge);
+	/** A STRING PLUCKED `fromBridge` metres from the bridge: `level` how hard (BowedString::pluck), by a
+	finger `width` metres wide. */
+	void pluck(int string, float level, float fromBridge, float width = 0.01f);
+	/** A FINGER LAID ON `string` where it was plucked: what it is doing dies away by 60 dB over
+	`seconds` (BowedString::damp). */
+	void damp(int string, float seconds);
 
 	/** ONE SAMPLE AT THE ENGINE'S RATE: the sound a metre away, pascals. */
 	float process();

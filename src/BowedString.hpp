@@ -90,10 +90,15 @@ struct BowedString {
 	/** True while the contact point being asked for cannot be had at this pitch and rate. */
 	bool contactClamped() const { return clamped; }
 
-	/** Plucks the string at the contact point: pizzicato. `level` nought to one is how hard,
-	`hardness` nought to one is the finger. The shape is GuitarString's, halved into the two
-	outgoing waves. */
-	void pluck(float level, float hardness);
+	/** Plucks the string at the contact point: pizzicato. `level` is how hard: the peak of what goes
+	into each outgoing wave is half of it, metres a second. `width` is the finger's, as a share of the
+	string's vibrating length; nought plucks at a point. The shape is GuitarString's, halved into the
+	two outgoing waves. */
+	void pluck(float level, float width);
+	/** A FINGER LAID ON THE STRING where it was plucked, as the left hand comes back down after
+	plucking: what the string is doing dies away by 60 dB over `seconds`, and the finger lifts when it
+	has, or sooner if the string is bowed or plucked again. */
+	void damp(float seconds);
 
 	/** THE STRING'S WAVE IMPEDANCE, in kilograms a second: the square root of its tension times
 	its mass per metre. How far a given force moves it, so it is what makes the same bow need more
@@ -411,6 +416,13 @@ private:
 	float excite[MAX_DELAY] = {};
 	int exciteLength = 0;
 	int excitePos = 0;
+	/** A FINGER LAID ON THE STRING (damp): what passes the contact point scaled by `muteGain`, for
+	`muteLeft` more samples. Every part of the string passes it twice a period. */
+	float muteGain = 1.f;
+	int64_t muteLeft = 0;
+	/** EVERYTHING THE STRING IS DOING, scaled by `k`: its waves, and what its filters remember of
+	them. The rosin's heat and the bow's grip are not motion and are left alone. */
+	void scaleMotion(float k);
 	uint32_t noise = 22222u;
 
 	void tune();

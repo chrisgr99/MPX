@@ -168,6 +168,15 @@ struct BowedModule : Module, NoteSink {
 	From the right-click menu; the engine is built again for it. */
 	int rehearsing() const { return wantRehearsing.load(); }
 	void setRehearsing(int r) { wantRehearsing.store(std::max(0, std::min(3, r))); }
+	/** THE PLAYER'S HABITS, the instrument's own (BowedKind::habits) to begin with. For a bench trying
+	variants by ear, before it plays: the engine is built again for them at the next build(). */
+	void setHabits(const BowedPlayer::Habits& h) {
+		habits = h;
+		builtRate = 0.f;
+	}
+	const BowedPlayer::Habits& habitsNow() const { return habits; }
+	/** A CHORD AS ITS TOP NOTE ALONE, for a bench comparing with how chords were played before. */
+	bool chordsPlayed = true;
 	/** THE ANNOUNCED NOTES PLAYED WITH NOTHING REHEARSED, though the planner was rehearsing: shown as a
 	number on the panel, and for a bench, when, seconds on the player's clock. Main thread. */
 	int missed() const;
@@ -182,6 +191,7 @@ struct BowedModule : Module, NoteSink {
 	std::string recordedTo() const { return recorder.path; }
 
 	const BowedKind kind;
+	BowedPlayer::Habits habits;
 
 private:
 	float clipHold = 0.f, nearHold = 0.f, noteHold = 0.f;

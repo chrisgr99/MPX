@@ -134,11 +134,9 @@ One known gap. A Guitar Pro 6 drum track gives no pitch for its notes — which 
 
 ### Worded directions we do not act on yet
 
-Counted over the sixty-three scores in use: 405 distinct worded directions, 1,925 in all. What we already take is the crescendo family — `cresc.` 411 times, `dim.` 176, with `decresc.`, `smorz.`, `morendo`, `calando` and `rinf.` — and the worded levels. Tempo written as text is covered without looking like it: the bare numbers are a metronome mark written as words and each carries a `sound` element with the figure in it.
+Counted over the sixty-three scores in use: 405 distinct worded directions, 1,925 in all. What we already take is the crescendo family — `cresc.` 411 times, `dim.` 176, with `decresc.`, `smorz.`, `morendo`, `calando` and `rinf.` — the worded levels, and `pizz.` and `arco`: 120 and 113 times through the Fauré and Brahms quartets, and not once as a note attribute or a `pluck` element. Each is a point, as a dynamic mark is, holding until the next; every note from a `pizz.` to the `arco` after it goes out with the cable's `PIZZICATO` bit, and the bowed-string modules pluck it (`pluckSaid` in `MusicXML.cpp`). Tempo written as text is covered without looking like it: the bare numbers are a metronome mark written as words and each carries a `sound` element with the figure in it.
 
 What is left, in the order it would be worth taking.
-
-**Pizzicato and arco.** `arco` 113 times and `pizz.` 120, through the Fauré and Brahms quartets, and **not once** as a note attribute or a `pluck` element — only as words. Whole passages that should be plucked are bowed, which is not a nuance but the wrong instrument for bars at a time. The cable has no pizzicato bit at all, so it needs one; the bowed-string model will want the same bit.
 
 **The tempo words.** `rit.` 23, `ritard.` 14, `poco rit.` 9, `riten.` 7, `a tempo` 41, `Tempo I` 4, and `Accel.`. Measured: **32 carry a `sound tempo` we could act on and 88 do not**, so three quarters of the tempo instructions here are invisible and every ritardando at a cadence is played straight through.
 

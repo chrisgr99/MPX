@@ -955,6 +955,8 @@ struct SongModule : Module, NoteSource {
 		if (g.tenuto && !g.staccato) t |= Event::TENUTO;
 		if (g.slurred) t |= Event::SLURRED;
 		if (g.tremolo) t |= Event::TREMOLO;
+		if (g.pizzicato) t |= Event::PIZZICATO;
+		if (g.stopped) t |= Event::STOPPED;
 		e.technique = t;
 
 		e.vibrato = g.vibrato ? Event::VIBRATO_SLIGHT : Event::VIBRATO_NONE;

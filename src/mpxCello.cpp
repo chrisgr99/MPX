@@ -29,8 +29,18 @@ static BowedKind celloKind() {
 //?note From a score, each note is announced to the module four and a half seconds before it sounds. At
 //? Fidelity levels 1 to 3, ways of starting it are tried on a copy of the cello while the music
 //? plays. A note from a keyboard or a generator, which nothing announced, is played as it arrives.
-//?note One cello plays one note at a time: a chord on the cable is played as its top note, and of the
-//? channels of a polyphonic gate, the highest whose gate is up. A section is a module for each player.
+//?note One cello is one player. A chord on the cable is played as that player plays it: two notes as a
+//? double stop on strings side by side, both under the bow; three or four broken, the lower two
+//? sounding briefly before the bow rolls on to the upper two; plucked, strummed upwards. Notes no hand
+//? could reach together are left out, the lowest first. Of the channels of a polyphonic gate, the
+//? highest whose gate is up is played. A section is a module for each player.
+//?note A passage the score marks pizz. is plucked, up to the arco that ends it: the bow comes off the
+//? string, and the finger plucks it between the end of the fingerboard and the bridge, as hard as
+//? the marking asks. A plucked string rings until it dies away or is played again, however short
+//? the note is written.
+//? A note marked + is plucked by the left hand, between the notes the bow plays, more quietly, and
+//? stopped at its written end. A string plucked again while it rings is caught by the finger first.
+//? Nothing is tried ahead for a plucked note. Notes from the gate and pitch ports are always bowed.
 //?note A part on the cable that goes below the cello's lowest open string is played as a whole an
 //? octave or two higher, as far as its highest note allows, and one that goes past the end of the
 //? fingerboard, two octaves and a sixth above the highest string, an octave or two lower. Any note
