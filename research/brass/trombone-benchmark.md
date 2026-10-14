@@ -61,7 +61,7 @@ Measured: thresholds 660 Pa on B flat 2, 940 on F3, 1140 on B flat 3, rising to 
 
 Pass: the model's transfer within 3 dB of independent of dynamic below 800 Hz, and 15 to 25 dB higher above 1.5 kHz at ff than at mf; and B6.
 
-Measured (`make brasslips ARGS=brass`, the lips tuned to keep each note 1.1 per cent over its resonance; mf at 1.3 kPa, pp and ff where the level is 13 dB under it and 8 over, the recordings' steps): from mf to ff the transfer under 800 Hz moves at most 0.2 dB; over 1.5 kHz it gains 20.4 dB on F3 and 19.1 on B flat 3, and loses 5.8 on D4, whose ff by these steps is 1.9 kPa, below where its brassiness begins. Without the steepening it does not move. Against the recordings, from mf to ff the centroid rises 1.88 times on F3 and 1.76 on B flat 3 (1.85), and the slope over 1 kHz at ff is -6.2 and -9.3 dB an octave (-11); without the steepening 1.37 and 1.25 times, -14.6 and -17.2.
+Measured (`make brasslips ARGS=brass`, the lips tuned to keep each note 1.1 per cent over its resonance; mf at 1.3 kPa, pp and ff where the level is 13 dB under it and 8 over, the recordings' steps): from mf to ff the transfer under 800 Hz moves at most 0.2 dB; over 1.5 kHz it gains 20.4 dB on F3 and 19.1 on B flat 3, and loses 5.8 on D4, whose ff by these steps is 1.9 kPa, below where its brassiness begins. Without the steepening it does not move. Against the recordings, heard 20 degrees off the axis, from mf to ff the centroid rises 1.78 times on F3 and 1.69 on B flat 3 (1.85), and the slope over 1 kHz at ff is -6.8 and -9.9 dB an octave (-11); without the steepening 1.36 and 1.24 times, -15.1 and -17.8.
 
 ## B6. The sound, against recordings
 
@@ -98,6 +98,8 @@ What the recordings can and cannot say:
 
 Pass: for each note and dynamic in the table, the model's centroid over pitch within 25 per cent, its slope over 1 kHz within 4 dB an octave, its share over 1 kHz within 3 dB, and its steps between dynamics within 3 dB in level and within 25 per cent in centroid, with the dynamics' mouth pressures set by B4. Onsets within a factor of 1.5, once the player chooses attacks.
 
+Measured (`make brasssound`, docs/brass.md phase 5): every note from E2 to C5 at pp, mf and ff, mf at 1.3 kPa for 200 Hz scaled as the frequency to the power three quarters, pp and ff at the recordings' steps of level, heard a metre away and 20 degrees off the bell's axis. Over the three registers and three dynamics the model's centroid is 17 per cent from the recordings' median, its slope over 1 kHz (the harmonics within 40 dB of the strongest) 3.3 dB an octave and its share over 1 kHz 3.0 dB. C3 to B3 at pp and mf is closest; E2 to B2 at ff is too dark (centroid 10.8 against 15.4) and C4 to C5 has too much over 1 kHz (4 to 10 dB). Onsets and releases are not yet measured: they need the tongue.
+
 ## B7. Joins
 
 A lip slur on the horn takes 80 to 100 ms between steady states, regardless of interval or player, and the new oscillation builds only after a round trip of the bore; a starting transient takes about half as long (Logie et al. 2009). Nothing is published for the trombone; this is provisional. Upward and downward slurs differ (CFA 2010).
@@ -110,6 +112,10 @@ Measured as the bowed strings are, by `make stringbench`'s equivalent in a real-
 
 Pass: no more than a bowed string at the same Fidelity level, and no block over 100 per cent of its length.
 
+Measured so far, off line: the lips, the air column with the steepening and the listener's filter, 7.4 per cent of one core at 48 kHz (`make brasslips ARGS=brass`). The player and the module are not yet built.
+
 ## B9. Your ear
 
 The model's notes set beside the Iowa notes at the same pitch and dynamic, and beside the published demos of the commercial instruments, at a fixed level, one file at a time.
+
+Made (`make brasssound ARGS="listen 20"`): B flat 2, F3, B flat 3 and F4, the Iowa note then the model's at the same loudness, at pp, mf and ff; not yet heard.

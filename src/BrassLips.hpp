@@ -101,7 +101,7 @@ share of the breadth is w = tanh(y / y_c), y_c the corners' height, so the openi
 shut share, 1 / Q = w / Q_open + (1 - w) / Q_shut, as Vergez and Rodet let theirs vary with the closure.
 With the breadth shut and the damping changed at a stroke instead, the flow had a corner and the force a
 jump each time the lips met, which the samples could not carry: between the harmonics of a held note at
-48 kHz there was power 24 to 33 dB under the harmonics below 2 kHz, now 44 to 66 (make brasslips
+48 kHz there was power 24 to 33 dB under the harmonics below 2 kHz, now 44 to 65 (make brasslips
 ARGS=aliasing); most of it came from the damping's jump.
 
 THE FLOW. The opening's area is S = 2 b y w. Through it the acoustic flow U obeys, with the jet losing its energy in the

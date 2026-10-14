@@ -48,7 +48,6 @@ struct Player {
 	BrassLips lips;
 	BrassHingedLips hinged;
 	BrassLips::Shape shape;
-	double lastFlow = 0.0;
 	void setResonance(double hz) {
 		lips.setResonance(hz);
 		hinged.setResonance(hz);
@@ -58,9 +57,11 @@ struct Player {
 		hinged.setMouthPressure(pa);
 	}
 	bool steepening = true;
+	BrassListener listener;
 	void setup(double extension = 0.0) {
 		BrassWaveguide::Setup s;
 		s.steepening = steepening;
+		s.listener = listener;
 		s.air = air;
 		s.rate = RATE;
 		s.tuningPull = PULL;
@@ -77,11 +78,8 @@ struct Player {
 		const double flow = oneMass ? lips.step(column.cupPressure(), without, perFlow)
 			: hinged.step(column.cupPressure(), without, perFlow);
 		const double cup = column.end(flow);
-		if (heard) {
-			const double u = column.radiatedFlow();
-			*heard = air.rho / (4.0 * M_PI) * (u - lastFlow) * RATE;
-			lastFlow = u;
-		}
+		if (heard)
+			*heard = column.listenerPressure();
 		return cup;
 	}
 };

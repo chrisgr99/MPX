@@ -21,12 +21,15 @@ each tube is its own pair of delay lines and they scatter where they meet, as Ke
 
 THE STEEPENED WAVE TO THE BELL RUNS BESIDE THE LINEAR ONE (BrassSteepeningDelay, Setup::steepening).
 Through the slide the wave going to the bell is carried twice: as it would travel at no amplitude, which the
-bell reflects back to the lips, and steepened, which goes through a second copy of the bell and is what the
-listener hears; at each junction the steepened wave meets the same wave coming back as the linear one. So the
-loop that sets up the oscillation is linear, as Hirschberg et al. (1996) found admissible. With the steepened
-wave reflected back to the lips instead, loud notes went flat by up to 9 cents and, from about 5 kPa on F3,
-locked into a cycle repeating to the last digit at a whole number of samples (273 at 48 kHz, 546 at 96).
-Lips and column cost 11.4 per cent of one core at 48 kHz with the steepening and the second bell, 6.5 without.
+bell reflects back to the lips, and steepened, which is what the listener hears; at each junction the
+steepened wave meets the same wave coming back as the linear one. So the loop that sets up the oscillation is
+linear, as Hirschberg et al. (1996) found admissible. With the steepened wave reflected back to the lips
+instead, loud notes went flat by up to 9 cents and, from about 5 kPa on F3, locked into a cycle repeating to
+the last digit at a whole number of samples (273 at 48 kHz, 546 at 96).
+
+THE LISTENER hears the wave entering the bell — the steepened one where it steepens — through the bell and
+its radiation to where they are, as one filter (BrassListenerFilter, designed at setup from the bell's own
+grid; BrassRadiation.hpp). The bell is fixed and linear, so the filter is exact but for its length.
 
 THE WALL'S LOSSES OVER THE WHOLE RUN OF TUBES are applied once each way, as the wave leaves the run: the
 half-order derivative of BrassGrid as the same sum of high-passes, each turned into the exponential of
@@ -36,6 +39,7 @@ the losses there ask — and the shelves cascaded. Recomputed when the slide mov
 NO RACK IN HERE. */
 #include "BrassBore.hpp"
 #include "BrassGrid.hpp"
+#include "BrassRadiation.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -145,6 +149,8 @@ struct BrassWaveguide {
 		/** THE WAVE GOING TO THE BELL STEEPENS (BrassSteepeningDelay); off, it travels as it would at no
 		amplitude. */
 		bool steepening = true;
+		/** Where the listener is (BrassRadiation.hpp). */
+		BrassListener listener;
 	};
 	void setup(const Setup& s);
 
@@ -158,17 +164,22 @@ struct BrassWaveguide {
 	double end(double flow);
 	/** The cup's pressure now, pascals. */
 	double cupPressure() const { return cupNow; }
-	/** At the bell's mouth: what the listener hears, from the steepened wave where it steepens. */
-	double mouthPressure() const { return steepens ? heardBell.mouthPressure() : back.mouthPressure(); }
-	double radiatedFlow() const { return steepens ? heardBell.radiatedFlow() : back.radiatedFlow(); }
-	int gridPoints() const { return front.points() + back.points() + (steepens ? heardBell.points() : 0); }
+	/** At the bell's mouth, in the loop: the wave at no amplitude. */
+	double mouthPressure() const { return back.mouthPressure(); }
+	double radiatedFlow() const { return back.radiatedFlow(); }
+	/** THE PRESSURE AT THE LISTENER after the last step, pascals. */
+	double listenerPressure() const { return heardNow; }
+	/** The wave entering the bell that the listener's filter takes, for listening from elsewhere. */
+	double bellInput() const { return heardIn; }
+	int listenerTaps() const { return listener.taps(); }
+	int gridPoints() const { return front.points() + back.points(); }
 
 private:
 	BrassAir air;
 	double rate = 44100.0;
 	BrassGrid front, back;
-	/** The bell the steepened wave goes through, for the listener only. */
-	BrassGrid heardBell;
+	BrassListenerFilter listener;
+	double heardNow = 0.0, heardIn = 0.0;
 	struct Tube {
 		double length = 0.0, radius = 0.0;
 		bool outer = false;

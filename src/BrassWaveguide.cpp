@@ -207,7 +207,7 @@ void BrassWaveguide::setup(const Setup& s) {
 	g.endIsPort = false;
 	g.startIsPort = true;
 	back.setup(g);
-	heardBell.setup(g);
+	listener.design(g, s.listener);
 	// THE RUN OF TUBES, with the outer slide tubes, absent from the bore in first position, put back at
 	// their 7.2 mm between the inner tubes and the crook.
 	tubes.clear();
@@ -298,9 +298,12 @@ void BrassWaveguide::begin(double* cupWithout, double* cupPerFlow) {
 	}
 	// The grids, each meeting the run of tubes with the losses of the whole run.
 	front.arrive(0.0, lossBack.process(arrivingLeft[0]));
-	back.arrive(lossOn.process(arrivingRight[n - 1]), 0.0);
-	if (steepens)
-		heardBell.arrive(lossHeard.process(heardRight[n - 1]), 0.0);
+	const double intoBell = lossOn.process(arrivingRight[n - 1]);
+	back.arrive(intoBell, 0.0);
+	// WHAT THE LISTENER HEARS: the wave entering the bell, steepened where it steepens, through the bell and
+	// out to them.
+	heardIn = steepens ? lossHeard.process(heardRight[n - 1]) : intoBell;
+	heardNow = listener.process(heardIn);
 	front.begin(cupWithout, cupPerFlow);
 }
 
@@ -310,10 +313,8 @@ double BrassWaveguide::end(double flow) {
 	const double cup = front.end(flow);
 	cupNow = cup;
 	back.step(0.0);
-	if (steepens)
-		heardBell.step(0.0);
 	// WHAT LEAVES: the grids' waves into the run's ends, and each junction's scattering. The steepened wave
-	// to the bell meets the same wave coming back at each junction, and goes on through its own bell.
+	// to the bell meets the same wave coming back at each junction.
 	const double fromCup = front.leaving(1);
 	tubes[0].forward.write(fromCup);
 	if (steepens)

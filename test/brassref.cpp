@@ -18,6 +18,7 @@ lies above 1 kHz, in decibels against the whole.
 
     make brassref                                    every scale in build/iowa-trombone
     make brassref ARGS="DIR OUT.tsv"                 another folder, another table
+    make brassref ARGS="cut A#3 mf OUT.wav"          one note at one dynamic, as found, into a WAV
 
 The levels are the recording's, not sound pressure: the same microphone and, as far as the collection
 says, the same gain for every dynamic, so the differences between pp, mf and ff are meaningful and the
@@ -185,9 +186,31 @@ static double slope(const NoteRow& r, double lo, double hi) {
 	return (n * sxy - sx * sy) / (n * sxx - sx * sx);
 }
 
+/** A MONO WAV, 16 bits. */
+static void writeWav(const std::string& path, const std::vector<float>& x, double rate) {
+	FILE* f = std::fopen(path.c_str(), "wb");
+	if (!f)
+		return;
+	const uint32_t n = (uint32_t) x.size(), bytes = n * 2, r = (uint32_t) rate;
+	auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+	auto u16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+	std::fwrite("RIFF", 1, 4, f); u32(36 + bytes); std::fwrite("WAVEfmt ", 1, 8, f);
+	u32(16); u16(1); u16(1); u32(r); u32(r * 2); u16(2); u16(16);
+	std::fwrite("data", 1, 4, f); u32(bytes);
+	for (float v : x) {
+		const int16_t sample = (int16_t) std::lround(std::max(-1.0f, std::min(1.0f, v)) * 32767.0f);
+		std::fwrite(&sample, 2, 1, f);
+	}
+	std::fclose(f);
+}
+
 int main(int argc, char** argv) {
-	const std::string dir = argc > 1 ? argv[1] : "build/iowa-trombone";
-	const std::string out = argc > 2 ? argv[2] : "research/brass/iowa-tenor-trombone.tsv";
+	// ONE NOTE CUT OUT: from 50 ms before it is found to 200 ms after.
+	const bool cutting = argc > 4 && std::strcmp(argv[1], "cut") == 0;
+	const int cutMidi = cutting ? midiOf(argv[2]) : -1;
+	const std::string cutDynamic = cutting ? argv[3] : "", cutPath = cutting ? argv[4] : "";
+	const std::string dir = !cutting && argc > 1 ? argv[1] : "build/iowa-trombone";
+	const std::string out = !cutting && argc > 2 ? argv[2] : "research/brass/iowa-tenor-trombone.tsv";
 	const char* dynamics[3] = {"pp", "mf", "ff"};
 	const char* ranges[4] = {"E2B2", "C3B3", "C4B4", "C5"};
 	std::vector<NoteRow> rows;
@@ -262,6 +285,13 @@ int main(int argc, char** argv) {
 				const double m = 69.0 + 12.0 * std::log2(row.f0 / 440.0);
 				row.midi = (int) std::lround(m);
 				row.cents = 100.0 * (m - row.midi);
+				if (cutting && row.midi == cutMidi && cutDynamic == dyn) {
+					const size_t from = a > (size_t) (0.05 * rate) ? a - (size_t) (0.05 * rate) : 0;
+					const size_t to = std::min(x.size(), b + (size_t) (0.2 * rate));
+					writeWav(cutPath, std::vector<float>(x.begin() + (long) from, x.begin() + (long) to), rate);
+					std::printf("wrote %s: %s %s, %.2f s\n", cutPath.c_str(), noteName(row.midi).c_str(), dyn, (double) (to - from) / rate);
+					return 0;
+				}
 				const int should = (int) s < expected && spans.size() == (size_t) expected ? first + (int) s : row.midi;
 				if (should != row.midi)
 					std::printf("  note %zu: heard %s, the scale has %s there\n", s, noteName(row.midi).c_str(),
