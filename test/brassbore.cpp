@@ -1,6 +1,7 @@
 /** THE AIR COLUMN, from a command line: phase 2 of docs/brass.md.
 
     make brassbore
+    make brassbore ARGS=listen         the air column to listen to, before it has lips
 
 The calculation in frequency (BrassBore) against the measured Conn 8H (B1): Smyth and Scott's table as it
 is, with the radiation the grid carries, with a tenor mouthpiece and leadpipe as tubes, and tuned by the
@@ -116,9 +117,118 @@ static void againstConn(const char* name, const BrassBore& b, const BrassAir& ai
 	}
 }
 
+/** A WAV, 16 bits, its peak at 1 dB under full scale. */
+static void writeWav(const char* path, const std::vector<double>& x, int rate) {
+	double peak = 1e-12;
+	for (double v : x)
+		peak = std::fmax(peak, std::fabs(v));
+	FILE* f = std::fopen(path, "wb");
+	if (!f)
+		return;
+	const uint32_t n = (uint32_t) x.size(), bytes = n * 2;
+	auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+	auto u16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+	std::fwrite("RIFF", 1, 4, f); u32(36 + bytes); std::fwrite("WAVEfmt ", 1, 8, f);
+	u32(16); u16(1); u16(1); u32((uint32_t) rate); u32((uint32_t) rate * 2); u16(2); u16(16);
+	std::fwrite("data", 1, 4, f); u32(bytes);
+	const double g = 0.891 * 32767.0 / peak;
+	for (double v : x) {
+		const int16_t s = (int16_t) std::lround(v * g);
+		std::fwrite(&s, 2, 1, f);
+	}
+	std::fclose(f);
+	std::printf("wrote %s\n", path);
+}
+
+/** THE AIR COLUMN TO LISTEN TO, before it has lips: tapped at the mouthpiece, blown through with a breath's
+noise while the slide moves, and a fixed buzz of lip-like pulses pushed through it. The delay lines with
+grids at the ends at 48 kHz, heard a metre in front of the bell: the air's density over four pi times the
+rate of change of the flow out of the bell's mouth. */
+static void listen() {
+	const BrassAir air(20.0);
+	const int rate = 48000;
+	BrassWaveguide w;
+	BrassWaveguide::Setup s;
+	s.air = air;
+	s.rate = rate;
+	s.tuningPull = 0.033;
+	auto heard = [&](double flow, double* last) {
+		w.step(flow);
+		const double u = w.radiatedFlow();
+		const double p = air.rho / (4.0 * M_PI) * (u - *last) * rate;
+		*last = u;
+		return p;
+	};
+	// TAPPED: a millisecond's push of air into the cup, in first, fourth and seventh position, a second
+	// and a half each.
+	{
+		std::vector<double> out;
+		for (double extension : {0.0, 0.262, 0.564}) {
+			s.extension = extension;
+			w.setup(s);
+			double last = 0.0;
+			for (int i = 0; i < (int) (1.5 * rate); i++) {
+				const double t = (double) i / rate;
+				const double flow = t < 0.001 ? 1e-4 * (0.5 - 0.5 * std::cos(2.0 * M_PI * t / 0.001)) : 0.0;
+				out.push_back(heard(flow, &last));
+			}
+		}
+		writeWav("build/Trombone tube tapped at the mouthpiece.wav", out, rate);
+	}
+	// BLOWN THROUGH: noise, low-passed at 3 kHz, the slide held in first position for a second, moved out to
+	// seventh over four seconds, held, and back over four.
+	{
+		s.extension = 0.0;
+		w.setup(s);
+		std::vector<double> out;
+		double last = 0.0, smooth = 0.0;
+		uint32_t seed = 12345u;
+		const double total = 11.0;
+		for (int i = 0; i < (int) (total * rate); i++) {
+			const double t = (double) i / rate;
+			double e = 0.0;
+			if (t > 1.0 && t <= 5.0)
+				e = 0.564 * (0.5 - 0.5 * std::cos(M_PI * (t - 1.0) / 4.0));
+			else if (t > 5.0 && t <= 6.0)
+				e = 0.564;
+			else if (t > 6.0 && t <= 10.0)
+				e = 0.564 * (0.5 + 0.5 * std::cos(M_PI * (t - 6.0) / 4.0));
+			if (i % 32 == 0)
+				w.setExtension(e);
+			seed = seed * 1664525u + 1013904223u;
+			const double white = ((double) (seed >> 8) / 16777216.0) * 2.0 - 1.0;
+			smooth += (1.0 - std::exp(-2.0 * M_PI * 3000.0 / rate)) * (white - smooth);
+			const double fade = std::fmin(1.0, std::fmin(t / 0.2, (total - t) / 0.2));
+			out.push_back(heard(2e-4 * smooth * fade, &last));
+		}
+		writeWav("build/Trombone tube blown through, slide moving.wav", out, rate);
+	}
+	// A FIXED BUZZ: the flow of lips opening half of each period, as a raised sine squared, at B flat 2, F3
+	// and B flat 3 in first position, two seconds each. Not the lips: nothing comes back to them from the
+	// tube; the tube's colour on a buzz.
+	{
+		s.extension = 0.0;
+		w.setup(s);
+		std::vector<double> out;
+		double last = 0.0, phase = 0.0;
+		for (double hz : {116.54, 174.61, 233.08})
+			for (int i = 0; i < 2 * rate; i++) {
+				const double t = (double) i / rate;
+				phase += hz / rate;
+				phase -= std::floor(phase);
+				const double open = phase < 0.5 ? std::pow(std::sin(2.0 * M_PI * phase), 2.0) : 0.0;
+				const double fade = std::fmin(1.0, std::fmin(t / 0.03, (2.0 - t) / 0.03));
+				out.push_back(heard(3e-4 * open * fade, &last));
+			}
+		writeWav("build/Trombone tube with a fixed buzz pushed through it.wav", out, rate);
+	}
+}
+
 int main(int argc, char** argv) {
-	(void) argc;
-	(void) argv;
+	if (argc > 1 && std::strcmp(argv[1], "listen") == 0) {
+		listen();
+		return 0;
+	}
 	const BrassAir air(20.0);
 	againstConn("SMYTH AND SCOTT'S TROMBONE, FIRST POSITION, Silva radiation", BrassBore::trombone(0.0), air);
 	{

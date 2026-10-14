@@ -4,7 +4,7 @@ A module that plays one MPX part on a physically modelled brass instrument, star
 
 Names: not fixed. One module, provisionally mpxTrombone, while the engine is unproven; the trumpet, flugelhorn and horn follow as their own slugs on the same engine.
 
-Status: phases 1 and 2 built — the benchmark (`research/brass/trombone-benchmark.md`, `make brassref`) and the air column, as a grid and as delay lines with grids at the ends, both within 3 cents of the calculation in frequency (`make brassbore`). Not yet chosen between; no lips yet. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
+Status: phases 1 to 3 built — the benchmark (`research/brass/trombone-benchmark.md`, `make brassref`); the air column, as a grid and as delay lines with grids at the ends, both within 3 cents of the calculation in frequency (`make brassbore`); and the lips, Adachi and Sato's hinged block, playing on the delay lines (`make brasslips`). No brassiness, radiation model or player yet. The literature is surveyed in `research/brass/` (five files: the physics and methods common to brass, the trumpet and flugelhorn, the trombone, the French horn, and the player with existing implementations).
 
 ## Purpose
 
@@ -105,9 +105,17 @@ Built first, before any of the instrument, so that every later phase is measured
 
 Not yet measured: the slide moving while the instrument sounds, which needs the lips (phase 3).
 
-### 3. The lips
+### 3. The lips — built
 
-A one-mass outward-striking valve with Bernoulli and swept flow and a collision term when the lips close, its mass and stiffness following the lip frequency as Elliott and Bowsher found (mass inversely proportional, stiffness in proportion), so that the embouchure is one number; the open area proportional to the opening, or to its square for low notes as Mattéoli et al. (2021) found fits better. Starting values from the published sets, which differ by a factor of about 2.5 in mass per unit area. Measured against B2, B3 and B4 with notes held at fixed pressure and lip frequency. A second degree of freedom (Adachi and Sato 1996) only if one mass cannot meet B2.
+`make brasslips` (test/brasslips.cpp) plays the lips on the delay-line column at 48 kHz and measures them against B2 to B4; `make brasslips ARGS=sweep` sweeps their shape; `ARGS=listen` renders held notes, a slur and a moving slide. Each step the column says what the cup's pressure will be after it as a straight line in the flow (`BrassWaveguide::begin`), the lips solve their flow with it, and the column finishes the step (`end`), so the lips feel the cup within the step.
+
+**One mass blown open** (`BrassLips`): a mass on a spring driven by the pressure across the lips, Bernoulli's flow through the opening and the flow the lip sweeps, Adachi and Sato's closure, Harrison-Harsley's values as Willemsen et al. used them. It plays, but as the one-mass model is known to (Fréour et al. 2023): its notes started at 3.9 to 7.8 kPa, sounded 4 to 9 per cent over their resonances, and F3 could not be bent below its resonance at all; of 48 combinations of quality, mass, breadth and opening, two started a note below 5 kPa, 7.6 and 8.6 per cent sharp. It is kept for comparison.
+
+**A hinged block that swings and stretches** (`BrassHingedLips`): Adachi and Sato's (1996) two-dimensional lip, read from their ATR preprint — a parallelogram jointed at the rim, its tip moving along the flow and across it, driven by the pressure across its length and by the pressure in the opening on its inner face, which falls as the air rushes through and draws the lips together. The swing blows the lips open as one mass does; the stretch lets a note sound below the resonance, as players' lips do (Boutin et al. 2015). Their flow: the jet's energy lost in the cup, a little pressure recovered where it widens, and the air's inertia in the opening. Their Table I's trumpet values, the thickness and joint scaled by the rims' ratio of about one and a half; the mass 1.0 and the breadth 14 mm chosen from a sweep against B2 and B4 (Adachi and Sato's 1.5 and 10.5 mm started F3 at 1440 Pa and B flat 3 at 2020).
+
+Against the benchmark: thresholds rise with the note — 500 Pa on B flat 2, 800 on F3, 1060 on B flat 3, 2240 on the eighth resonance — so mf on F3 and B flat 3 falls near the trombonists' 1.3 kPa (B4); with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.4 and 2.6 per cent over it, and the player sets the lips for the 1.1 per cent players play at (B2); F3 bends from 17.7 per cent under to 10.5 over, B flat 3 from 14.5 under to 4.6 over, against 12.1 and 8.1, 10.0 and 8.9 (B2, wider down and narrower up than players); the pedal sounds steadily either side of B flat 1, 56.8 Hz with the lips at 55 and 59.7 with them at 60, with no resonance under it (B3); held notes reach 79 to 108 dB a metre away. At the lowest threshold several resonances start below themselves, in the stretching mode; the player chooses the lips for the note it wants. The slide moved out to fourth position and back under a held B flat 3 glides without a click.
+
+Not yet: the tongue, and the tables of lips for each note, which are the player's (phase 6).
 
 ### 4. Brassiness
 

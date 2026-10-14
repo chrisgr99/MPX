@@ -111,7 +111,7 @@ void BrassGrid::setup(const Setup& s) {
 	}
 	phiP.assign((size_t) (n + 1) * terms, 0.0);
 	phiV.assign((size_t) n * terms, 0.0);
-	cup = throat = radiated = 0.0;
+	cup = throat = radiated = mouthFlow = 0.0;
 	direct = s.direct;
 	startPort = s.startIsPort;
 	endPort = s.endIsPort;
@@ -128,6 +128,12 @@ void BrassGrid::setup(const Setup& s) {
 
 
 double BrassGrid::step(double flow) {
+	begin(nullptr, nullptr);
+	return end(flow);
+}
+
+
+void BrassGrid::begin(double* cupWithout, double* cupPerFlow) {
 	const int n = (int) v.size();
 	const double rhoC2 = air.rho * air.c * air.c;
 	// VELOCITY, half a step on, each with its memory of the half-order derivative.
@@ -146,22 +152,49 @@ double BrassGrid::step(double flow) {
 			phi[m] = (phi[m] + k * mean - 0.5 * xi[(size_t) m] * k * phi[m]) * gain[(size_t) m];
 	}
 
+	// THE FIRST POINT'S CELL, as far as it can be worked out before the flow into the cup is known: and the
+	// cup's pressure after the step as a straight line in that flow, for the lips (see end).
+	{
+		const double a = lossP[0];
+		double memory = 0.0;
+		for (int m = 0; m < terms; m++)
+			memory += mu[(size_t) m] * xi[(size_t) m] * gain[(size_t) m] * phiP[(size_t) m];
+		firstCell = 0.5 * h * area[0];
+		firstD = 1.0 / k + 0.5 * a * sumMuGain;
+		firstX = (1.0 / k - 0.5 * a * sumMuGain) * p[0] + a * memory - rhoC2 / firstCell * halfArea[0] * v[0];
+		if (!startPort && !direct) {
+			const double c = cupVolume / rhoC2;
+			const double den = inertance / k + resistance + 0.5 * k / c + 0.5 * rhoC2 / (firstD * firstCell);
+			throatWithout = (inertance / k * throat + cup - 0.5 * p[0] - 0.5 * firstX / firstD) / den;
+			throatPerFlow = 0.5 * k / c / den;
+			if (cupWithout)
+				*cupWithout = cup - k / c * throatWithout;
+			if (cupPerFlow)
+				*cupPerFlow = k / c * (1.0 - throatPerFlow);
+		}
+		else {
+			if (cupWithout)
+				*cupWithout = p[0];
+			if (cupPerFlow)
+				*cupPerFlow = 0.0;
+		}
+	}
+}
+
+
+double BrassGrid::end(double flow) {
+	const int n = (int) v.size();
+	const double rhoC2 = air.rho * air.c * air.c;
 	// THE MOUTHPIECE AND THE FIRST POINT, SOLVED TOGETHER. The cup fills with what the lips let in and
 	// empties into the throat; the throat's flow follows the difference between the cup's pressure and the
 	// first point's, both their means over the step, through the inertance and the resistance; the first
 	// point's half cell takes the throat's flow in and gives the grid's out. Three equations, linear, in the
 	// throat's flow and the two new pressures: solved at once, so that the throat's inertance against the
 	// first point's small cell — about 0.14 cubic centimetres at 44.1 kHz — cannot run away, as it did
-	// stepped explicitly.
+	// stepped explicitly. Worked out as far as it can be in begin.
 	{
 		double* phi = &phiP[0];
-		const double a = lossP[0];
-		double memory = 0.0;
-		for (int m = 0; m < terms; m++)
-			memory += mu[(size_t) m] * xi[(size_t) m] * gain[(size_t) m] * phi[m];
-		const double cell = 0.5 * h * area[0];
-		const double d = 1.0 / k + 0.5 * a * sumMuGain;
-		const double x = (1.0 / k - 0.5 * a * sumMuGain) * p[0] + a * memory - rhoC2 / cell * halfArea[0] * v[0];
+		const double cell = firstCell, d = firstD, x = firstX;
 		const double old = p[0];
 		double next;
 		if (startPort) {
@@ -176,8 +209,7 @@ double BrassGrid::step(double flow) {
 				throat = flow;
 			else {
 				const double c = cupVolume / rhoC2;
-				throat = (inertance / k * throat + cup + 0.5 * k / c * flow - 0.5 * old - 0.5 * x / d)
-					/ (inertance / k + resistance + 0.5 * k / c + 0.5 * rhoC2 / (d * cell));
+				throat = throatWithout + throatPerFlow * flow;
 				cup += k / c * (flow - throat);
 			}
 			next = (x + rhoC2 / cell * throat) / d;
@@ -224,6 +256,7 @@ double BrassGrid::step(double flow) {
 			const double next = ((c - lossFactor) * old + cell / rhoC2 * a * memory + inflow - radiated
 				- 0.5 * old / radiationResistance) / (c + lossFactor + 0.5 / radiationResistance);
 			p[(size_t) l] = next;
+			mouthFlow = radiated + 0.5 * (old + next) / radiationResistance;
 			const double mean = 0.5 * (old + next);
 			for (int m = 0; m < terms; m++)
 				phi[m] = (phi[m] + k * mean - 0.5 * xi[(size_t) m] * k * phi[m]) * gain[(size_t) m];

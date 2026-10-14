@@ -50,6 +50,11 @@ struct BrassGrid {
 	/** ONE STEP: `flow` cubic metres a second into the cup over the step; the cup's pressure after it,
 	pascals. */
 	double step(double flow);
+	/** THE SAME IN TWO HALVES, for lips whose flow depends on the cup's pressure: begin works out all it can
+	without the flow and says what the cup's pressure will be after the step, `cupWithout` plus
+	`cupPerFlow` times the flow; end takes the flow and finishes the step. */
+	void begin(double* cupWithout, double* cupPerFlow);
+	double end(double flow);
 
 	/** THE WAVES AT THE PORTS: what arrives at each before a step, and what leaves each after it, pascals,
 	both for the half step between the last step and this one. */
@@ -58,6 +63,10 @@ struct BrassGrid {
 		arriving[1] = atEnd;
 	}
 	double leaving(int end) const { return leavingWave[end]; }
+
+	/** THE FLOW OUT OF THE BELL'S MOUTH over the last step, cubic metres a second: what radiates. A metre in
+	front of the bell the pressure is the air's density over four pi times its rate of change. */
+	double radiatedFlow() const { return mouthFlow; }
 
 	/** The pressure at the bell's mouth, pascals, after the last step. */
 	double mouthPressure() const { return p.empty() ? 0.0 : p.back(); }
@@ -74,7 +83,9 @@ private:
 	std::vector<double> mu, xi, gain, phiP, phiV;
 	double sumMuGain = 0.0;
 	// The cup's pressure, the throat's flow, and the flow through the radiation's inertance.
-	double cup = 0.0, throat = 0.0, radiated = 0.0;
+	double cup = 0.0, throat = 0.0, radiated = 0.0, mouthFlow = 0.0;
+	// What begin worked out for end.
+	double firstCell = 0.0, firstD = 1.0, firstX = 0.0, throatWithout = 0.0, throatPerFlow = 0.0;
 	double cupVolume = 5e-6, inertance = 1000.0, resistance = 0.0;
 	bool direct = false;
 	bool startPort = false, endPort = false;

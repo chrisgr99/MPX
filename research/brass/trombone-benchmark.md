@@ -33,19 +33,25 @@ Ten trombonists, beginner to professional, B flat 2 to F4, Yamaha YBL 321 (Bouti
 
 Pass: the model's notes at the pressures of B4 sound between 0 and 2.5 per cent above the peak; its bending limits within 3 per cent of those above, by sweeping the lip frequency at a fixed pressure; the two endings as described.
 
+Measured (docs/brass.md, phase 3, Adachi and Sato's hinged lips): with the lips at 0.98 of the resonance F3 and B flat 3 sound 2.4 and 2.6 per cent over it; F3 bends from 17.7 per cent under to 10.5 over, B flat 3 from 14.5 under to 4.6 over. Wider down and narrower up than players; the offset is the player's to set.
+
 ## B3. The pedal note
 
 B flat 1 (58.3 Hz) has no impedance peak under it and is played because its second and higher harmonics fall on the second and higher resonances; the 38 Hz resonance is hard to play (Boutin, Smith and Wolfe 2020). A one-mass outward-striking lip on a modal air column predicts the pedal by linear stability analysis (Velut et al. 2017); on a bass trombone its playing frequency is about a semitone under its threshold frequency, and an open area proportional to the square of the opening fits low notes better (Mattéoli et al. 2021).
 
 Pass: B flat 1 sustains at a steady pitch within 20 cents of 58.3 Hz; nothing steady at 38 Hz at any lip frequency.
 
+Measured: steady notes either side of B flat 1, 56.8 Hz with the lips at 55 Hz and 59.7 with them at 60, starting at 520 to 600 Pa.
+
 ## B4. Pressures
 
-- Mouth pressure about 1.3 kPa across the lips in normal playing of F3 and B flat 3, 1.4 kPa in the example low note; the alternating pressure in the mouthpiece about 20 times that in the mouth (Boutin et al. 2015; Boutin, Smith and Wolfe 2020).
+- Mouth pressure about 1.3 kPa across the lips in normal playing of F3 and B flat 3, 1.4 kPa in the example low note (Boutin et al. 2015; Boutin, Smith and Wolfe 2020). Boutin et al. also give the alternating pressure in the mouthpiece as about 20 times the alternating pressure in the mouth: a comparison with the vocal tract, which is not modelled, and so not a target until it is.
 - Mouthpiece pressure levels above 165 dB at fortissimo, about 3.6 kPa rms (Elliott, Bowsher and Watkinson 1982, as quoted by Beauchamp 2012).
 - Each note has a threshold pressure. On the trumpet it rises with the note's frequency (about 4 to 8 Pa a hertz), the level then rises about 15 dB for each doubling of pressure and saturates at about 3 dB a doubling (Fletcher and Tarnopolsky 1999). No trombone table from pp to ff has been published; the form of the law is expected to hold and its constant is found from the model.
 
 Pass: F3 and B flat 3 at mf from mouth pressures within 30 per cent of 1.3 kPa; a threshold rising with frequency; the level against pressure in the three regions of the trumpet law.
+
+Measured: thresholds 500 Pa on B flat 2, 800 on F3, 1060 on B flat 3, rising to 2240 on the eighth resonance; the level against pressure is not yet measured.
 
 ## B5. Brassiness
 

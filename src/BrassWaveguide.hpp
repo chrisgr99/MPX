@@ -81,7 +81,13 @@ struct BrassWaveguide {
 
 	/** ONE STEP: `flow` cubic metres a second into the cup; the cup's pressure after it, pascals. */
 	double step(double flow);
+	/** THE SAME IN TWO HALVES, for the lips (BrassGrid::begin, end). */
+	void begin(double* cupWithout, double* cupPerFlow);
+	double end(double flow);
+	/** The cup's pressure now, pascals. */
+	double cupPressure() const { return cupNow; }
 	double mouthPressure() const { return back.mouthPressure(); }
+	double radiatedFlow() const { return back.radiatedFlow(); }
 	int gridPoints() const { return front.points() + back.points(); }
 
 private:
@@ -100,7 +106,7 @@ private:
 	std::vector<double> xi, mu;
 	BrassLossShelves lossOn, lossBack;
 	std::vector<double> arrivingRight, arrivingLeft;
-	double baseLength[2] = {0.0, 0.0};
+	double cupNow = 0.0;
 	void retune();
 };
 

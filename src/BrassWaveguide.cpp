@@ -167,6 +167,12 @@ void BrassWaveguide::retune() {
 
 
 double BrassWaveguide::step(double flow) {
+	begin(nullptr, nullptr);
+	return end(flow);
+}
+
+
+void BrassWaveguide::begin(double* cupWithout, double* cupPerFlow) {
 	const size_t n = tubes.size();
 	// WHAT ARRIVES at each end of each tube, before anything is written this step.
 	for (size_t i = 0; i < n; i++) {
@@ -176,7 +182,14 @@ double BrassWaveguide::step(double flow) {
 	// The grids, each meeting the run of tubes with the losses of the whole run.
 	front.arrive(0.0, lossBack.process(arrivingLeft[0]));
 	back.arrive(lossOn.process(arrivingRight[n - 1]), 0.0);
-	const double cup = front.step(flow);
+	front.begin(cupWithout, cupPerFlow);
+}
+
+
+double BrassWaveguide::end(double flow) {
+	const size_t n = tubes.size();
+	const double cup = front.end(flow);
+	cupNow = cup;
 	back.step(0.0);
 	// WHAT LEAVES: the grids' waves into the run's ends, and each junction's scattering.
 	tubes[0].forward.write(front.leaving(1));
