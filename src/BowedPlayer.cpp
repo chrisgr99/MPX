@@ -1090,10 +1090,15 @@ void BowedPlayer::plan(const Pending& p) {
 		? (int) n.withString : -1;
 	const float open = design.strings[(size_t) s].openHz;
 	const float vibrating = design.length * open / n.hz;
+	// A DOUBLE STOP SHARES ITS DYNAMIC between its two strings, as the cable shares a chord's (see
+	// Habits::chordPower): the bow drawn slower and pressing less in the same proportion, the same
+	// distance from the bridge, so that each string sounds the same but quieter. Drawn as a single note's,
+	// the double stops of the Kreutzer Sonata's first bars came out 2.4 to 8.4 dB over their top notes.
+	const double chordGain = with >= 0 ? std::pow(2.0, -(double) habits.chordPower) : 1.0;
 	// THE DYNAMIC'S SPEED, AND THIS NOTE'S: the latter evened out against the instrument (see evenFor).
 	// A new stroke is drawn at it; a note under a slur keeps the stroke's speed and comes nearer the
 	// bridge or further off instead, since the place follows the speed against it (see `sounding`).
-	const double base = speedFor(n.level);
+	const double base = speedFor(n.level) * chordGain;
 	const double even = evenFor(n.hz, s);
 	const double habitual = base * std::fmax((double) habits.evenSlowest, even);
 	// What the speed could not take off a strong note, the place does: further from the bridge.
@@ -1225,7 +1230,7 @@ void BowedPlayer::plan(const Pending& p) {
 	// it last a long slur presses less in proportion. A floor held at four tenths left the bow at a
 	// third of its speed pressing near that limit, and it rang high (heard at 8 s into the Fauré).
 	const float slower = (float) std::fmax(0.1, std::fmin(2.0, speed / base));
-	float force = forceFor(n.level, s) * (n.tenuto ? 1.1f : 1.f) * slower;
+	float force = forceFor(n.level, s) * (float) chordGain * (n.tenuto ? 1.1f : 1.f) * slower;
 	// THE LOUDNESS IS THE BOW'S SPEED OVER ITS DISTANCE FROM THE BRIDGE, so a bow drawn faster or slower
 	// than the habit for the dynamic moves away from the bridge or towards it in proportion, as a player
 	// keeps the tone even across bow speeds. Only where the dynamic is in the speed.
@@ -1905,7 +1910,8 @@ void BowedPlayer::plan(const Pending& p) {
 
 /** A NOTE PLUCKED. The bow comes off any string it is drawing, the finger goes down on the note's string
 in the sample the string is plucked, and the string is plucked between the end of the fingerboard and the
-bridge, as hard as the dynamic asks (Habits::pluckShare and the rest). The pluck catches the string
+bridge, as hard as the dynamic asks (Habits::pluckShare and the rest), a chord's dynamic shared among its
+strings (Habits::chordPower). The pluck catches the string
 (BowedString::pluck), so a string still ringing is not plucked on top of what it was doing; and the
 finger goes down as it is plucked rather than before, since a finger landing ahead of the bow slid the
 ringing string to the new pitch for a few milliseconds before the new note sounded. Nothing is
@@ -1939,9 +1945,17 @@ void BowedPlayer::planPluck(const Pending& p) {
 	// one, the highest, last.
 	const int64_t gap = (int64_t) std::llround((double) habits.strumGap * rate);
 	const int64_t topAt = t0 + (int64_t) n.lowerCount * gap;
+	// HOW MANY STRINGS ARE PLUCKED TOGETHER: the top and each lower note on a string of its own.
+	int together = 1;
+	for (int i = 0; i < n.lowerCount; i++) {
+		const int ls = n.lowerString[i];
+		if (ls >= 0 && ls < live.inst.strings() && ls != s)
+			together++;
+	}
+	const double share = together > 1 ? std::pow((double) together, -(double) habits.chordPower) : 1.0;
 	const float how = (float) std::fmax(0.0,
 		byLevel(n.level, -1.0, habits.pluckPiano, habits.pluckForte) * (n.accent ? 1.3 : 1.0)
-		* (n.leftHand ? std::pow(10.0, habits.leftHandDb / 20.0) : 1.0));
+		* (n.leftHand ? std::pow(10.0, habits.leftHandDb / 20.0) : 1.0) * share);
 	const float cents = vibratoFor(n, s);
 
 	auto act = [&](int64_t at, Action::Kind k, float value, int64_t samples) {

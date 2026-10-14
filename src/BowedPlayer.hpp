@@ -221,8 +221,14 @@ struct BowedPlayer {
 		logarithmic scale against the ladder and carried on beyond them. */
 		float pluckShare = 0.14f, pluckMostShare = 0.4f, pluckWidth = 0.008f;
 		float pluckPiano = 2.f, pluckForte = 6.f;
-		/** A PLUCKED CHORD, strummed upwards by the finger: seconds from one string to the next. */
-		float strumGap = 0.012f;
+		/** A PLUCKED CHORD, strummed upwards by the finger: seconds from one string to the next. And its
+		dynamic shared among its strings as the cable shares a chord's (mpxShare, NoteBus.hpp): each string
+		plucked the count to the power minus `chordPower` as hard, so a chord is a little louder than one
+		note and not as loud as all its strings at the note's strength; and a bowed double stop the same,
+		its bow drawn slower and pressing less by two to that power (see plan). BowedModule sets it from
+		MPX_DENSITY_POWER. Plucked at full strength each, the four-note pizzicato chords of the Kreutzer
+		Sonata, bars 152 to 158, peaked 3.4 to 7 dB over their top notes alone and clipped. */
+		float strumGap = 0.012f, chordPower = 0.35f;
 		/** A LEFT-HAND PLUCK: so many decibels under the right hand's at the same marking, and at its
 		written end the finger laid back on the string, which dies away by 60 dB over `leftHandStops`
 		seconds. Chosen by ear in Paganini's 24th Caprice, bars 109 to 120: 10 and 14 dB under were

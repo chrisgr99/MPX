@@ -21,6 +21,8 @@ static const float CLIP_HOLD = 1.f, NEAR_HOLD = 0.3f, NOTE_HOLD = 0.06f;
 
 
 BowedModule::BowedModule(const BowedKind& k) : kind(k), habits(k.habits) {
+	// A chord's dynamic is shared among its notes as the cable shares it: see mpxShare.
+	habits.chordPower = MPX_DENSITY_POWER;
 	config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 	for (int i = 0; i < MAX_UPSTREAM; i++) {
 		wantSlots[i].store(-1);
@@ -439,12 +441,15 @@ void BowedModule::process(const ProcessArgs& args) {
 			shelf.madeFor = bright;
 		}
 	}
-	// ONE INSTRUMENT, ONE OUTPUT: where it sits is the mixer's to say.
-	const float sound = shelf.run(engine->process() * kind.voltsPerPascal);
+	// ONE INSTRUMENT, ONE OUTPUT: where it sits is the mixer's to say. Nothing leaves above ten volts,
+	// where the audio interface stops: the last volt and a half is a curve (mpxSoftClip), as the piano's
+	// is. The lamp reads the level before it, so red says the curve is rounding peaks.
+	const float raw = shelf.run(engine->process() * kind.voltsPerPascal);
+	const float sound = mpxSoftClip(raw);
 	outputs[O_OUT].setVoltage(sound);
 	recordProcess(sound);
 
-	const float peak = std::fabs(sound);
+	const float peak = std::fabs(raw);
 	if (peak >= CLIP_VOLTS)
 		clipHold = CLIP_HOLD;
 	else if (peak >= NEAR_VOLTS)
