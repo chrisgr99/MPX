@@ -33,6 +33,7 @@ void init(Plugin* p) {
 	p->addModel(modelMpxGuitarArticulation);
 	p->addModel(modelMpxGuitar);
 	p->addModel(modelMpxViolin);
+	p->addModel(modelMpxTrombone);
 	p->addModel(modelMpxViola);
 	p->addModel(modelMpxCello);
 	p->addModel(modelMpxFingerPicker);

@@ -64,9 +64,11 @@ double brassBellResistance(double ka);
 
 /** WHERE THE LISTENER IS. */
 struct BrassListener {
-	/** Radians from the bell's axis. 20 degrees brings the model nearest the Iowa recordings, whose
-	microphone's place is not given (make brasssound). */
-	double angle = 20.0 * 3.14159265358979 / 180.0;
+	/** Radians from the bell's axis. 10 degrees brings the held sound's harmonics nearest the Iowa
+	recordings', whose microphone's place is not given: on B flat 3 and F4 at mf, every group of them within
+	3 dB but F4's 13th to 20th, 7 over (make brasslips ARGS="harmonics 96000 once angle=10"); on the axis
+	those were 11 over, at 20 degrees B flat 3's were 5.5 under. */
+	double angle = 10.0 * 3.14159265358979 / 180.0;
 	/** Metres from the bell's mouth. */
 	double distance = 1.0;
 	/** The gain is the mean over the angles this far either side, radians: a flat piston's pattern has
@@ -85,6 +87,8 @@ struct BrassListenerFilter {
 	void design(const BrassGrid::Setup& bell, const BrassListener& where);
 	double process(double x);
 	int taps() const { return (int) h.size(); }
+	/** Its taps, oldest sample's first, for checking. */
+	const std::vector<double>& coefficients() const { return h; }
 	/** The filter's response at `hz`, for checking. */
 	double magnitude(double hz) const;
 

@@ -127,9 +127,14 @@ struct BrassLossShelves {
 	/** For a run of tube whose losses add up to `beta`, seconds to the half: the sum over its pieces of each
 	one's length times (sqrt(nu) / r) (1 + (gamma - 1) / sqrt(Pr)) / c. */
 	void design(double beta, const std::vector<double>& xi, const std::vector<double>& mu, double rate);
+	/** THE SHELVES PLANNED for the longest run the tube can be, `betaMost`, each of the half-order terms
+	split into as many as that needs: a redesign that split one into more while sounding could not carry
+	over what the shelves held, and clicked (the slide out from A3 to B3). */
+	void plan(double betaMost, const std::vector<double>& mu);
 	double process(double x);
 
 private:
+	std::vector<int> planned;
 	struct Shelf {
 		double b0 = 1.0, b1 = 0.0, a1 = 0.0, x1 = 0.0, y1 = 0.0;
 	};
@@ -151,11 +156,22 @@ struct BrassWaveguide {
 		bool steepening = true;
 		/** Where the listener is (BrassRadiation.hpp). */
 		BrassListener listener;
+		/** THE INSTRUMENT: the trombone, with its slide; or the trumpet, with its valves, set as `trumpet` says
+		(BrassBore::trumpetTimed; its pull in place of `tuningPull`). */
+		enum Instrument { TROMBONE, TRUMPET } instrument = TROMBONE;
+		BrassTrumpetSetting trumpet;
 	};
 	void setup(const Setup& s);
 
-	/** THE SLIDE MOVED, `extension` metres from first position: the outer tubes' lengths and the losses. */
-	void setExtension(double extension);
+	/** THE SLIDE MOVED, `extension` metres from first position: the outer tubes' lengths, and the losses
+	unless `losses` is false — the lengths alone, for each step of a moving slide, the losses changing slowly
+	enough to follow it more seldom. */
+	void setExtension(double extension, bool losses = true);
+	/** A VALVE MOVED, the first nought: `down` nought up, one pressed, between them part-way, the air going
+	both ways in proportion. */
+	void setValve(int valve, double down);
+	/** THE FIRST AND THIRD VALVES' SLIDES, each lengthening its loop twice over, metres. */
+	void setValveSlides(double slide1, double slide3);
 
 	/** ONE STEP: `flow` cubic metres a second into the cup; the cup's pressure after it, pascals. */
 	double step(double flow);
@@ -169,9 +185,12 @@ struct BrassWaveguide {
 	double radiatedFlow() const { return back.radiatedFlow(); }
 	/** THE PRESSURE AT THE LISTENER after the last step, pascals. */
 	double listenerPressure() const { return heardNow; }
+	/** The wave going into the bell, pascals, before the bell and the listener: for tracing. */
+	double bellIn() const { return heardIn; }
 	/** The wave entering the bell that the listener's filter takes, for listening from elsewhere. */
 	double bellInput() const { return heardIn; }
 	int listenerTaps() const { return listener.taps(); }
+	const std::vector<double>& listenerCoefficients() const { return listener.coefficients(); }
 	int gridPoints() const { return front.points() + back.points(); }
 
 private:
@@ -183,13 +202,24 @@ private:
 	struct Tube {
 		double length = 0.0, radius = 0.0;
 		bool outer = false;
+		/** A valve's path: the share of the air it takes, by how far the valve is down; one elsewhere. */
+		double share = 1.0;
 		BrassDelay forward, backward;
 		BrassSteepeningDelay steepening;
 		double delay = 2.0;
 	};
 	bool steepens = true;
 	std::vector<Tube> tubes;
-	/** Each junction's pressure reflection, for a wave going on from the tube before it. */
+	/** THE RUN AS STAGES, mouthpiece to bell, each one tube or a valve's two paths side by side — its straight
+	path first, then its loop — the tubes of each in order in `tubes`. */
+	struct Stage {
+		int first = 0, count = 1, valve = -1;
+	};
+	std::vector<Stage> stages;
+	/** The valves' loops past their straight paths, and the slides', metres. */
+	double loops[3] = {0.0, 0.0, 0.0}, valveSlides[3] = {0.0, 0.0, 0.0};
+	/** Each junction between two stages of one tube each: the pressure reflection, for a wave going on from
+	the stage before it. */
 	std::vector<double> reflection;
 	std::vector<double> xi, mu;
 	BrassLossShelves lossOn, lossBack, lossHeard;

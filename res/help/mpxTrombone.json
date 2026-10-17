@@ -1,0 +1,39 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxTrombone",
+  "description": "Plays one MPX part on a modelled tenor trombone: an air column with a bell, buzzed by a model of the lips, each note's slide position, breath and start chosen by a model of a player.",
+  "params": [
+    {"ids": [0], "name": "Brightness", "text": "Turns the trombone's highs down. Fully clockwise, the trombone as it is; turned counter-clockwise, everything above about 2 kHz is turned down, by up to 12 dB fully counter-clockwise, and nothing below it is touched. A filter on the output, after the trombone: it changes nothing about how the notes are blown or started."},
+    {"ids": [1], "name": "Tune", "text": "Tuning by ear. While lit, every note from the cable is played the moment it arrives, from the four knobs beside it, with nothing tried or worked out ahead, so a turn of a knob is heard on the next note. When the music moves to a pitch and marking, the knobs go to the settings kept for it, or to the best of the starts a quick search finds for it, which takes a few seconds. Unlit, the trombone plays as it always does, using the settings kept wherever a note has them."},
+    {"ids": [2], "name": "Rise", "text": "How long the breath takes to rise to its level after the tongue lets go, from just over the lowest pressure the note sounds at. Short starts hard; long starts soft, the tone opening up as it rises. Nought is a step of breath. Only while tuning, and only for tongued notes."},
+    {"ids": [3], "name": "Lips start", "text": "How far over the note's setting the lips are as the tongue lets go, gliding down to it over 40 ms: at nought the note starts at its pitch, higher it starts a little sharp and settles. Only while tuning."},
+    {"ids": [4], "name": "Breath", "text": "How hard the note is blown against what its marking asks: up brighter and louder, down darker and softer. Only while tuning."},
+    {"ids": [9], "name": "Lip mass", "text": "How heavy the lips are, against the trombone's own 0.9: heavier lips take longer to come into vibration, so the note swells in more gradually, and need more breath to sound. When it is turned, the breath and the lips' setting are found again for the note playing, which takes a few seconds, the display showing RETUNING from the moment it is turned until the new lips are ready, about three seconds after it is let go; meanwhile the notes go on with the lips found last. Only while tuning."},
+    {"ids": [10], "name": "Lip damping", "text": "How much the lips lose of their motion each cycle, against the trombone's own a third: more damped lips also come into vibration more slowly, and too much and they do not sound at all. Found again for the note when turned, as LIP MASS is. Only while tuning."},
+    {"ids": [6], "name": "Try the next start", "text": "Sets the knobs to the next of the starts the search found for the note playing, in turn; the display shows which. Only while tuning."},
+    {"ids": [7], "name": "Keep these settings", "text": "Keeps what the four knobs say for the pitch and marking playing, for every patch; the display then shows KEPT. Only while tuning."},
+    {"ids": [8], "name": "Reference: the recording", "text": "While held, each note that starts is the Iowa recording of its pitch at its marking, as loud as the trombone plays it there; let go, the notes are the trombone again. A note goes on as it started until it ends. Only while tuning, and only once the recordings are in the Rack user folder, under DreamerMPX/trombone-reference."}
+  ],
+  "inputs": [
+    {"ids": [0], "name": "MPX note", "text": "One part, played on the trombone: its notes, from mpxScore or any MPX source. From a score each note is announced ahead, and at Fidelity levels 1 and 2 its start or its slur is worked out before it sounds."},
+    {"ids": [1], "name": "Gate", "text": "Plays the trombone without a cable: a note while the gate is up, let go when it falls. With a polyphonic gate, the highest pitch among the channels that are up. While an MPX cable is in, this port and the two below it are not read."},
+    {"ids": [2], "name": "1V/oct", "text": "The pitch of the gate's note, a volt an octave, nought at middle C. A move of more than half a semitone while the gate stays up is the next note, slurred; a smaller one is left alone."},
+    {"ids": [3], "name": "Level", "text": "How loud each gate's note is played, read as it begins: nought volts ppp, ten fff, in sevenths between. With nothing patched, mf."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "Out", "text": "The trombone, in mono. A loud note's peaks stand far above its level: at ff they reach 3V to 6.5V, at fff up to 10V, the highest of them rounded off by a soft curve from 8.5V."}
+  ],
+  "lights": [
+    {"ids": [3], "name": "Busy", "text": "Lit while the tuning is working: from the moment LIP MASS or LIP DAMPING is turned until the breath and the lips for them are found for the note playing, and while the starts for a new note are being found. Out, the notes play as the knobs say."},
+    {"ids": [0], "name": "Level", "text": "Flashes green as each note begins, lights orange when the output passes 7.07V, 3 dB under clipping, and red when it reaches 10V, where Rack's audio interface clips."}
+  ],
+  "notes": [
+    "From a score, each note is announced to the module four and a half seconds before it sounds. At Fidelity levels 1 and 2, ways of starting it, or of slurring into it, are tried on a copy of the trombone while the music plays, and the best is played. A note from a keyboard or the ports, which nothing announced, is played as it arrives.",
+    "One trombone is one player: a chord on the cable is played as its top note. A note below E2, the lowest the slide reaches above the pedal notes, or above F sharp 5, is played an octave or more in, and while the part goes there the plug light on the source's output blinks.",
+    "How loud each note is played sets how hard it is blown, and so how bright it is: a loud note is brassy because it is blown hard, not because it is turned up.",
+    "Tuning by ear: with TUNE lit, loop a passage on one pitch in mpxScore and turn RISE, LIPS, BREATH, MASS and DAMP until the start and the tone are right, pressing TRY to hear the other starts found for the note and holding REF to hear the Iowa recording of it; then SAVE. The settings are kept for that pitch and marking in the Rack user folder, under DreamerMPX/trombone-tuning.json, and played whenever that note comes, in every patch, with TUNE unlit as well.",
+    "Fidelity, in the right-click menu, sets how much is tried on a copy of the trombone before each note sounds. Level 1 tries every way: sixty starts, and about a hundred ways of making each slur. Level 2, the default, tries a third of them. Level 3 tries nothing: each note is played as it arrives, by what the player has found before in the same place or else by habit, and nothing needs announcing. At levels 1 and 2 the module works three and a half seconds ahead of what is heard.",
+    "Enable diagnostics, in the right-click menu, shows the number along the top of the panel; it is on to begin with. It counts the notes played without trying, at levels 1 and 2, because the trying had fallen behind: a busy computer is the usual cause, and level 2 needs a third of the computing. It counts from nought whenever Fidelity or Economy changes.",
+    "Economy, in the right-click menu, leaves out the steepening of the sound wave on its way down the bore, for less computing; the loudest notes are then less brassy."
+  ]
+}

@@ -543,7 +543,15 @@ void layoutBuild(ModuleWidget* mw, Panel* panel, Layout& layout) {
 				// besides yes: green for right, red for wrong, dark for neither. A LEVEL LAMP has
 				// three, green, orange and red, since green and red lit together make yellow, not
 				// the orange a level meter warns in.
-				widget::Widget* l = (item.style == "light.greenred")
+				// A LARGE LAMP, for something that has to be seen from a distance: busy, or not. A
+				// MEDIUM one, the same, for beside the controls that light it.
+				widget::Widget* l = (item.style == "light.large")
+					? (widget::Widget*) createLightCentered<LargeLight<YellowLight>>(
+						pos, module, item.id)
+					: (item.style == "light.medium")
+					? (widget::Widget*) createLightCentered<MediumLight<YellowLight>>(
+						pos, module, item.id)
+					: (item.style == "light.greenred")
 					? (widget::Widget*) createLightCentered<SmallLight<GreenRedLight>>(
 						pos, module, item.id)
 					: (item.style == "light.level")

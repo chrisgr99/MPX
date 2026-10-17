@@ -25,6 +25,7 @@ extern Model* modelMpxScore;
 extern Model* modelMpxGuitarArticulation;
 extern Model* modelMpxGuitar;
 extern Model* modelMpxViolin;
+extern Model* modelMpxTrombone;
 extern Model* modelMpxViola;
 extern Model* modelMpxCello;
 extern Model* modelMpxFingerPicker;

@@ -19,10 +19,18 @@ lies above 1 kHz, in decibels against the whole.
     make brassref                                    every scale in build/iowa-trombone
     make brassref ARGS="DIR OUT.tsv"                 another folder, another table
     make brassref ARGS="cut A#3 mf OUT.wav"          one note at one dynamic, as found, into a WAV
+    make brassref ARGS="cutall DIR"                  every note at every dynamic, into DIR as "MIDI DYN.wav": what
+                                                     mpxTrombone's REF plays, from the Rack user folder's
+                                                     DreamerMPX/trombone-reference
+    make brassref ARGS=starts                        the shapes of the notes' starts (src/BrassStart.hpp), their
+                                                     medians and spreads by register and dynamic, written into
+                                                     src/TromboneStarts.cpp
 
 The levels are the recording's, not sound pressure: the same microphone and, as far as the collection
 says, the same gain for every dynamic, so the differences between pp, mf and ff are meaningful and the
 absolute figures are not. */
+#include "../src/BrassStart.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -207,9 +215,14 @@ static void writeWav(const std::string& path, const std::vector<float>& x, doubl
 int main(int argc, char** argv) {
 	// ONE NOTE CUT OUT: from 50 ms before it is found to 200 ms after.
 	const bool cutting = argc > 4 && std::strcmp(argv[1], "cut") == 0;
+	const bool starting = argc > 1 && std::strcmp(argv[1], "starts") == 0;
+	const bool cuttingAll = argc > 2 && std::strcmp(argv[1], "cutall") == 0;
+	const std::string cutAllTo = cuttingAll ? argv[2] : "";
+	int cutCount = 0;
+	std::vector<px::BrassStartShape> shapes[3][3];
 	const int cutMidi = cutting ? midiOf(argv[2]) : -1;
 	const std::string cutDynamic = cutting ? argv[3] : "", cutPath = cutting ? argv[4] : "";
-	const std::string dir = !cutting && argc > 1 ? argv[1] : "build/iowa-trombone";
+	const std::string dir = !cutting && !starting && !cuttingAll && argc > 1 ? argv[1] : "build/iowa-trombone";
 	const std::string out = !cutting && argc > 2 ? argv[2] : "research/brass/iowa-tenor-trombone.tsv";
 	const char* dynamics[3] = {"pp", "mf", "ff"};
 	const char* ranges[4] = {"E2B2", "C3B3", "C4B4", "C5"};
@@ -285,6 +298,12 @@ int main(int argc, char** argv) {
 				const double m = 69.0 + 12.0 * std::log2(row.f0 / 440.0);
 				row.midi = (int) std::lround(m);
 				row.cents = 100.0 * (m - row.midi);
+				if (cuttingAll) {
+					const size_t from = a > (size_t) (0.05 * rate) ? a - (size_t) (0.05 * rate) : 0;
+					const size_t to = std::min(x.size(), b + (size_t) (0.2 * rate));
+					writeWav(cutAllTo + "/" + std::to_string(row.midi) + " " + dyn + ".wav", std::vector<float>(x.begin() + (long) from, x.begin() + (long) to), rate);
+					cutCount++;
+				}
 				if (cutting && row.midi == cutMidi && cutDynamic == dyn) {
 					const size_t from = a > (size_t) (0.05 * rate) ? a - (size_t) (0.05 * rate) : 0;
 					const size_t to = std::min(x.size(), b + (size_t) (0.2 * rate));
@@ -367,8 +386,95 @@ int main(int argc, char** argv) {
 				row.slopeBelow = slope(row, 0.0, 1000.0);
 				row.slopeAbove = slope(row, 1000.0, 5000.0);
 				rows.push_back(row);
+				// THE START'S SHAPE, looked for from the end of the note before or 300 ms before this one.
+				if (starting) {
+					const size_t look = std::max(s > 0 ? spans[s - 1].second : (size_t) 0, a > (size_t) (0.3 * rate) ? a - (size_t) (0.3 * rate) : 0);
+					std::vector<double> piece(x.begin() + (long) look, x.begin() + (long) b);
+					const px::BrassStartShape shape = px::brassStartShape(piece.data(), piece.size(), 0, rate, row.f0);
+					const int reg = row.midi < 48 ? 0 : row.midi < 60 ? 1 : 2;
+					const int which = std::string(dyn) == "pp" ? 0 : std::string(dyn) == "mf" ? 1 : 2;
+					if (shape.valid)
+						shapes[reg][which].push_back(shape);
+				}
 			}
 		}
+
+	if (cuttingAll) {
+		std::printf("wrote %d notes into %s\n", cutCount, cutAllTo.c_str());
+		return 0;
+	}
+	if (starting) {
+		// MEDIANS AND SPREADS by register and dynamic, into src/TromboneStarts.cpp.
+		const char* regs[3] = {"E2 to B2", "C3 to B3", "C4 to C5"};
+		const char* dyns[3] = {"pp", "mf", "ff"};
+		FILE* g = std::fopen("src/TromboneStarts.cpp", "w");
+		// THE RECORDINGS' BLIPS AND BLATS, for the most a start may have (BrassStartClean).
+		{
+			std::vector<float> blips, blats;
+			for (int r = 0; r < 3; r++)
+				for (int d = 0; d < 3; d++)
+					for (const px::BrassStartShape& sh : shapes[r][d]) {
+						blips.push_back(sh.blip);
+						blats.push_back(sh.blat);
+					}
+			std::sort(blips.begin(), blips.end());
+			std::sort(blats.begin(), blats.end());
+			auto at = [](const std::vector<float>& v, double q) { return v.empty() ? 0.f : v[(size_t) std::min((double) v.size() - 1, q * (double) v.size())]; };
+			std::printf("THE RECORDINGS' BLIPS, dB: median %.1f, three quarters under %.1f, 90 per cent under %.1f, most %.1f; BLATS, dB: median %.1f, three quarters under %.1f, 90 per cent under %.1f, most %.1f\n",
+				at(blips, 0.5), at(blips, 0.75), at(blips, 0.9), blips.empty() ? 0.f : blips.back(), at(blats, 0.5), at(blats, 0.75), at(blats, 0.9),
+				blats.empty() ? 0.f : blats.back());
+		}
+		std::fprintf(g, "/** THE TENOR TROMBONE'S STARTS, as make brassref ARGS=starts measured them in the Iowa recordings: not to be\nedited by hand. See BrassStart.hpp. */\n#include \"BrassStart.hpp\"\n\nnamespace px {\n\n\nstatic const BrassStartTemplate STARTS[3][3] = {\n");
+		auto quartiles = [](std::vector<float> v, float* median, float* spread) {
+			std::sort(v.begin(), v.end());
+			const size_t n = v.size();
+			*median = v[n / 2];
+			*spread = 0.5f * (v[(3 * n) / 4] - v[n / 4]);
+		};
+		for (int r = 0; r < 3; r++) {
+			std::fprintf(g, "\t{\n");
+			for (int d = 0; d < 3; d++) {
+				const std::vector<px::BrassStartShape>& all = shapes[r][d];
+				px::BrassStartTemplate t{};
+				t.count = (int) all.size();
+				for (int k = 0; k < px::BrassStartShape::FRAMES && !all.empty(); k++) {
+					std::vector<float> l, c, su, br;
+					for (const auto& sh : all) {
+						l.push_back(sh.level[k]);
+						c.push_back(sh.cents[k]);
+						su.push_back(sh.sure[k]);
+						br.push_back(sh.bright[k]);
+					}
+					quartiles(l, &t.level[k], &t.levelSpread[k]);
+					quartiles(c, &t.cents[k], &t.centsSpread[k]);
+					quartiles(su, &t.sure[k], &t.sureSpread[k]);
+					quartiles(br, &t.bright[k], &t.brightSpread[k]);
+				}
+				std::printf("\nSTARTS, %s %s: %d notes. Every 10 ms from where it comes within 30 dB: level dB, pitch cents, sureness, brightness octaves (median, spread)\n", regs[r],
+					dyns[d], t.count);
+				for (int k = 0; k < px::BrassStartShape::FRAMES && t.count > 0; k += 2)
+					std::printf("  %3d ms   %6.1f (%4.1f)   %+6.0f (%4.0f)   %5.2f (%4.2f)   %+5.2f (%4.2f)\n", k * 5, t.level[k], t.levelSpread[k], t.cents[k],
+						t.centsSpread[k], t.sure[k], t.sureSpread[k], t.bright[k], t.brightSpread[k]);
+				auto row = [&](const float* v) {
+					std::fprintf(g, "{");
+					for (int k = 0; k < px::BrassStartShape::FRAMES; k++)
+						std::fprintf(g, "%s%.3ff", k ? ", " : "", v[k]);
+					std::fprintf(g, "}");
+				};
+				std::fprintf(g, "\t\t{");
+				row(t.level); std::fprintf(g, ", "); row(t.cents); std::fprintf(g, ", "); row(t.sure); std::fprintf(g, ", "); row(t.bright);
+				std::fprintf(g, ",\n\t\t\t");
+				row(t.levelSpread); std::fprintf(g, ", "); row(t.centsSpread); std::fprintf(g, ", "); row(t.sureSpread); std::fprintf(g, ", ");
+				row(t.brightSpread);
+				std::fprintf(g, ", %d},\n", t.count);
+			}
+			std::fprintf(g, "\t},\n");
+		}
+		std::fprintf(g, "};\n\n\nconst BrassStartTemplate& tromboneStart(int reg, int dynamic) {\n\treg = reg < 0 ? 0 : reg > 2 ? 2 : reg;\n\tdynamic = dynamic < 0 ? 0 : dynamic > 2 ? 2 : dynamic;\n\t// Where the recordings gave no start for this register and dynamic, the same register's at the nearest\n\t// dynamic — ff before pp for mf — then the next register's: how fast a start opens up depends far more on\n\t// the register than on the dynamic (C3 to C5 at mf and ff alike are still 5 dB short at 90 ms, E2 to B2\n\t// at ff 2), so the low register's mf, which the recordings lack, was judged too slow by the middle's.\n\tif (STARTS[reg][dynamic].count > 0)\n\t\treturn STARTS[reg][dynamic];\n\tfor (int d : {dynamic + 1, dynamic - 1, dynamic + 2, dynamic - 2})\n\t\tif (d >= 0 && d < 3 && STARTS[reg][d].count > 0)\n\t\t\treturn STARTS[reg][d];\n\tfor (int r : {reg + 1, reg - 1, reg + 2, reg - 2})\n\t\tif (r >= 0 && r < 3 && STARTS[r][dynamic].count > 0)\n\t\t\treturn STARTS[r][dynamic];\n\treturn STARTS[1][1];\n}\n\n\n} // namespace px\n");
+		std::fclose(g);
+		std::printf("\nwrote src/TromboneStarts.cpp\n");
+		return 0;
+	}
 
 	FILE* f = std::fopen(out.c_str(), "w");
 	if (!f) {

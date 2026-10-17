@@ -57,11 +57,45 @@ whose radiation resistance at low frequency is half as large again as Levine and
 enum class BrassRadiation { SILVA, PARALLEL_RL };
 
 
+/** A VALVE: the section that is its straight path through the valve, and the way round its loop when it is
+pressed, the straight path's length and the loop's together, metres. Its section's length in the bore is
+whichever way the air goes. */
+struct BrassValve {
+	size_t section = 0;
+	double straight = 0.0, around = 0.0;
+};
+
+
+/** THE B FLAT TRUMPET AS IT IS PLAYED, assembled field by field: which valves are down, as bits, the first
+valve one; how far each loop is lengthened past the straight path, the first, second and third valves', set
+so that each, pressed alone, lowers the open trumpet's resonances 2 to 8 a tone, a semitone and three
+semitones (make trumpetbore); the first and third valves' slides, each lengthening its loop twice over; and
+the tuning slide's pull, which lengthens the cylinder twice over — 19.0 mm in brings the open trumpet's
+fourth resonance to the measured Smith-Watkins's, 469.1 Hz. */
+struct BrassTrumpetSetting {
+	int pressed = 0;
+	double loops[3] = {0.1799, 0.0873, 0.2778};
+	double slide1 = 0.0, slide3 = 0.0, tuningPull = -0.0190;
+};
+
+
 /** A WHOLE AIR COLUMN: the mouthpiece, then the sections from the mouthpiece to the bell's mouth. */
 struct BrassBore {
 	BrassMouthpiece mouthpiece;
 	std::vector<BrassSection> sections;
 	BrassRadiation radiation = BrassRadiation::SILVA;
+	/** The valves, where it has them. */
+	std::vector<BrassValve> valves;
+
+	/** THE B FLAT TRUMPET (docs/trumpet.md): OpenWInD's trumpet, 1.4187 m from the rim to the bell's mouth —
+	the cup narrowing from 8.40 mm to the throat's 1.825 mm at 17.7 mm, the backbore widening to 4.20 mm, the
+	leadpipe from 4.64 mm to the cylinder's 5.82 mm at 0.3037 m, the cylinder to 0.7987 m, and the bell
+	widening to 61.0 mm — straight between its points; with the three valves in the cylinder, the first at
+	0.64 m, each a straight path of 25 mm. The valves pressed as `s` says. */
+	static BrassBore trumpet(const BrassTrumpetSetting& s);
+	/** THE SAME FOR PLAYING IN TIME: the cup lumped, rim to throat, its volume a compliance and the inertance
+	of its narrowing in series with it; the backbore on as a tube. */
+	static BrassBore trumpetTimed(const BrassTrumpetSetting& s);
 
 	/** THE TENOR TROMBONE OF SMYTH AND SCOTT (2011, Table 2; their bell's Bessel-horn fit, Table 1), the
 	slide drawn out `extension` metres from first position — each outer tube that much longer, so the air

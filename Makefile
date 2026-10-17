@@ -606,7 +606,7 @@ $(DEP_PATH)/lib/libverovio.a:
 	cp $(DEP_PATH)/verovio-src/data/tuning-glyphnames.json res/verovio/
 
 
-.PHONY: pedaltest styletest brassref brassbore brasslips brassradiation brasssound pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
+.PHONY: pedaltest styletest brassref brassbore brasslips brassradiation brasssound brasstables brasstimbre brasssearch trumpetbore brassplay brassrender pianobench bowtest bowplay bowbody bowinstrument scorenotes pianorelease lossprobe pathread test presets phrasesim gptest navtest performtest soundtest voicetest stringtest guitartest leveltest fretboardtest pickertest pickrender
 
 # DOES THE ANTI-ALIASED PATH READING ACTUALLY WORK. A known tone is painted round a circle and
 # read at rates from far below the table's resolution to far above it; averaging the arc is
@@ -644,11 +644,21 @@ stringbench:
 		-L$(RACK_DIR) -lRack -o build/stringbench
 	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/stringbench $(ARGS)
 
+# The trombone playing a score with the piano, rendered: docs/brass.md, phase 6. See test/brassrender.cpp.
+brassrender:
+	@mkdir -p build
+	@$(CXX) -std=c++20 -O2 -g $(BENCH_FLAGS) -I dep/include -I dep/include/verovio -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include \
+		-Wno-deprecated-this-capture -march=armv8-a+fp+simd -funsafe-math-optimizations \
+		test/brassrender.cpp test/pianobench_piano.cpp test/pianobench_score.cpp $(BENCH_OBJS) \
+		dep/lib/libverovio.a dep/lib/libfluidsynth.a -framework Cocoa -framework CoreFoundation \
+		-L$(RACK_DIR) -lRack -o build/brassrender
+	@DYLD_LIBRARY_PATH=$(RACK_DIR) ./build/brassrender $(ARGS)
+
 # The trombone's reference from the University of Iowa recordings: docs/brass.md, phase 1. See
 # test/brassref.cpp for where to fetch them. ARGS="DIR OUT.tsv" for another folder or table.
 brassref:
 	@mkdir -p build
-	@c++ -std=c++17 -O2 -Wall test/brassref.cpp -o build/brassref
+	@c++ -std=c++17 -O2 -Wall test/brassref.cpp src/BrassStart.cpp src/BrassJudge.cpp -o build/brassref
 	@./build/brassref $(ARGS)
 
 # The trombone's air column, in frequency and in time: docs/brass.md, phase 2. See test/brassbore.cpp.
@@ -674,6 +684,37 @@ brasssound:
 	@mkdir -p build
 	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brasssound.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp -o build/brasssound
 	@./build/brasssound $(ARGS)
+
+# The trombone's tables, found on the model, into src/TromboneTable.cpp: docs/brass.md, phase 6.
+brasstables:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brasstables.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp src/BrassTable.cpp src/TromboneTable.cpp -o build/brasstables
+	@./build/brasstables $(ARGS)
+
+# The trombone's timbre against the recordings, a few notes at a time: docs/brass.md, phase 6. See
+# test/brasstimbre.cpp.
+brasstimbre:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brasstimbre.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp src/BrassInstrument.cpp -o build/brasstimbre
+	@./build/brasstimbre $(ARGS)
+
+# The trombone's player: docs/brass.md, phase 6. See test/brassplay.cpp.
+# The trumpet's air column: docs/trumpet.md, phase 1. See test/trumpetbore.cpp.
+trumpetbore:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/trumpetbore.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp -o build/trumpetbore
+	@nice ./build/trumpetbore $(ARGS)
+
+# The trombone's settings searched against a recording, while nobody listens. See test/brasssearch.cpp.
+brasssearch:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brasssearch.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp src/BrassTable.cpp src/TromboneTable.cpp src/BrassInstrument.cpp src/BrassPlayer.cpp src/BrassJudge.cpp src/BrassStart.cpp src/TromboneStarts.cpp -o build/brasssearch
+	@nice ./build/brasssearch $(ARGS)
+
+brassplay:
+	@mkdir -p build
+	@c++ -std=c++17 -O2 -Wall -march=armv8-a+fp+simd test/brassplay.cpp src/BrassBore.cpp src/BrassGrid.cpp src/BrassWaveguide.cpp src/BrassLips.cpp src/BrassRadiation.cpp src/BrassTable.cpp src/TromboneTable.cpp src/BrassInstrument.cpp src/BrassPlayer.cpp src/BrassJudge.cpp src/BrassStart.cpp src/TromboneStarts.cpp -o build/brassplay
+	@./build/brassplay $(ARGS)
 
 # What style each score's ornaments would be played in, and why. See test/styletest.cpp.
 styletest:

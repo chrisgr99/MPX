@@ -231,6 +231,14 @@
       ]
     },
     {
+      "slug": "mpxTrombone",
+      "name": "mpxTrombone",
+      "description": "Plays one MPX part on a modelled tenor trombone: an air column with a bell, buzzed by a model of the lips, each note's slide position, breath and start worked out ahead of it.",
+      "tags": [
+        "Physical modeling"
+      ]
+    },
+    {
       "slug": "mpxFingerPicker",
       "name": "mpxFingerPicker",
       "description": "Plays the chords on an mpxChart cable finger-style: a folk picking pattern on the chart's beat, the thumb on the bass and the fingers on the treble strings, each note sent with its string and fret for mpxGuitar.",

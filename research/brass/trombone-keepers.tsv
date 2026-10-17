@@ -1,0 +1,21 @@
+# THE TROMBONE'S KEEPERS: settings Chris approved by ear against the Iowa recordings (docs/brass.md, the table).
+# Found by make brasssearch with breath noise off (air=0); play one with try=TENSION,GAP,DAMP,MASS,MOUTH,RISE,FLOOR,CURVE air=0.
+# The slide is found again for each by tuneFor; late is how long after the tongue the note is heard.
+midi	dynamic	tension	gap mm	damp	mass	mouth Pa	rise s	floor	curve	slide cents	late ms	cents	approved	from
+46	mf	0.994	-0.213	0.465	1.52	1.42e+03	0.678	1.35	3.71	+0	146	-3	excellent in every way	build/verify2/46 mf.log
+53	mf	0.996	-0.457	0.627	0.6	1.11e+03	0.376	1.62	2.23	+59	10	+1	excellent in every way	build/verify2/53 mf.log
+58	mf	0.917	-0.166	0.471	1.66	2.68e+03	0.681	1.78	1.68	-22	136	-6	excellent	build/verify2/58 mf.log
+40	ff	1.08	-0.178	0.475	0.63	673	0.337	1.62	1.63	+113	14	+4	smoother than the recording; happy with it, if anything a touch dark	build/verify2/40 ff.log
+72	mf	1.12	-0.411	0.83	0.697	3.51e+03	1	1.86	2.1	+39	10	-3	pretty good	build/verify3/72 mf.log
+65	mf	0.922	-0.105	0.34	1.63	2.69e+03	0.307	1.35	4	-13	10	-1	a keeper	build/verify4/65 mf.log
+45	mf	1.06	-0.109	0.408	1.52	1.16e+03	0.325	1.31	4	+16	12	+2	very good, definitely a keeper (from the B flat 2 mf keeper, 1 min)	build/neighbour/45 mf.log
+53	ff	0.903	-0.5	0.528	0.877	2.23e+03	0.204	1.94	2.18	+18	44	+0	sounds good, a keeper (2 min, unseeded)	build/more/53 ff.log
+58	pp	0.925	-0.22	0.598	1.09	1.02e+03	0.39	1.79	1.57	-43	12	-11	perfect, exactly like the recorded tone (scored weakest of its round)	build/more/58 pp.log
+62	ff	0.992	-0.0506	0.307	2.35	5.54e+03	0.195	1.92	2.27	+235	62	+0	exactly like the recorded tone, a keeper (2 min, unseeded)	build/more/62 ff.log
+43	mf	1.07	-0.125	0.429	1.55	1.22e+03	0.317	1.31	4	+46	86	+1	not quite perfect, a keeper for now: tone differs very slightly in the first half (from the A2 mf keeper, 1 min)	build/more/43 mf.log
+72	ff	1.02	-0.447	0.769	0.899	5e+03	0.333	1.78	3.37	+39	10	-1	perfect, a keeper (from the C5 mf keeper, 4 min)	build/more/72 ff round 7.log
+57	pp	1	0.0885	0.25	1.01	664	0.175	1.42	2.31	-49	8	-1	perfect (from the B flat 3 pp keeper, 2 min)	build/more/57 pp.log
+65	pp	1.15	-0.251	0.727	2.5	5.16e+03	0.0515	1.73	1.05	+3	120	+0	perfect (from the F4 mf keeper, 3 min; several settings at their range limits)	build/more/65 pp.log
+56	pp	0.997	0.093	0.271	1.02	727	0.18	1.45	2.52	-35	8	-3	a keeper (from the A3 pp keeper, 2 min)	build/phrase/56 pp.log
+61	pp	0.996	0.0379	0.25	1.16	1.01e+03	0.0813	1.16	2.18	-25	16	-1	excellent; lips open at rest, so it joins its open neighbours cleanly (from the new B3 pp keeper, the gap kept open, 3 min)	build/phrase/61 pp open.log
+59	pp	0.986	0.0389	0.25	1.07	804	0.0623	1.19	2.17	-31	10	-3	excellent; lips open at rest, so it joins its open neighbours cleanly (from the A3 pp keeper, the gap kept open, 3 min)	build/phrase/59 pp open.log

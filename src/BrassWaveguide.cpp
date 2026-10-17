@@ -2,6 +2,7 @@
 #include "BrassWaveguide.hpp"
 
 #include <cmath>
+#include <cstdlib>
 
 namespace px {
 
@@ -142,6 +143,13 @@ double BrassSteepeningDelay::read() {
 }
 
 
+void BrassLossShelves::plan(double betaMost, const std::vector<double>& mu) {
+	planned.assign(mu.size(), 1);
+	for (size_t m = 0; m < mu.size(); m++)
+		planned[m] = std::max(1, (int) std::ceil(betaMost * mu[m] / 0.5));
+}
+
+
 void BrassLossShelves::design(double beta, const std::vector<double>& xi, const std::vector<double>& mu, double rate) {
 	// exp(-beta s^(1/2)) as the product over m of exp(-beta mu_m s / (s + xi_m)), each by its Padé
 	// approximant ((1 - a/2) s + xi) / ((1 + a/2) s + xi) with a = beta mu_m, split into as many equal
@@ -151,7 +159,8 @@ void BrassLossShelves::design(double beta, const std::vector<double>& xi, const 
 		const double a = beta * mu[m];
 		if (!(a > 0.0))
 			continue;
-		const int pieces = std::max(1, (int) std::ceil(a / 0.5));
+		// As many as the longest the tube can be needs, so that the slide moving never adds one while sounding.
+		const int pieces = std::max(m < planned.size() ? planned[m] : 1, (int) std::ceil(a / 0.5));
 		const double each = a / pieces;
 		const double k2 = 2.0 * rate;
 		const double n0 = (1.0 - 0.5 * each) * k2 + xi[m], n1 = xi[m] - (1.0 - 0.5 * each) * k2;
@@ -188,10 +197,17 @@ double BrassLossShelves::process(double x) {
 void BrassWaveguide::setup(const Setup& s) {
 	air = s.air;
 	rate = s.rate;
-	const BrassBore bore = BrassBore::tromboneTimed(0.0, s.tuningPull);
-	// THE PARTS: the front up to the slide (the backbore and the leadpipe, the first two sections), the
-	// tubes of one radius from there to the tuning slide, and the rest — the tuning slide and the bell.
-	size_t first = 2, last = first;
+	const bool trumpet = s.instrument == Setup::TRUMPET;
+	BrassTrumpetSetting open = s.trumpet;
+	open.pressed = 0;
+	const BrassBore bore = trumpet ? BrassBore::trumpetTimed(open) : BrassBore::tromboneTimed(0.0, s.tuningPull);
+	// THE PARTS: the front up to the slide or the valves' cylinder (the backbore and the leadpipe, the first
+	// two sections), the tubes of one radius from there, and the rest — the tuning slide and the bell, or the
+	// bell.
+	size_t first = 2;
+	while (trumpet && first < bore.sections.size() && bore.sections[first].r0 != bore.sections[first].r1)
+		first++;
+	size_t last = first;
 	while (last < bore.sections.size() && bore.sections[last].r0 == bore.sections[last].r1)
 		last++;
 	BrassGrid::Setup g;
@@ -209,9 +225,34 @@ void BrassWaveguide::setup(const Setup& s) {
 	back.setup(g);
 	listener.design(g, s.listener);
 	// THE RUN OF TUBES, with the outer slide tubes, absent from the bore in first position, put back at
-	// their 7.2 mm between the inner tubes and the crook.
+	// their 7.2 mm between the inner tubes and the crook; or the trumpet's, each valve its two paths.
 	tubes.clear();
-	for (size_t i = first; i < last; i++) {
+	stages.clear();
+	for (size_t i = first; i < last && trumpet; i++) {
+		const BrassSection& sec = bore.sections[i];
+		Stage stage;
+		stage.first = (int) tubes.size();
+		Tube t;
+		t.length = sec.length;
+		t.radius = sec.r0;
+		for (size_t v = 0; v < bore.valves.size(); v++)
+			if (bore.valves[v].section == i) {
+				stage.valve = (int) v;
+				stage.count = 2;
+				loops[v] = bore.valves[v].around - bore.valves[v].straight;
+				t.length = bore.valves[v].straight;
+				t.share = 1.0;
+				tubes.push_back(t);
+				t.share = 0.0;
+			}
+		tubes.push_back(t);
+		stages.push_back(stage);
+	}
+	if (trumpet) {
+		valveSlides[0] = s.trumpet.slide1;
+		valveSlides[2] = s.trumpet.slide3;
+	}
+	for (size_t i = first; i < last && !trumpet; i++) {
 		const BrassSection& sec = bore.sections[i];
 		if (sec.r0 == 0.0074) {
 			Tube outer;
@@ -238,7 +279,16 @@ void BrassWaveguide::setup(const Setup& s) {
 			const size_t inner = i == 1 ? 0 : i + 1;
 			tubes[inner].length -= OUTER_KEEPS;
 		}
-	const int longest = (int) std::ceil((0.711 + 0.6) / air.c * rate) + 8;
+	if (!trumpet)
+		for (size_t i = 0; i < tubes.size(); i++) {
+			Stage stage;
+			stage.first = (int) i;
+			stages.push_back(stage);
+		}
+	double most = 0.711 + 0.6;
+	for (const Tube& t : tubes)
+		most = std::max(most, t.length + 0.3);
+	const int longest = (int) std::ceil(most / air.c * rate) + 8;
 	steepens = s.steepening;
 	// beta = (gamma + 1) / 2 over rho c^2: how much faster a pascal travels, as a share of c.
 	const double steepness = 0.5 * (air.gamma + 1.0) / (air.rho * air.c * air.c);
@@ -247,24 +297,71 @@ void BrassWaveguide::setup(const Setup& s) {
 		t.backward.setup(longest);
 		t.steepening.setup(longest, steepness, rate);
 	}
-	reflection.assign(tubes.size(), 0.0);
-	for (size_t j = 0; j + 1 < tubes.size(); j++) {
-		const double a = tubes[j].radius * tubes[j].radius, b = tubes[j + 1].radius * tubes[j + 1].radius;
+	reflection.assign(stages.size(), 0.0);
+	for (size_t j = 0; j + 1 < stages.size(); j++) {
+		const Tube& left = tubes[(size_t) stages[j].first];
+		const Tube& right = tubes[(size_t) stages[j + 1].first];
+		const double a = left.radius * left.radius, b = right.radius * right.radius;
 		reflection[j] = (a - b) / (a + b);
 	}
 	arrivingRight.assign(tubes.size(), 0.0);
 	arrivingLeft.assign(tubes.size(), 0.0);
 	heardRight.assign(tubes.size(), 0.0);
 	brassHalfOrderFit(s.lossTerms, 20.0, 0.45 * rate, 0.45 * rate, &xi, &mu);
-	setExtension(s.extension);
+	// THE LOSSES' SHELVES, as many as the longest run needs: every tube counted whole, each valve's paths both
+	// and its loop with its slide 75 mm out, the slide out the inner slide's whole length.
+	{
+		const double wall = std::sqrt(air.nu()) * (1.0 + (air.gamma - 1.0) / std::sqrt(air.prandtl)) / air.c;
+		double betaMost = 0.0;
+		for (const Tube& t : tubes)
+			betaMost += (t.outer ? 0.711 + OUTER_KEEPS : t.length + (trumpet ? 0.15 : 0.0)) * wall / t.radius;
+		lossOn.plan(betaMost, mu);
+		lossBack.plan(betaMost, mu);
+		lossHeard.plan(betaMost, mu);
+	}
+	if (trumpet) {
+		for (const Stage& st : stages)
+			if (st.valve >= 0)
+				tubes[(size_t) st.first + 1].length = bore.valves[(size_t) st.valve].straight + loops[st.valve] + 2.0 * valveSlides[st.valve];
+		for (int v = 0; v < 3; v++)
+			setValve(v, (s.trumpet.pressed >> v) & 1 ? 1.0 : 0.0);
+	}
+	else
+		setExtension(s.extension);
 }
 
 
-void BrassWaveguide::setExtension(double extension) {
-	for (Tube& t : tubes)
-		if (t.outer)
-			t.length = std::fmax(0.0, extension) + OUTER_KEEPS;
+void BrassWaveguide::setValve(int valve, double down) {
+	down = std::fmin(1.0, std::fmax(0.0, down));
+	for (const Stage& st : stages)
+		if (st.valve == valve) {
+			tubes[(size_t) st.first].share = 1.0 - down;
+			tubes[(size_t) st.first + 1].share = down;
+		}
 	retune();
+}
+
+
+void BrassWaveguide::setValveSlides(double slide1, double slide3) {
+	const double now[3] = {slide1, 0.0, slide3};
+	for (const Stage& st : stages)
+		if (st.valve >= 0) {
+			Tube& loop = tubes[(size_t) st.first + 1];
+			loop.length += 2.0 * (now[st.valve] - valveSlides[st.valve]);
+			valveSlides[st.valve] = now[st.valve];
+		}
+	retune();
+}
+
+
+void BrassWaveguide::setExtension(double extension, bool losses) {
+	for (Tube& t : tubes)
+		if (t.outer) {
+			t.length = std::fmax(0.0, extension) + OUTER_KEEPS;
+			t.delay = std::fmax(2.0, t.length / air.c * rate);
+		}
+	if (losses)
+		retune();
 }
 
 
@@ -273,7 +370,7 @@ void BrassWaveguide::retune() {
 	const double wall = std::sqrt(air.nu()) * (1.0 + (air.gamma - 1.0) / std::sqrt(air.prandtl)) / air.c;
 	for (Tube& t : tubes) {
 		t.delay = std::fmax(2.0, t.length / air.c * rate);
-		beta += t.length * wall / t.radius;
+		beta += t.share * t.length * wall / t.radius;
 	}
 	lossOn.design(beta, xi, mu, rate);
 	lossBack.design(beta, xi, mu, rate);
@@ -320,12 +417,49 @@ double BrassWaveguide::end(double flow) {
 	if (steepens)
 		tubes[0].steepening.write(fromCup, tubes[0].delay);
 	tubes[n - 1].backward.write(back.leaving(0));
-	for (size_t j = 0; j + 1 < n; j++) {
-		const double r = reflection[j], fromLeft = arrivingRight[j], fromRight = arrivingLeft[j + 1];
-		tubes[j + 1].forward.write((1.0 + r) * fromLeft - r * fromRight);
-		tubes[j].backward.write(r * fromLeft + (1.0 - r) * fromRight);
-		if (steepens)
-			tubes[j + 1].steepening.write((1.0 + r) * heardRight[j] - r * fromRight, tubes[j + 1].delay);
+	for (size_t j = 0; j + 1 < stages.size(); j++) {
+		const Stage& sl = stages[j];
+		const Stage& sr = stages[j + 1];
+		if (sl.count == 1 && sr.count == 1) {
+			const size_t a = (size_t) sl.first, b = (size_t) sr.first;
+			const double r = reflection[j], fromLeft = arrivingRight[a], fromRight = arrivingLeft[b];
+			tubes[b].forward.write((1.0 + r) * fromLeft - r * fromRight);
+			tubes[a].backward.write(r * fromLeft + (1.0 - r) * fromRight);
+			if (steepens)
+				tubes[b].steepening.write((1.0 + r) * heardRight[a] - r * fromRight, tubes[b].delay);
+			continue;
+		}
+		// A VALVE'S JUNCTION: the tubes meeting there share one pressure, twice the sum of what arrives weighed
+		// by each one's area and share of the air over the sum of those, and each sends back that less what it
+		// brought; a path the valve shuts takes no part, and is left empty. The steepened wave meets the same
+		// waves coming back.
+		double sum = 0.0, in = 0.0, heard = 0.0;
+		for (int k = 0; k < sl.count; k++) {
+			const Tube& t = tubes[(size_t) (sl.first + k)];
+			const double y = t.share * t.radius * t.radius;
+			sum += y;
+			in += y * arrivingRight[(size_t) (sl.first + k)];
+			heard += y * (steepens ? heardRight[(size_t) (sl.first + k)] : 0.0);
+		}
+		for (int k = 0; k < sr.count; k++) {
+			const Tube& t = tubes[(size_t) (sr.first + k)];
+			const double y = t.share * t.radius * t.radius;
+			sum += y;
+			in += y * arrivingLeft[(size_t) (sr.first + k)];
+			heard += y * arrivingLeft[(size_t) (sr.first + k)];
+		}
+		const double p = 2.0 * in / sum, ph = 2.0 * heard / sum;
+		for (int k = 0; k < sl.count; k++) {
+			const size_t i = (size_t) (sl.first + k);
+			tubes[i].backward.write(tubes[i].share > 0.0 ? p - arrivingRight[i] : 0.0);
+		}
+		for (int k = 0; k < sr.count; k++) {
+			const size_t i = (size_t) (sr.first + k);
+			const bool open = tubes[i].share > 0.0;
+			tubes[i].forward.write(open ? p - arrivingLeft[i] : 0.0);
+			if (steepens)
+				tubes[i].steepening.write(open ? ph - arrivingLeft[i] : 0.0, tubes[i].delay);
+		}
 	}
 	return cup;
 }

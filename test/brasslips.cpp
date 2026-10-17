@@ -39,6 +39,15 @@ static double cents(double a, double b) { return 1200.0 * std::log2(a / b); }
 /** WHICH LIPS: the hinged block (BrassHingedLips) unless asked for the one mass (BrassLips). */
 static bool oneMass = false;
 static BrassHingedLips::Shape hingedNow;
+/** For harmonics: sweep how far the lips are pressed together at rest, not the corners; or neither, the lips
+as they are, once. */
+static bool pressedSweep = false, onlyAsTheyAre = false;
+/** For harmonics: at pp instead of mf, with "pp" — B flat 3 at 800 Pa and F4 at 1200, near their thresholds. */
+static bool atPianissimo = false;
+/** For harmonics: sweep how far apart the lips rest, with "apart". */
+static bool apartSweep = false;
+/** The listener's angle from the bell's axis, degrees, with angle=; the default where it is not given. */
+static double listenerDegrees = -1.0;
 static bool blendDamping = true;
 
 /** A TROMBONE AND ITS PLAYER'S LIPS, stepped together. */
@@ -59,6 +68,8 @@ struct Player {
 	bool steepening = true;
 	BrassListener listener;
 	void setup(double extension = 0.0) {
+		if (listenerDegrees >= 0.0)
+			listener.angle = listenerDegrees * M_PI / 180.0;
 		BrassWaveguide::Setup s;
 		s.steepening = steepening;
 		s.listener = listener;
@@ -615,6 +626,97 @@ static void aliasing() {
 		}
 }
 
+/** THE HELD SOUND'S HARMONICS AGAINST THE RECORDINGS', by how sharply the lips shut: B flat 3 and F4 at mf
+(1190 and 1440 Pa, the player's), the lips tuned, the corners' height each of several, at RATE; each
+harmonic to the 20th against the strongest, less the Iowa recording's (research/brass/iowa-tenor-trombone.tsv),
+averaged over the 1st to 5th, 6th to 12th and 13th to 20th; and the power off the harmonics, which is
+aliasing. */
+static void harmonicsAgainstRecordings() {
+	const std::vector<double> peaks = resonances(0.0);
+	// THE RECORDINGS' HARMONICS, from the table brassref writes.
+	auto recorded = [](const char* note) {
+		std::vector<double> h;
+		FILE* f = std::fopen("research/brass/iowa-tenor-trombone.tsv", "r");
+		char line[4096];
+		while (f && std::fgets(line, sizeof line, f)) {
+			std::vector<std::string> cells;
+			std::string cell;
+			for (char* c = line; *c && *c != '\n'; c++) {
+				if (*c == '\t') {
+					cells.push_back(cell);
+					cell.clear();
+				}
+				else
+					cell += *c;
+			}
+			cells.push_back(cell);
+			if (cells.size() >= 33 && cells[0] == note && cells[2] == (atPianissimo ? "pp" : "mf"))
+				for (int k = 0; k < 20; k++)
+					h.push_back(std::atof(cells[(size_t) (13 + k)].c_str()));
+		}
+		if (f)
+			std::fclose(f);
+		return h;
+	};
+	struct Case { const char* name; size_t r; double mouth; const char* iowa; };
+	const Case cases[2] = {{"B flat 3", 3, atPianissimo ? 800.0 : 1190.0, "A#3"}, {"F4", 5, atPianissimo ? 1200.0 : 1440.0, "F4"}};
+	std::printf("at %.0f Hz; harmonics against the recording's, dB; off the harmonics, dB of each band's power\n", RATE);
+	std::printf("  note       corners mm   rest mm   1 to 5   6 to 12   13 to 20   off: under 2 kHz   2 to 5 kHz   5 to 10 kHz\n");
+	const double corners[] = {0.1e-3, 0.05e-3, 0.02e-3, 0.01e-3, 0.005e-3};
+	const double rests[] = {0.0, -0.1e-3, -0.2e-3, -0.3e-3, -0.5e-3};
+	const double apart[] = {0.05e-3, 0.1e-3, 0.2e-3, 0.3e-3, 0.5e-3};
+	for (const Case& c : cases) {
+		const std::vector<double> iowa = recorded(c.iowa);
+		for (int v = 0; v < (onlyAsTheyAre ? 1 : 5); v++) {
+			// The corners swept with the lips just meeting at rest, or the lips pressed together at rest with
+			// the corners given, or the lips as they are.
+			if (onlyAsTheyAre) {
+			}
+			else if (pressedSweep)
+				hingedNow.restY = rests[v];
+			else if (apartSweep)
+				hingedNow.restY = apart[v];
+			else
+				hingedNow.cornerHeight = corners[v];
+			const double corner = hingedNow.cornerHeight;
+			const double lip = tunedLips(peaks, c.r, c.mouth);
+			Player p;
+			p.setup();
+			p.setResonance(lip * peaks[c.r]);
+			const size_t n = (size_t) (1.5 * RATE);
+			std::vector<double> heard(n), cup(n);
+			double least = 1e9, most = 0.0, shut = 0.0;
+			for (size_t i = 0; i < n; i++) {
+				p.setMouthPressure(c.mouth * std::fmin(1.0, (double) i / (0.02 * RATE)));
+				cup[i] = p.step(&heard[i]);
+				if (i >= n - (size_t) (0.5 * RATE)) {
+					least = std::fmin(least, p.hinged.opening());
+					most = std::fmax(most, p.hinged.opening());
+					shut += p.hinged.opening() <= 1e-9 ? 1.0 : 0.0;
+				}
+			}
+			const double f0 = pitchOf(cup, n - (size_t) (0.5 * RATE), (size_t) (0.5 * RATE));
+			std::vector<double> h = harmonicsOf(heard, f0);
+			std::printf("    the opening from %.2f to %.2f square mm, shut %.0f per cent of the time\n", 1e6 * least, 1e6 * most, 100.0 * shut / (0.5 * RATE));
+			double top = -1e9, itop = -1e9;
+			for (size_t k = 0; k < 20 && k < h.size(); k++)
+				top = std::max(top, h[k]);
+			for (double v : iowa)
+				itop = std::max(itop, v);
+			double sums[3] = {0, 0, 0};
+			int counts[3] = {0, 0, 0};
+			for (size_t k = 0; k < 20 && k < h.size() && k < iowa.size(); k++) {
+				const int g = k < 5 ? 0 : k < 12 ? 1 : 2;
+				sums[g] += (h[k] - top) - (iowa[k] - itop);
+				counts[g]++;
+			}
+			std::printf("  %-9s %11.3f %9.2f %8.1f %9.1f %10.1f %18.1f %12.1f %13.1f\n", c.name, 1000.0 * corner, 1000.0 * hingedNow.restY, sums[0] / std::max(1, counts[0]),
+				sums[1] / std::max(1, counts[1]), sums[2] / std::max(1, counts[2]), offHarmonic(heard, f0, 0.0, 2000.0),
+				offHarmonic(heard, f0, 2000.0, 5000.0), offHarmonic(heard, f0, 5000.0, 10000.0));
+		}
+	}
+}
+
 /** BRASSINESS, B5 and B6: F3, B flat 3 and D4 held at mouth pressures rising a quarter octave at a time
 from 400 Pa, with the wave to the bell steepening and without. For each, its level a metre in front of the
 bell, its centroid over its pitch, its share and slope over 1 kHz (test/brassref.cpp's measures), the
@@ -812,8 +914,26 @@ int main(int argc, char** argv) {
 			hingedNow.mass = std::atof(argv[i] + 5);
 		if (std::strncmp(argv[i], "breadth=", 8) == 0)
 			hingedNow.breadth = std::atof(argv[i] + 8);
+		if (std::strcmp(argv[i], "pressed") == 0)
+			pressedSweep = true;
+		if (std::strcmp(argv[i], "once") == 0)
+			onlyAsTheyAre = true;
+		if (std::strcmp(argv[i], "pp") == 0)
+			atPianissimo = true;
+		if (std::strcmp(argv[i], "apart") == 0)
+			apartSweep = true;
+		if (std::strncmp(argv[i], "angle=", 6) == 0)
+			listenerDegrees = std::atof(argv[i] + 6);
+		if (std::strncmp(argv[i], "rest=", 5) == 0)
+			hingedNow.restY = std::atof(argv[i] + 5);
 		if (std::strncmp(argv[i], "quality=", 8) == 0)
 			hingedNow.quality = std::atof(argv[i] + 8);
+	}
+	if (argc > 1 && std::strcmp(argv[1], "harmonics") == 0) {
+		if (argc > 2 && std::atof(argv[2]) > 0.0)
+			RATE = std::atof(argv[2]);
+		harmonicsAgainstRecordings();
+		return 0;
 	}
 	if (argc > 1 && std::strcmp(argv[1], "corners") == 0) {
 		sweepCorner();
