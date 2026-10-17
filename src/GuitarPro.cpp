@@ -2,6 +2,7 @@
 #include "GuitarPro.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 

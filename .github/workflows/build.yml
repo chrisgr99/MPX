@@ -54,8 +54,13 @@ jobs:
             "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip"
           unzip -q rack-sdk.zip
 
+      # THE LIBRARIES FIRST. FluidSynth and Verovio are built into dep/ by `make dep`, and nothing
+      # in `make dist` asks for them, so on a fresh runner the plugin's sources would be compiled
+      # against headers that are not there yet. The toolchain container runs the same two steps.
       - name: Build
-        run: RACK_DIR=$PWD/Rack-SDK make dist
+        run: |
+          RACK_DIR=$PWD/Rack-SDK make dep
+          RACK_DIR=$PWD/Rack-SDK make dist
 
       - uses: actions/upload-artifact@v4
         with:

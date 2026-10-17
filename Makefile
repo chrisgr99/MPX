@@ -546,10 +546,11 @@ $(DEP_PATH)/lib/libfluidsynth.a:
 # DARMS all go, which is most of the size. Editor support cannot: a file that is still compiled
 # refers to a class the option removes, and the build fails without it.
 #
-# ONE WORD IS PATCHED. Verovio's CMake builds a SHARED library when asked for a library at all,
+# TWO WORDS ARE PATCHED. Verovio's CMake builds a SHARED library when asked for a library at all,
 # and a plugin cannot carry a dynamic library of its own — Rack loads it from a folder the host
-# owns, and nothing there is on any library path. Changed here rather than in a fork, so the
-# source stays exactly what the tag says.
+# owns, and nothing there is on any library path. And its Windows time header includes
+# <Windows.h>, which the MinGW cross compiler only has as <windows.h> on Linux's case-sensitive
+# file system. Changed here rather than in a fork, so the source stays exactly what the tag says.
 # NO DEBUG INFORMATION IN EITHER OF THEM. Rack's dependency flags carry -g, which is right for
 # the plugin's own code and absurd for these: Verovio's archive came out at 492 megabytes with it
 # and 17 without, and nobody is going to step through an engraver in a debugger.
@@ -580,6 +581,8 @@ $(DEP_PATH)/lib/libverovio.a:
 		--branch $(VEROVIO_VERSION) https://github.com/rism-digital/verovio.git verovio-src
 	$(SED) 's/add_library(verovio SHARED/add_library(verovio STATIC/' \
 		$(DEP_PATH)/verovio-src/cmake/CMakeLists.txt
+	$(SED) 's/#include <Windows.h>/#include <windows.h>/' \
+		$(DEP_PATH)/verovio-src/include/win32/win_time.h
 	$(CMAKE) $(VEROVIO_CMAKE) -S $(DEP_PATH)/verovio-src/cmake -B $(DEP_PATH)/build-verovio \
 		-DCMAKE_BUILD_TYPE=Release -DBUILD_AS_LIBRARY=ON \
 		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \

@@ -1,5 +1,6 @@
 #include "FingerPicking.hpp"
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
 #include <cstdlib>
 
