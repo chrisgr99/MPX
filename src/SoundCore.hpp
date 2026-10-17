@@ -168,8 +168,11 @@ struct SoundCore {
 	void readRules();
 
 	static std::string bankFolder();
-	/** The first SoundFont in the banks folder, or nothing. */
+	/** The first SoundFont in the banks folder, or the one the plugin ships if there is none. */
 	static std::string firstBank();
+	/** The score's band: GeneralUser GS, from the banks folder if a copy is there and otherwise
+	the one the plugin ships. */
+	static std::string bandBank();
 
 	// ---- the audio thread -----------------------------------------------------------------------
 

@@ -73,23 +73,41 @@ void SoundCore::link(int part, const int* slots, const uint32_t* generations, in
 }
 
 
+/** THE BAND'S SOUNDFONT SHIPS WITH THE PLUGIN, so a score is heard the first time it is loaded
+and nobody has to go looking for a file. GeneralUser GS's licence allows it in software projects,
+and its licence travels beside it in res/banks. */
+static const char* BAND_BANK = "GeneralUser-GS.sf2";
+
+
 std::string SoundCore::bankFolder() {
 	return asset::user("DreamerMPX/banks");
 }
 
 
+std::string SoundCore::bandBank() {
+	// A COPY IN THE BANKS FOLDER WINS, so a newer release of the same bank can be dropped in
+	// without waiting for a plugin update.
+	const std::string own = bankFolder() + "/" + BAND_BANK;
+	if (system::isFile(own))
+		return own;
+	return asset::plugin(pluginInstance, std::string("res/banks/") + BAND_BANK);
+}
+
+
 std::string SoundCore::firstBank() {
 	const std::string dir = bankFolder();
-	if (!system::isDirectory(dir))
-		return "";
-	std::vector<std::string> names = system::getEntries(dir);
-	std::sort(names.begin(), names.end());
-	for (size_t i = 0; i < names.size(); i++) {
-		const std::string ext = system::getExtension(names[i]);
-		if (ext == ".sf2" || ext == ".SF2")
-			return names[i];
+	if (system::isDirectory(dir)) {
+		std::vector<std::string> names = system::getEntries(dir);
+		std::sort(names.begin(), names.end());
+		for (size_t i = 0; i < names.size(); i++) {
+			const std::string ext = system::getExtension(names[i]);
+			if (ext == ".sf2" || ext == ".SF2")
+				return names[i];
+		}
 	}
-	return "";
+	// NONE OF THE USER'S OWN, so the one that ships. A module that comes up silent is a module
+	// somebody thinks is broken.
+	return bandBank();
 }
 
 
@@ -168,12 +186,9 @@ void SoundCore::startEngine(float sampleRate, bool reverb, bool chorus,
 	}
 	// A BANK THAT IS ALREADY THERE IS THE ONE TO USE. A module that comes up silent and asks for
 	// a file is a module somebody thinks is broken, so the folder is looked in first and the only
-	// thing in it is taken. Choosing another is still a press away.
-	const std::string found = firstBank();
-	if (!found.empty())
-		loadBank(found);
-	else
-		INFO("%s: no SoundFont in %s", logName.c_str(), bankFolder().c_str());
+	// thing in it is taken, or the one that ships if it is empty. Choosing another is still a
+	// press away.
+	loadBank(firstBank());
 }
 
 

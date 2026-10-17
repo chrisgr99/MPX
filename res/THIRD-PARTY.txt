@@ -1,4 +1,5 @@
-The fonts in this folder are not covered by the plugin's MIT licence.
+The fonts and the SoundFont in this folder are not covered by the plugin's MIT
+licence.
 
 Petaluma and Petaluma Script are Steinberg Media Technologies GmbH's, under the
 SIL Open Font Licence, whose terms and font log are in PETALUMA-OFL.txt and
@@ -7,3 +8,7 @@ PETALUMA-FONTLOG.txt beside them.
 Hack is the Source Foundry Authors', under the MIT licence, and derives from
 DejaVu Sans Mono and Bitstream Vera Sans Mono. All three notices are in
 HACK-LICENCE.txt beside it.
+
+GeneralUser GS, in banks, is S. Christian Collins's, under the GeneralUser GS
+License v2.0, which allows it in software projects. Its terms are in
+GeneralUser-GS-LICENSE.txt beside it.

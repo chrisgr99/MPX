@@ -113,8 +113,6 @@ static std::string instrumentName(const GpTrack& track) {
 /** From the synthesiser's output to Rack's volts: SoundCore's, so the band is as loud as an
 mpxGuitar playing the same part. */
 static const float AUDIO_LEVEL = SOUND_VOLTS;
-/** The SoundFont the band plays, in SoundCore's folder. */
-static const char* CHART_BANK = "GeneralUser-GS.sf2";
 #endif
 
 /** A note's length is the file's, within reason: a note held to the end of a long let-ring
@@ -366,8 +364,8 @@ struct SongModule : Module, NoteSource {
 	}
 
 	void startEngine(float rate) {
-		// THE BAND'S OWN SOUNDFONT, always: there is no choosing another.
-		core.startEngine(rate, false, false, SoundCore::bankFolder() + "/" + CHART_BANK);
+		// THE BAND'S OWN SOUNDFONT, always: there is no choosing another. See bandBank.
+		core.startEngine(rate, false, false, SoundCore::bandBank());
 	}
 
 

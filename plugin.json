@@ -17,7 +17,7 @@
     {
       "slug": "mpxIn",
       "name": "mpxIn",
-      "description": "Gathers ordinary control voltages into voice cables. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, and four voice cables come out, each carrying one instrument's notes. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life; bend, pressure and timbre are followed while it sounds. The notes-per-voice knob decides how the sixteen channels divide among the four cables.",
+      "description": "Gathers ordinary control voltages into one MPX cable. Gate, pitch, level, duration, pan, pressure and timbre go in as polyphonic signals, beside a sustain and a soft pedal, and a knob stands in for level, duration or pan when its jack is empty. Pitch, level, duration and pan are read at the gate's rising edge and held for the note's life; a pitch that moves after that is sent as a bend, and pressure and timbre are followed while the note sounds. The menu chooses whether a note always lasts its duration or ends early when its gate falls.",
       "tags": [
         "Polyphonic",
         "Utility"
@@ -27,7 +27,7 @@
     {
       "slug": "mpxOut",
       "name": "mpxOut",
-      "description": "Takes one voice cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend as a control signal and as volts per octave, pressure, timbre, pan and duration. It allocates the notes among its voices, with a choice of what gives when none is free: take the oldest, take the quietest, ignore the note, glide, or legato.",
+      "description": "Takes one MPX cable apart into ordinary polyphonic control voltages: gate, pitch, level, bend, pressure, timbre and pan, and the sustain pedal on one channel. It allocates the notes among its voices, with a choice of what gives when none is free: take the oldest, take the quietest, ignore the note, glide, or legato.",
       "tags": [
         "Polyphonic",
         "Utility"
