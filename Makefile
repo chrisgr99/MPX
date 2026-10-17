@@ -549,6 +549,10 @@ $(DEP_PATH)/lib/libfluidsynth.a:
 		-Denable-threads=off -Denable-ipv6=off
 	cmake --build $(DEP_PATH)/build-fluidsynth -j 8
 	cmake --install $(DEP_PATH)/build-fluidsynth
+	# ON WINDOWS THE ARCHIVE CARRIES ITS MAJOR VERSION, libfluidsynth-3.a, the way a DLL would.
+	# Given the one name everywhere, so the link line can name it.
+	test -f $(DEP_PATH)/lib/libfluidsynth.a || \
+		cp $(DEP_PATH)/lib/libfluidsynth-3.a $(DEP_PATH)/lib/libfluidsynth.a
 
 # VEROVIO READS EIGHT NOTATION FORMATS AND WE WANT ONE. Humdrum, ABC, Plaine and Easie, GABC and
 # DARMS all go, which is most of the size. Editor support cannot: a file that is still compiled
