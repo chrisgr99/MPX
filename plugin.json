@@ -3,7 +3,7 @@
   "name": "MPX",
   "brand": "Dreamer Development",
   "description": "Modular Polyphonic Expression: one cable carries a whole instrument, and every note on it keeps its own pitch, level, duration, pan, bend, pressure and timbre.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "license": "MIT",
   "author": "Chris Graham",
   "authorEmail": "chrisgr99@gmail.com",
@@ -265,7 +265,8 @@
         "Sampler",
         "Expander",
         "Polyphonic"
-      ]
+      ],
+      "hidden": true
     },
     {
       "slug": "mpxFluidSynth",

@@ -189,9 +189,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: packages/*/*.vcvplugin
-          # PRE-RELEASE. These modules are a working demonstration of a protocol that is still
-          # being proposed, not a finished plugin, and the label is the honest one until the
-          # cross-plugin part exists.
-          prerelease: true
+          # A FULL RELEASE. Set this to true for a release that should be marked as a
+          # pre-release.
+          prerelease: false
           body_path: notes.md
           generate_release_notes: true
