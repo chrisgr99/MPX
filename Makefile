@@ -81,6 +81,14 @@ include $(RACK_DIR)/plugin.mk
 # everything here compiled at C++20 without a single change.
 CXXFLAGS += -std=c++20
 
+# MACOS 10.15 FOR THE PLUGIN'S OWN CODE as well as for Verovio, which sets that floor below. Its
+# headers use std::shared_mutex, which Apple's library marks unavailable before 10.12, and
+# Score.cpp includes them; the SDK's 10.9 comes first and this one wins, for the link as well.
+ifdef ARCH_MAC
+CFLAGS += -mmacosx-version-min=10.15
+CXXFLAGS += -mmacosx-version-min=10.15
+endif
+
 
 # DEVELOPMENT INSTALL, and why it is not `make install`.
 #
@@ -546,11 +554,12 @@ $(DEP_PATH)/lib/libfluidsynth.a:
 # DARMS all go, which is most of the size. Editor support cannot: a file that is still compiled
 # refers to a class the option removes, and the build fails without it.
 #
-# TWO WORDS ARE PATCHED. Verovio's CMake builds a SHARED library when asked for a library at all,
+# TWO LINES ARE PATCHED. Verovio's CMake builds a SHARED library when asked for a library at all,
 # and a plugin cannot carry a dynamic library of its own — Rack loads it from a folder the host
-# owns, and nothing there is on any library path. And its Windows time header includes
-# <Windows.h>, which the MinGW cross compiler only has as <windows.h> on Linux's case-sensitive
-# file system. Changed here rather than in a fork, so the source stays exactly what the tag says.
+# owns, and nothing there is on any library path. And on Windows vrv.cpp takes its timer from
+# Verovio's own header for Microsoft's compiler, which declares a timeval of its own; MinGW, which
+# is what builds ours, has gettimeofday in <sys/time.h> like everywhere else. Changed here rather
+# than in a fork, so the source stays exactly what the tag says.
 # NO DEBUG INFORMATION IN EITHER OF THEM. Rack's dependency flags carry -g, which is right for
 # the plugin's own code and absurd for these: Verovio's archive came out at 492 megabytes with it
 # and 17 without, and nobody is going to step through an engraver in a debugger.
@@ -581,8 +590,8 @@ $(DEP_PATH)/lib/libverovio.a:
 		--branch $(VEROVIO_VERSION) https://github.com/rism-digital/verovio.git verovio-src
 	$(SED) 's/add_library(verovio SHARED/add_library(verovio STATIC/' \
 		$(DEP_PATH)/verovio-src/cmake/CMakeLists.txt
-	$(SED) 's/#include <Windows.h>/#include <windows.h>/' \
-		$(DEP_PATH)/verovio-src/include/win32/win_time.h
+	$(SED) 's/#include "win_time.h"/#include <sys\/time.h>/' \
+		$(DEP_PATH)/verovio-src/src/vrv.cpp
 	$(CMAKE) $(VEROVIO_CMAKE) -S $(DEP_PATH)/verovio-src/cmake -B $(DEP_PATH)/build-verovio \
 		-DCMAKE_BUILD_TYPE=Release -DBUILD_AS_LIBRARY=ON \
 		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
