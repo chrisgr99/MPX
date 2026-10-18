@@ -10,7 +10,7 @@ The idea comes from MIDI Polyphonic Expression, which gives every sounding note 
 
 ## The modules
 
-**mpxScore** plays a MusicXML or Guitar Pro file. Each part goes out on its own MPX cable with a mute and a gain, in six or twelve rows chosen from the menu. A built-in General MIDI band plays a part on the stereo mix only when nothing is connected to that part's MPX output, so a part patched to another module is played by that module alone. The band plays GeneralUser GS, the General MIDI SoundFont by S. Christian Collins, which comes with the plugin. A window shows the score engraved as one continuous line, with a playhead and bars you can loop.
+**mpxScore** plays a MusicXML or Guitar Pro file. Each part goes out on its own MPX cable with a mute and a gain, in six or twelve rows chosen from the menu. A built-in General MIDI sample player plays any part whose MPX output has nothing connected, using GeneralUser GS, the General MIDI SoundFont by S. Christian Collins, which comes with the plugin. The sample player is intended only for auditioning parts for which no instrument module is available. A window shows the score engraved as one continuous line, with a playhead and bars you can loop.
 
 **mpxViolin**, **mpxViola** and **mpxCello** each play one MPX part on a physically modelled instrument: four strings bowed through a model of rosin's friction, on one bridge and one body, with each note's bowing worked out ahead of it. They play pizzicato, left-hand pizzicato and double stops.
 
@@ -46,6 +46,6 @@ RACK_DIR=/path/to/Rack-SDK make install  # build and copy into the plugins folde
 
 MIT, so that anything here — the protocol in particular — can be adopted by a plugin under any licence. No artwork ships with the plugin: every panel is drawn in code.
 
-The fonts in `res` are not covered by the MIT licence. Petaluma and Petaluma Script are Steinberg's, under the SIL Open Font Licence; Hack is the Source Foundry Authors', under its own MIT licence. Each licence travels with its font. The music fonts in `res/verovio` come with Verovio. GeneralUser GS, in `res/banks`, is S. Christian Collins's, under his licence, which allows it in software projects and travels beside it.
+The fonts in `res` are not covered by the MIT licence. Petaluma and Petaluma Script are Steinberg's, under the SIL Open Font Licence; Hack is the Source Foundry Authors', under its own MIT licence. Each licence travels with its font. The music fonts in `res/verovio`, Bravura and Leipzig, come with Verovio, under the SIL Open Font Licence. GeneralUser GS, in `res/banks`, is S. Christian Collins's, under his licence, which allows it in software projects and travels beside it.
 
-The plugin is built with FluidSynth, which plays SoundFonts, and Verovio, which engraves the score window. Both are under the GNU Lesser General Public Licence.
+The plugin is built with FluidSynth, which plays SoundFonts, and Verovio, which engraves the score window. Both are under the GNU Lesser General Public Licence, and their licence texts ship in `res`. `res/THIRD-PARTY.txt` names the version of each and where its source is.

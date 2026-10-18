@@ -64,16 +64,18 @@ static float knobForSustain(float seconds) {
 }
 
 
-//?module Plays one MPX part on a modelled guitar: each string a digital waveguide, picked,
-//? hammered, slid, palm-muted, bent and touched for harmonics as the part's notes say, through a
-//? nylon or steel-string acoustic body or an electric's pickup and amplifier, mixed to stereo.
-//?note How each note is played, its timing, dynamics, strum, bends and articulations, comes from
-//? the part through the same performer as mpxGuitarist, whose rules are read from
-//? DreamerMPX/perform.txt when the module starts and again from the right-click menu.
-//?note A knob turned while a string rings takes effect when that string is next picked.
-//?note Choosing the electric widens the module with a column of five more controls; choosing the
-//? nylon or the steel-string narrows it again. The modules to its right are pushed along as it
-//? widens and stay where they are as it narrows.
+//?module Plays one MPX part on a physically modelled guitar: nylon-string, steel-string or electric. Each
+//? string is a digital waveguide, picked, hammered, slid, palm-muted, bent or touched for harmonics
+//? as the part's notes specify. The strings sound through an acoustic body, or an electric pickup
+//? and amplifier, in stereo.
+//?note Timing, dynamics, strums, bends and articulations are worked out from the part by the same
+//? performance rules as mpxGuitarist. The rules are read from DreamerMPX/perform.txt in the Rack
+//? user folder when the module starts, and again with Read the performance rules again in the
+//? right-click menu.
+//?note A knob change takes effect on each string the next time it is picked.
+//?note Choosing Electric widens the module with a column of five more controls: Tone, Drive, Bass,
+//? Middle and Treble. Choosing Nylon or Steel-string narrows it again. Modules to the right are
+//? pushed along as it widens, and stay where they are as it narrows.
 struct GuitarModule : Module, NoteSink {
 	enum ParamId {
 		P_PICK,
@@ -139,52 +141,52 @@ struct GuitarModule : Module, NoteSink {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(P_PICK, 0.f, 1.f, (0.15f - PICK_MIN) / PICK_SPAN, "Pick position",
 			"% of the string from the bridge", 0.f, PICK_SPAN * 100.f, PICK_MIN * 100.f);
-		//? Where along the strings they are picked, from 2% of their length from the bridge,
-		//? glassy and thin, to 50%, the middle of the string, hollow and soft. A string picked at
-		//? a point sounds none of the partials with a node there.
+		//? Where the strings are picked, as a distance from the bridge: 2% to 50% of the string length,
+		//? 15% by default. Nearer the bridge gives a thinner, brighter sound; nearer the middle, a
+		//? rounder, softer one. Partials with a node at the picking point are not sounded.
 		configParam(P_BRIGHTNESS, 0.f, 1.f, 0.6f / EXAGGERATE, "Brightness", "%", 0.f, 100.f);
-		//? The pick's hardness, from a fingertip, which rounds the string's shape and takes its
-		//? upper partials down from about 200 Hz, to a hard plectrum at two thirds of the way,
-		//? which leaves the shape sharp and adds a click as it leaves the string. Above that the
-		//? click grows, to three times a plectrum's at the top.
+		//? Hardness of the pick. Fully counter-clockwise, a fingertip: the attack is rounded and partials
+		//? above about 200 Hz are reduced. At two thirds, a hard plectrum, with a click as it leaves the
+		//? string. Above two thirds the click is louder, up to three times a plectrum's.
 		configParam(P_SUSTAIN, 0.f, 1.f, knobForSustain(5.f), "Sustain", " s", SUSTAIN_RATIO,
 			SUSTAIN_MIN);
-		//? How long the open low E string rings: the time its fundamental takes to fall 60 dB,
-		//? from 0.5 s to 20 s. Higher notes ring shorter as Taper says, fretted notes shorter as
-		//? Fret damping says. Shorter is also duller, the upper partials dying faster in
-		//? proportion, which is how old strings sound.
+		//? Ring time of the open low E string: the time its fundamental takes to fall 60 dB, 0.5 s to 20
+		//? s, 5 s by default. Higher notes ring for less time as set by Taper, and fretted notes as set
+		//? by Fret damping. Shorter settings also lose upper partials faster, so they sound duller.
 		configParam(P_BODY, 0.f, 1.f, 0.8f / EXAGGERATE, "Body", "%", 0.f, 100.f);
-		//? On the nylon and the steel-string, how much of the body is heard, from the bare strings
-		//? to the full body at two thirds of the way: its air resonance near 100 Hz, the top
-		//? plate's modes above it, and its highs rolled away. Above that the resonances are pushed
-		//? past a real body's. On the electric, where the pickup is, from the bridge, thin and
-		//? bright, to the neck, round and warm.
+		//? Nylon and Steel-string: how much of the body's sound is heard, from the bare strings fully
+		//? counter-clockwise to a full body at two thirds. That includes the air resonance near 100 Hz,
+		//? the top plate's resonances above it, and the high-frequency roll-off. Above two thirds the
+		//? resonances are stronger than a real body's. Electric: the pickup position, from the bridge,
+		//? thinner and brighter, to the neck, rounder and warmer.
 		// IN THE ORDER THE PANEL LISTS THEM, since the lamp group shows a choice's value as its
 		// place in the list. Patches saved before are renumbered as they open: see dataFromJson.
 		configSwitch(P_ELECTRIC, 0.f, 2.f, 1.f, "Guitar", {"Nylon", "Steel-string", "Electric"});
-		//? The guitar. Nylon: a classical, its strings soft, quick to lose their highs and played
-		//? with the flesh of the finger, its body warm. Steel: a steel-string acoustic, brighter
-		//? and stiffer. Electric: steel strings heard by a magnetic pickup through an amplifier,
-		//? with tone, drive, bass, middle and treble beside the panel.
+		//? Selects the guitar. Nylon: a classical guitar with nylon strings, played with the fingertip,
+		//? whose high partials decay quickly. Steel-string: an acoustic with steel strings, brighter and
+		//? stiffer. Electric: steel strings through a magnetic pickup and an amplifier, with Tone, Drive,
+		//? Bass, Middle and Treble controls added to the panel.
 		configParam(P_TONE, 0.f, 1.f, 1.f, "Tone", "%", 0.f, 100.f);
-		//? The electric guitar's tone, two low-pass stages before the amplifier, from open at the
-		//? top to rolled off from 300 Hz at the bottom.
+		//? Electric only: two low-pass filter stages before the amplifier. Fully clockwise, no filtering;
+		//? fully counter-clockwise, frequencies above 300 Hz are rolled off.
 		configParam(P_DRIVE, 0.f, 1.f, 0.3f, "Drive", "%", 0.f, 100.f);
-		//? How hard the electric's strings drive its amplifier, a drive of 1 to 18: at the bottom
-		//? a single note is clean and a chord played hard begins to break up; at the top
-		//? everything is broken up, heavily.
+		//? Electric only: amplifier drive, from 1 to 18. Fully counter-clockwise, single notes are clean
+		//? and loud chords begin to distort; fully clockwise, everything is heavily distorted.
 		// NOT ON THE PANEL: the electric switch opens the fold-out now. Kept so the parameters
 		// after it keep their numbers in patches already saved.
 		configParam(P_FOLD, 0.f, 1.f, 0.f, "Unused");
 		configParam(P_SYMPATHY, 0.f, 1.f, 0.5f / EXAGGERATE, "Sympathy", "%", 0.f, 100.f);
-		//? How much the strings not being played ring in sympathy with those that are, each at
-		//? its open pitch, from the vibration that reaches it through the bridge. At the bottom,
-		//? none; at a third of the way, an ordinary acoustic's; at the top, three times that.
+		//? How much the unplayed strings resonate with the played ones, each at its open pitch, through
+		//? the bridge. Fully counter-clockwise, none; at one third, the default, the level of a typical
+		//? acoustic guitar; fully clockwise, three times that.
 		configParam(P_FINGER, 0.f, 1.f, 0.5f / EXAGGERATE, "Finger noise", "%", 0.f, 100.f);
-		//? How loud the squeak of a finger sliding along a wound string is, in slides into, out
-		//? of and between notes. At the bottom, silent; at the top, plainly louder than any
-		//? player's. A bend makes none.
+		//? Level of the squeak of a finger sliding along a wound string, in slides into, out of and
+		//? between notes. Fully counter-clockwise, none; fully clockwise, louder than a real player's.
+		//? Bends make no squeak.
 		configParam(P_STIFFNESS, 0.f, 1.f, 0.7f / EXAGGERATE, "Stiffness", "%", 0.f, 100.f);
+		//? String stiffness: the stiffer the string, the further its upper partials are tuned sharp of
+		//? exact multiples of the fundamental. Fully clockwise, the eighth partial is 9 cents sharp on
+		//? every string, more than any real string. Nylon strings get one sixth of the setting.
 		// HOW LONG THE HAND TAKES TO CROSS THE STRINGS.
 		//
 		// A loose open strum is thirty or forty milliseconds across the chord; a tight one is
@@ -196,44 +198,41 @@ struct GuitarModule : Module, NoteSink {
 		// down-stroke takes — so a patch made before this knob existed plays as it did, and the
 		// knob starts where the hand already was.
 		configParam(P_STRUM_MS, 0.f, 45.f, 18.f, "Strum speed", " ms");
-		//? How stiff the strings are: the stiffer, the sharper their upper partials stand above
-		//? whole multiples of the fundamental. At the top the eighth partial is 9 cents sharp,
-		//? on any string, past any real string's. The nylon's strings take a sixth of it.
+		//? Time a strummed chord takes to cross the strings, 0 to 45 ms, 18 ms by default. At 0, all the
+		//? strings sound together.
 		configParam(P_TAPER, 0.f, 1.f, 0.5f / EXAGGERATE, "Taper", "%", 0.f, 100.f);
-		//? How much shorter high notes ring than low ones. At the bottom every note rings as long
-		//? as Sustain says. Above it each octave over the open low E rings shorter: at a third of
-		//? the way 0.66 of the octave below, at the top 0.29, so the treble dies away under a
-		//? ringing bass.
+		//? How much shorter high notes ring than low ones. Fully counter-clockwise, every note rings as
+		//? long as Sustain sets. Otherwise, each octave above the open low E rings for a fraction of the
+		//? time of the octave below: 0.66 at one third, the default, and 0.29 fully clockwise.
 		configParam(P_FRET_DAMPING, 0.f, 1.f, 0.5f / EXAGGERATE, "Fret damping", "%", 0.f, 100.f);
-		//? How much a fretting finger shortens and dulls a note compared with the same string
-		//? open. At the bottom fretted and open notes ring alike; at a third of the way a fretted
-		//? note rings three quarters as long; at the top a quarter as long and much duller, and
-		//? the open strings stand out.
+		//? How much a fretting finger shortens and dulls a note compared with the open string. Fully
+		//? counter-clockwise, fretted and open notes ring the same; at one third, the default, a fretted
+		//? note rings three quarters as long; fully clockwise, a quarter as long and much duller.
 		configParam(P_HUMANISE, 0.f, 1.f, 1.f / HUMANISE_TOP, "Humanise", "%", 0.f, 100.f);
-		//? How far the playing departs from exact: each note's timing, level and length varied
-		//? a little, differently on every guitar, so two playing together are two players. At
-		//? the bottom, exact; a third of the way, an ordinary player; at the top three times
-		//? that, notes spread over about 18 ms, as many early as late around a delay of half
-		//? that.
+		//? Random variation in each note's timing, level and length, different in each copy of the
+		//? module. Fully counter-clockwise, none; at one third, the default, that of a typical player;
+		//? fully clockwise, three times that, with notes spread over about 18 ms, as many early as late
+		//? around a delay of 9 ms.
 		configParam(P_BASS, -18.f, 18.f, 3.f, "Bass", " dB");
-		//? The electric amplifier's low shelf, below about 100 Hz, from -18 dB to +18 dB.
+		//? Electric only: amplifier low shelf below about 100 Hz, -18 dB to +18 dB.
 		configParam(P_MIDDLE, -18.f, 18.f, -6.f, "Middle", " dB");
-		//? The electric amplifier's middle band, around 500 Hz, from -18 dB to +18 dB. Below
-		//? nought, the scooped middle of a clean amplifier.
+		//? Electric only: amplifier mid band around 500 Hz, -18 dB to +18 dB.
 		configParam(P_TREBLE, -18.f, 18.f, 4.f, "Treble", " dB");
-		//? The electric amplifier's high shelf, above about 3 kHz, from -18 dB to +18 dB.
+		//? Electric only: amplifier high shelf above about 3 kHz, -18 dB to +18 dB.
 		configInput(I_MPX, "MPX note");
-		//? One part, played on the guitar: its notes, with how each is played, from Guitar Chart
-		//? or any MPX source. The instrument the cable names is shown below the guitars and
-		//? gives the strings their tuning and capo.
+		//? The part to play, from mpxScore or any other MPX source, including how each note is played.
+		//? The instrument named on the cable sets the strings' tuning and capo, and is shown below the
+		//? guitar selector.
 		configOutput(O_L, "Left");
-		//? The guitar, left and right. A single note at a moderate dynamic peaks about 2V.
+		//? The left and right channels of the stereo audio. A single note at a moderate dynamic peaks at
+		//? about 2 V.
 		configOutput(O_R, "Right");
-		//? The guitar, left and right. A single note at a moderate dynamic peaks about 2V.
+		//? The left and right channels of the stereo audio. A single note at a moderate dynamic peaks at
+		//? about 2 V.
 		configLight(L_LEVEL, "Level");
-		//? Flashes green as each note is struck, lights orange when the output passes 7.07V,
-		//? 3 dB under clipping, and red when it reaches 10V, where Rack's audio interface
-		//? clips. Red is held for a second and orange for 0.3 s, so a single peak can be seen.
+		//? Flashes green when a note is struck. Orange when the output exceeds 7.07 V, 3 dB below
+		//? clipping; red when it reaches 10 V, where Rack's audio interface clips. Red is held for 1 s
+		//? and orange for 0.3 s.
 		for (int i = 0; i < MAX_UPSTREAM; i++) {
 			wantSlots[i].store(-1);
 			wantGenerations[i].store(0);

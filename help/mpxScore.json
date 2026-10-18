@@ -1,0 +1,32 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxScore",
+  "description": "Plays a score from a MusicXML or Guitar Pro file. Each row sends one part of the score on its own MPX cable, to an instrument module such as mpxPiano, mpxViolin or mpxGuitar. A built-in General MIDI sample player, using the GeneralUser GS SoundFont, plays any row whose MPX output has nothing connected, on the Sample player outputs. The sample player is intended only for auditioning parts for which no instrument module is available. Clicking the score's title opens a window showing the score engraved.",
+  "params": [
+    {"ids": [27], "name": "Load", "text": "Opens a menu: Open a score, which opens a file chooser for MusicXML and Guitar Pro files; the 20 most recently loaded scores; and Forget the recent list."},
+    {"ids": [28], "name": "Swing", "text": "Delays the second eighth note and the second sixteenth note of each beat. Fully clockwise: the swing ratio measured in jazz recordings at the current tempo, about 1.43 to 1 for eighth notes between 140 and 180 BPM and less at slower and faster tempos; sixteenth notes swing less. Counter-clockwise moves those notes earlier instead. Centre, the default: no swing. Reset to the centre when a score is loaded."},
+    {"ids": [0], "name": "Play", "text": "Starts and stops playback. At the end of the score, playback stops and returns to the first bar, unless a loop that includes the last bar is set."},
+    {"ids": [1], "name": "Rewind", "text": "Returns playback to the first bar. Does not start or stop playback."},
+    {"ids": [2], "name": "Tempo", "text": "Tempo in quarter notes per minute, 20 to 400. Set to the score's opening tempo when a score is loaded. Changing it scales every tempo in the score by the same proportion, so the score's tempo changes are kept."},
+    {"ids": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], "name": "Mute", "text": "Stops this row sending notes, on its MPX output and in the sample player. A row with no part assigned shows as muted; assigning a part unmutes it."},
+    {"ids": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26], "name": "Gain", "text": "The row's level, 0 to 200%, 100% by default. With the row's MPX output connected, it scales the level of each note sent; otherwise it sets the row's volume in the sample player."}
+  ],
+  "outputs": [
+    {"ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "name": "MPX track", "text": "This row's part on an MPX cable. The light on the cable plug flashes as each note starts, and blinks steadily while the module reading the cable cannot play the part's range. While connected, the sample player does not play this row."},
+    {"ids": [12, 13], "name": "Sample player", "text": "The left and right channels of the sample player. Only rows with nothing connected to their MPX output are played. Intended only for auditioning parts for which no instrument module is available."}
+  ],
+  "lights": [
+    {"ids": [0], "name": "Notes", "text": "Flashes when any row sends a note."},
+    {"ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "name": "Row", "text": "Flashes when this row sends a note."}
+  ],
+  "notes": [
+    "Each row shows the name of the part it plays. Clicking a row's name opens a list of the score's parts, to choose which part the row plays, or Nothing.",
+    "Clicking the score's title, or Show the score in the right-click menu, opens a window showing the score engraved as one continuous line, with a playhead. Clicking a bar moves playback to it and ends any loop. Shift-clicking another bar loops the bars from the last one clicked to that one. The spacebar starts and stops playback. The number keys 1 to 9, or right-clicking the music, choose which part is shown. The toolbar has Smaller, Larger, Back, Forward, Follow, Instrument, Loop off, Play or Stop, and To the top. A loop stays set when the window is closed, and the right-click menu can stop it.",
+    "Played from the score: dynamics written as signs or words, hairpins, legato, trills, mordents, turns, grace notes, rolled chords, fermatas and tremolos. Guitar Pro techniques such as bends, slides and hammer-ons are sent on the cable, for guitar modules to play.",
+    "Each note is sent on its cable 4.5 seconds before it sounds, for modules that prepare notes in advance, such as mpxViolin, mpxViola and mpxCello.",
+    "Ornaments played as, in the right-click menu, shows the ornament style worked out from the score's composer, title and dates, with the reason, and offers the other styles. The style sets where trills start, their speed, whether they end with a turn, the speed of mordents and turns, and how slowly chords are rolled.",
+    "Send the score's sustain pedal, in the right-click menu, sends the score's pedal markings on each row's cable; on by default. Pedal the passages the score leaves unmarked, also on by default, adds sustain pedal worked out from the harmony to piano parts, wherever the score has no pedal markings.",
+    "Rows, in the right-click menu, sets 6 or 12 rows. 12 adds a second column and widens the panel.",
+    "Show a MusicXML file, in the right-click menu, opens any MusicXML file in the score window without loading it into the module."
+  ]
+}

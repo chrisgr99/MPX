@@ -560,6 +560,30 @@ struct PianoVoice {
 };
 
 
+//?module Plays one polyphonic MPX part on a high-quality sampled piano: the Salamander Grand Piano, a
+//? Yamaha C5 recorded by Alexander Holm. The samples, 542 MB, are downloaded once with the Download
+//? button on the panel and stored in DreamerMPX/piano in the Rack user folder.
+//?note The right-click menu can show the sample folder, download the samples again, or remove them.
+//?note As recorded, in the right-click menu, plays each note as it arrives, at the sample set's own
+//? velocity response. It disables chord voicing, melody balance, emphasis, chord spreading, the
+//? Brightness filter, the soft pedal, and the Dynamics knob. The Volume, Release and Damping knobs
+//? still apply, and the limiter acts only at 10 V.
+//?note Velocity curve, in the right-click menu, sets which recorded layer each dynamic selects: Soft
+//? selects louder-played layers for the same marking, Hard selects softer-played ones, Normal is
+//? the default. It changes the tone, not the loudness.
+//?note Reference pitch, in the right-click menu, sets A4 to 415, 432, 435, 440, 442 or 444 Hz; 440 is
+//? the default. Stretch tuning, on by default, tunes the high notes progressively sharp and the low
+//? notes flat, up to about 20 cents sharp at the top and 39 cents flat at the bottom.
+//?note Melody balance, in the right-click menu, plays notes below the melody, the highest part, more
+//? quietly than written: Light, Normal (the default) or Strong. Notes within a whole tone of the
+//? melody keep their level; the reduction reaches its full amount an octave below. Off plays every
+//? note at its written level.
+//?note Pedal mechanism level and Key noise, in the right-click menu, set the level of the sustain
+//? pedal's mechanical sound and of the sound of a key coming up: 0 to 200%, 100% by default.
+//?note Polyphony, in the right-click menu, sets the most notes that sound at once: 32, 64, 96 (the
+//? default) or 128. Velocity layers loaded sets how many recorded dynamic layers are held in
+//? memory: 4, 8 or 16 (the default). More layers give finer changes of tone between dynamics and
+//? use more memory; changing it reloads the samples.
 struct PianoModule : Module, NoteSink, NoteSource {
 	enum ParamId {
 		P_VOLUME,
@@ -775,26 +799,38 @@ struct PianoModule : Module, NoteSink, NoteSource {
 	PianoModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<VolumeQuantity>(P_VOLUME, 0.f, 1.f, 0.5f, "Volume", " dB");
-		//? How loud the piano is. Upright, where it starts, is twice what it once started at, so
-		//? that it holds its own beside mpxViolin, mpxViola and mpxCello; turned right it adds up
-		//? to 12 dB more, and turned left it comes down to silence. The loudest chords are held
-		//? back by the limiter however far it is turned up.
+		//? Output level: 0 dB at the centre, the default; up to 12 dB more clockwise; down to silence
+		//? counter-clockwise. A limiter keeps the output below about 8.5 V, so turning up raises quiet
+		//? passages more than loud ones.
 		configParam(P_RELEASE, 0.f, 2.f, 1.f, "Release",
 			"%", 0.f, 100.f);
+		//? Level of the sound a string makes when its damper falls as the key comes up: 0 to 200% of the
+		//? recorded level, 100% by default. Scaled by how loud the string still is.
 		// WHERE THE WEIGHT OF THE BAR GOES. Two-sided about the middle: see metre.
 		configParam(P_EMPHASIS, -1.f, 1.f, 0.f, "Emphasis", "%", 0.f, 100.f);
+		//? Changes notes' loudness and length by their position in the bar. Clockwise: downbeats up to 2
+		//? dB louder and 4.5% longer, the middle beat of an even-length bar up to 0.8 dB louder, and
+		//? notes between beats up to 1.2 dB quieter and shorter. Counter-clockwise reverses this,
+		//? emphasising notes between beats. Centre, the default: no change. Notes the score marks as
+		//? accented are not changed. Needs a source that sends the bar position, such as mpxScore.
 		// PEDALLING BY THE METRE. The positions are an axis from driest to wettest, measured
 		// against the pedal marks of two Chopin pieces: see pedalFor and docs/piano.md.
 		configSwitch(P_PEDAL, 0.f, 5.f, 0.f, "Pedalling",
 			{"Off", "Every beat", "Every half bar", "Every bar", "Every two bars", "Held down"});
+		//? Automatic sustain pedal, used only after the incoming part has sent no sustain pedal for 4
+		//? seconds. Every beat, Every half bar, Every bar or Every two bars: the pedal is held down and
+		//? lifted for 50 ms at each of those points. Held down: the pedal stays down. Off, the default:
+		//? no automatic pedal. Needs a source that sends the bar position, such as mpxScore.
 		configParam(P_BRIGHT, 0.f, 1.f, 1.f, "Brightness", "%", 0.f, 100.f);
+		//? Low-pass filter on the strings. Fully clockwise, the default: no filtering. Counter-clockwise
+		//? lowers the cutoff, to 300 Hz fully counter-clockwise. Each note's timbre value from the cable
+		//? raises or lowers the cutoff, and the soft pedal lowers it.
 		configParam(P_DYNAMICS, 0.f, 1.f, 1.f,
 			"Dynamics", "%", 0.f, 100.f);
-		//? How far apart the written dynamics are in loudness. Fully up, where it starts, ppp is 30 dB
-		//? under fff, the range the modelled violin, viola and cello play over, so the piano
-		//? matches them in a quartet. Turned down, the range narrows from the bottom: fff stays
-		//? where it is and the quiet end comes up, to nothing at the bottom, where every marking
-		//? plays at fff. The tone of each marking stays as it is.
+		//? Loudness range of the dynamic markings. Fully clockwise, the default: ppp is 30 dB below fff,
+		//? the same range as mpxViolin, mpxViola and mpxCello. Counter-clockwise narrows the range by
+		//? raising the quieter markings, with fff unchanged; fully counter-clockwise, every marking plays
+		//? at the fff level. The tone of each marking does not change.
 		// HOW LONG A DAMPER TAKES TO STOP THE STRING, which is about a tenth of a second on a real
 		// piano and was nearly a whole one here.
 		//
@@ -819,15 +855,28 @@ struct PianoModule : Module, NoteSink, NoteSource {
 		// 0.02, which is what the tooltip now reads.
 		configParam(P_DAMPING, 0.f, 1.f, 0.5f,
 			"Damping", " s", 1.f / 40.f, 0.8f);
+		//? Time a damper takes to stop a string after its key comes up: 0.8 s fully counter-clockwise,
+		//? 0.02 s fully clockwise, about 0.13 s at the centre, the default. With the sustain pedal
+		//? part-way down, notes ring longer; fully down, they are held.
 		// HELD DOWN WHILE THE BUTTON IS HELD, as a pedal is. Latching them meant a pedal left
 		// down by a click made days ago, and a foot is the one control on a piano nobody would
 		// expect to stay where it was put.
 		configButton(P_SUSTAIN, "Sustain pedal");
+		//? Holds the sustain pedal down while pressed. The pedal used is whichever is furthest down: this
+		//? button, the pedal on the incoming cable, or the Pedalling switch.
 		configButton(P_SOFT, "Soft pedal");
+		//? Holds the soft pedal down while pressed. The soft pedal selects softer-played sample layers
+		//? and lowers the brightness filter's cutoff. Combined with the soft pedal on the incoming cable.
 		configInput(I_MPX, "MPX note");
+		//? The part to play, from mpxScore or any other MPX source, including its sustain and soft
+		//? pedals.
 		configOutput(O_L, "Left");
+		//? The left channel of the stereo audio.
 		configOutput(O_R, "Right");
+		//? The right channel of the stereo audio.
 		configOutput(O_MPX, "MPX note, as played");
+		//? The notes as this module plays them, on an MPX cable: with chord voicing, melody balance,
+		//? emphasis and legato lengths applied, each sent when it sounds, with the pedals.
 
 		slot = busClaim(&generation);
 		for (int i = 0; i < MAX_UPSTREAM; i++) {

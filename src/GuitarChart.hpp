@@ -295,24 +295,18 @@ struct SongModule : Module, NoteSource {
 
 	SongModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		// THE HELP IS IN help/mpxScore.json, written by hand: the help scanner cannot read this
+		// header, whose slug is a macro and whose ports depend on CHART_AUDIO.
 		configButton(P_LOAD, "Load a score, or pick a recent one");
 		// SWING, WHICH THE SCORE DOES NOT SAY. Two-sided: see swingRatios and docs/notation.md.
 		// Nought by default, so nothing already patched starts swinging, and back to nought when a
 		// new score is loaded (see loadPath).
 		configParam(P_SWING, -1.f, 1.f, 0.f, "Swing", "%", 0.f, 100.f);
-		//? Moves the notes written on the off-beats later, or earlier the other way, as swing does.
-		//? Set back to nought whenever a new score is loaded.
 
 		configSwitch(P_PLAY, 0.f, 1.f, 1.f, "Play", {"Stopped", "Playing"});
-		//? Starts the song again from its first bar. It does not stop it.
 		configButton(P_REWIND, "Rewind");
-		//? The tempo to play at, in quarter notes a minute. Set to the song's own when one is
-		//? loaded; changing it moves every tempo in the song by the same proportion, so a song
-		//? that speeds up or slows down still does. A clock overrides it.
 		configParam(P_TEMPO, 20.f, 400.f, 120.f, "Tempo", " BPM");
 		for (int r = 0; r < ROWS; r++) {
-			//? Silences this row without unpatching it, so what is downstream keeps its cable
-			//? and its settings.
 			configSwitch(P_MUTE + r, 0.f, 1.f, 0.f, string::f("Mute %d", r + 1),
 				{"Playing", "Muted"});
 			// THE NAME SAYS MPX, and has to. Clarity colours a jack by its name where it has
@@ -320,8 +314,6 @@ struct SongModule : Module, NoteSource {
 			// MPX jack. Named for the track alone, these came out orange — the colour of a
 			// control voltage. When the name becomes the instrument's, it keeps the word.
 			configOutput(O_TRACK + r, string::f("MPX track %d", r + 1));
-			//? This row's part, on an MPX cable. The plug light flashes as each note starts, and
-			//? blinks steadily while an instrument reading the cable cannot play the part's range.
 		}
 
 		for (int r = 0; r < ROWS; r++) {
@@ -330,11 +322,10 @@ struct SongModule : Module, NoteSource {
 		}
 #if CHART_AUDIO
 		for (int r = 0; r < ROWS; r++) {
-			//? This row's level: the notes on its MPX cable when that is patched, otherwise its sound in the band's stereo pair.
 			configParam(P_GAIN + r, 0.f, 2.f, 1.f, string::f("Gain %d", r + 1), "%", 0.f, 100.f);
 		}
-		configOutput(O_MIX_L, "Band left");
-		configOutput(O_MIX_R, "Band right");
+		configOutput(O_MIX_L, "Sample player left");
+		configOutput(O_MIX_R, "Sample player right");
 		core.setParts(rows);
 		core.logName = CHART_SLUG;
 		core.followInstrument = true;
@@ -2080,7 +2071,7 @@ static Layout songLayout(int rows) {
 	// them, and the left one far enough before it for its letter.
 	const float rightX = PANEL_W - PANEL_W / COLUMNS + AUDIO_DX + (COLUMNS > 1 ? 0.f : 12.5f);
 	const float leftX = rightX - 12.5f;
-	label("h.mix", leftX - 8.03f / 2.f - 1.f, MIX_Y, "MIX", Panel::RIGHT, true, 8.f, NULL);
+	label("h.mix", leftX - 8.03f / 2.f - 1.f, MIX_Y, "SAMPLER", Panel::RIGHT, true, 8.f, NULL);
 	Item mixL;
 	mixL.key = "out.mixl"; mixL.kind = Item::PORT_OUT; mixL.id = SongModule::O_MIX_L;
 	mixL.x = leftX; mixL.y = MIX_Y; mixL.ring = SIG_AUDIO;

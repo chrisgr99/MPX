@@ -1,0 +1,33 @@
+{
+  "plugin": "DreamerMPX",
+  "module": "mpxPiano",
+  "description": "Plays one polyphonic MPX part on a high-quality sampled piano: the Salamander Grand Piano, a Yamaha C5 recorded by Alexander Holm. The samples, 542 MB, are downloaded once with the Download button on the panel and stored in DreamerMPX/piano in the Rack user folder.",
+  "params": [
+    {"ids": [0], "name": "Volume", "text": "Output level: 0 dB at the centre, the default; up to 12 dB more clockwise; down to silence counter-clockwise. A limiter keeps the output below about 8.5 V, so turning up raises quiet passages more than loud ones."},
+    {"ids": [1], "name": "Release", "text": "Level of the sound a string makes when its damper falls as the key comes up: 0 to 200% of the recorded level, 100% by default. Scaled by how loud the string still is."},
+    {"ids": [2], "name": "Emphasis", "text": "Changes notes' loudness and length by their position in the bar. Clockwise: downbeats up to 2 dB louder and 4.5% longer, the middle beat of an even-length bar up to 0.8 dB louder, and notes between beats up to 1.2 dB quieter and shorter. Counter-clockwise reverses this, emphasising notes between beats. Centre, the default: no change. Notes the score marks as accented are not changed. Needs a source that sends the bar position, such as mpxScore."},
+    {"ids": [3], "name": "Pedalling", "text": "Automatic sustain pedal, used only after the incoming part has sent no sustain pedal for 4 seconds. Every beat, Every half bar, Every bar or Every two bars: the pedal is held down and lifted for 50 ms at each of those points. Held down: the pedal stays down. Off, the default: no automatic pedal. Needs a source that sends the bar position, such as mpxScore."},
+    {"ids": [4], "name": "Brightness", "text": "Low-pass filter on the strings. Fully clockwise, the default: no filtering. Counter-clockwise lowers the cutoff, to 300 Hz fully counter-clockwise. Each note's timbre value from the cable raises or lowers the cutoff, and the soft pedal lowers it."},
+    {"ids": [5], "name": "Dynamics", "text": "Loudness range of the dynamic markings. Fully clockwise, the default: ppp is 30 dB below fff, the same range as mpxViolin, mpxViola and mpxCello. Counter-clockwise narrows the range by raising the quieter markings, with fff unchanged; fully counter-clockwise, every marking plays at the fff level. The tone of each marking does not change."},
+    {"ids": [6], "name": "Damping", "text": "Time a damper takes to stop a string after its key comes up: 0.8 s fully counter-clockwise, 0.02 s fully clockwise, about 0.13 s at the centre, the default. With the sustain pedal part-way down, notes ring longer; fully down, they are held."},
+    {"ids": [7], "name": "Sustain pedal", "text": "Holds the sustain pedal down while pressed. The pedal used is whichever is furthest down: this button, the pedal on the incoming cable, or the Pedalling switch."},
+    {"ids": [8], "name": "Soft pedal", "text": "Holds the soft pedal down while pressed. The soft pedal selects softer-played sample layers and lowers the brightness filter's cutoff. Combined with the soft pedal on the incoming cable."}
+  ],
+  "inputs": [
+    {"ids": [0], "name": "MPX note", "text": "The part to play, from mpxScore or any other MPX source, including its sustain and soft pedals."}
+  ],
+  "outputs": [
+    {"ids": [0], "name": "Left", "text": "The left channel of the stereo audio."},
+    {"ids": [1], "name": "Right", "text": "The right channel of the stereo audio."},
+    {"ids": [2], "name": "MPX note, as played", "text": "The notes as this module plays them, on an MPX cable: with chord voicing, melody balance, emphasis and legato lengths applied, each sent when it sounds, with the pedals."}
+  ],
+  "notes": [
+    "The right-click menu can show the sample folder, download the samples again, or remove them.",
+    "As recorded, in the right-click menu, plays each note as it arrives, at the sample set's own velocity response. It disables chord voicing, melody balance, emphasis, chord spreading, the Brightness filter, the soft pedal, and the Dynamics knob. The Volume, Release and Damping knobs still apply, and the limiter acts only at 10 V.",
+    "Velocity curve, in the right-click menu, sets which recorded layer each dynamic selects: Soft selects louder-played layers for the same marking, Hard selects softer-played ones, Normal is the default. It changes the tone, not the loudness.",
+    "Reference pitch, in the right-click menu, sets A4 to 415, 432, 435, 440, 442 or 444 Hz; 440 is the default. Stretch tuning, on by default, tunes the high notes progressively sharp and the low notes flat, up to about 20 cents sharp at the top and 39 cents flat at the bottom.",
+    "Melody balance, in the right-click menu, plays notes below the melody, the highest part, more quietly than written: Light, Normal (the default) or Strong. Notes within a whole tone of the melody keep their level; the reduction reaches its full amount an octave below. Off plays every note at its written level.",
+    "Pedal mechanism level and Key noise, in the right-click menu, set the level of the sustain pedal's mechanical sound and of the sound of a key coming up: 0 to 200%, 100% by default.",
+    "Polyphony, in the right-click menu, sets the most notes that sound at once: 32, 64, 96 (the default) or 128. Velocity layers loaded sets how many recorded dynamic layers are held in memory: 4, 8 or 16 (the default). More layers give finer changes of tone between dynamics and use more memory; changing it reloads the samples."
+  ]
+}
