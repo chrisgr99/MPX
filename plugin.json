@@ -3,7 +3,7 @@
   "name": "MPX",
   "brand": "Dreamer Development",
   "description": "Modular Polyphonic Expression: one cable carries a whole instrument, and every note on it keeps its own pitch, level, duration, pan, bend, pressure and timbre.",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "license": "MIT",
   "author": "Chris Graham",
   "authorEmail": "chrisgr99@gmail.com",
@@ -190,7 +190,7 @@
     {
       "slug": "mpxScore",
       "name": "mpxScore",
-      "description": "Plays a score — MusicXML or Guitar Pro — with each part on its own MPX cable with a mute and a gain, six or twelve rows from the menu, a built-in General MIDI band on a stereo mix, and a continuous engraved view with a playhead and bars to loop.",
+      "description": "Plays a score — MusicXML or Guitar Pro — with each part on its own MPX cable with a mute and a gain, six or twelve rows from the menu, a built-in General MIDI sample player for auditioning parts, and a continuous engraved view with a playhead and bars to loop.",
       "tags": [
         "Sequencer",
         "Sampler",

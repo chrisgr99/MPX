@@ -2,13 +2,20 @@
 
 Newest first.
 
+## 2.0.2 — 17 October 2026
+
+### Changed
+- The help for mpxScore, mpxViolin, mpxViola, mpxCello, mpxGuitar and mpxPiano, shown by Dreamer Help, is rewritten to say directly what each control does. mpxScore and mpxPiano have help for the first time, and mpxGuitar's Strum speed knob has an entry.
+- mpxScore's built-in General MIDI player is called the sample player: on the panel, where its outputs are labelled SAMPLER, in its output names and in its help. It is intended only for auditioning parts for which no instrument module is available.
+- The package includes the licences of FluidSynth (GNU LGPL 2.1), Verovio (GNU LGPL 3.0, with the GNU GPL 3.0 it adds to) and Verovio's music fonts, Bravura and Leipzig (SIL Open Font Licence).
+
 ## 2.0.1 — 17 October 2026
 
 The first full release. It adds a score player, modelled bowed strings and a modelled guitar. Several more modules are included as work in progress.
 
 ### Added
 - **mpxScore** — plays a MusicXML or Guitar Pro file, each part on its own MPX cable with a mute and a gain, in six or twelve rows chosen from the menu. A built-in General MIDI band plays a part on the stereo mix only when nothing is connected to that part's MPX output, so a part patched to another module is played by that module alone. The band plays GeneralUser GS, the General MIDI SoundFont by S. Christian Collins, which comes with the plugin. A window shows the score engraved as one continuous line, with a playhead and bars you can loop.
-- mpxScore plays what the score marks: dynamics written as signs or as words, hairpins, legato, trills, mordents, turns, rolled chords, fermatas, tremolos and swing. Ornaments are played in the style of the composer, worked out from the file and shown in the menu, where it can be changed. A piano part is pedalled from the harmony wherever the score leaves the pedal unmarked; the menu turns this off. Each note is announced on the cable three seconds before it sounds, so a player that reads ahead can prepare it.
+- mpxScore plays what the score marks: dynamics written as signs or as words, hairpins, legato, trills, mordents, turns, rolled chords, fermatas, tremolos and swing. Ornaments are played in the style of the composer, worked out from the file and shown in the menu, where it can be changed. A piano part is pedalled from the harmony wherever the score leaves the pedal unmarked; the menu turns this off. Each note is announced on the cable 4.5 seconds before it sounds, so a player that reads ahead can prepare it.
 - **mpxViolin**, **mpxViola** and **mpxCello** — each plays one MPX part on a physically modelled instrument: four strings bowed through a model of rosin's friction, on one bridge and one body, with each note's bowing worked out ahead of it. They play pizzicato, left-hand pizzicato and double stops, and the notes of a chord share one dynamic.
 - **mpxGuitar** — plays one MPX part on a modelled guitar, nylon, steel-string or electric: waveguide strings picked, hammered, slid, palm-muted, bent and touched for harmonics as the part says, through an acoustic body or a pickup and amplifier, in stereo.
 
