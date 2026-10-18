@@ -1,5 +1,4 @@
-The fonts and the SoundFont in this folder are not covered by the plugin's MIT
-licence.
+Nothing named here is covered by the plugin's MIT licence.
 
 Petaluma and Petaluma Script are Steinberg Media Technologies GmbH's, under the
 SIL Open Font Licence, whose terms and font log are in PETALUMA-OFL.txt and
@@ -12,3 +11,18 @@ HACK-LICENCE.txt beside it.
 GeneralUser GS, in banks, is S. Christian Collins's, under the GeneralUser GS
 License v2.0, which allows it in software projects. Its terms are in
 GeneralUser-GS-LICENSE.txt beside it.
+
+FluidSynth 2.6.1 is built into the plugin, under the GNU Lesser General Public
+License, Version 2.1, in FLUIDSYNTH-LGPL-2.1.txt. Its source is at
+https://github.com/FluidSynth/fluidsynth, tag v2.6.1, and the plugin's own
+source, at https://github.com/chrisgr99/MPX, builds it from there.
+
+Verovio 6.3.0 is built into the plugin, under the GNU Lesser General Public
+License, Version 3, in VEROVIO-LGPL-3.0.txt, which adds to the GNU General
+Public License, Version 3, in VEROVIO-GPL-3.0.txt. Its source is at
+https://github.com/rism-digital/verovio, tag version-6.3.0, and the plugin's own
+source builds it from there.
+
+The music fonts in verovio, Bravura and Leipzig, come with Verovio, under the
+SIL Open Font Licence, whose terms and their copyright lines are in
+VEROVIO-FONTS-OFL.txt.
